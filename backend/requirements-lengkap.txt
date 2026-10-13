@@ -1,0 +1,4 @@
+# Dependensi worker dengan GPU (dev/prod): ekstraksi Docling + OCR, embedding & reranker
+docling==2.55.1
+sentence-transformers==5.1.1
+huggingface_hub>=0.35

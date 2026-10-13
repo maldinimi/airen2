@@ -1,0 +1,7 @@
+# Production server aplikasi: database dibuka HANYA pada IP antarmuka WireGuard (bukan LAN/publik),
+# agar node AI di GPU sewaan dapat mengambil job & menulis hasil (desain §2.4).
+services:
+  db:
+    networks: [internal, publik]
+    ports:
+      - "${DB_BIND_WIREGUARD:-127.0.0.1}:5432:5432"

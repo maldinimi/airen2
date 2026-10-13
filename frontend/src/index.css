@@ -1,0 +1,25 @@
+@import "tailwindcss";
+@import "@fontsource/inter/400.css";
+@import "@fontsource/inter/500.css";
+@import "@fontsource/inter/600.css";
+@import "@fontsource/inter/700.css";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --color-utama-50: #eff4ff;
+  --color-utama-100: #dbe6fe;
+  --color-utama-500: #3b6cf6;
+  --color-utama-600: #2553e0;
+  --color-utama-700: #1e40af;
+  --color-utama-900: #172554;
+  --color-ubah-50: #f5f3ff;
+  --color-ubah-100: #ede9fe;
+  --color-ubah-600: #7c3aed;
+  --color-ubah-700: #6d28d9;
+}
+
+html, body, #root { height: 100%; }
+body { @apply bg-slate-50 text-slate-800 antialiased; }
+
+/* Sorotan rujukan pada viewer PDF */
+.sorot { background: rgba(250, 204, 21, 0.35); outline: 2px solid rgba(234, 179, 8, 0.9); border-radius: 2px; }

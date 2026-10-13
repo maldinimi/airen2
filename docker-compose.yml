@@ -1,0 +1,97 @@
+﻿# Komposisi dasar (semua skenario). File tambahan dipilih lewat COMPOSE_FILE di .env:
+#   docker-compose.gpu.yml : layanan llm (vLLM) + GPU untuk worker      (dev, prod dengan GPU lokal)
+#   docker-compose.dev.yml : hot reload backend & frontend               (dev, tiruan)
+# Semua layanan berada di jaringan `internal` TANPA gateway keluar (B1). Hanya `web` yang juga
+# terhubung ke jaringan `publik` agar port aplikasi dapat diakses dari LAN.
+name: airen
+
+x-backend: &backend
+  build:
+    context: ./backend
+    args: { PROFIL: ringan }
+  image: airen-backend:${VERSI_APP:-1.0.0}
+  env_file: .env
+  volumes:
+    - ./data:/data
+  networks: [internal]
+  restart: unless-stopped
+
+services:
+  db:
+    image: pgvector/pgvector:0.8.6-pg17
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-airen}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-airen}
+      POSTGRES_DB: ${POSTGRES_DB:-airen}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks: [internal]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-airen} -d ${POSTGRES_DB:-airen}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+  migrasi:
+    <<: *backend
+    command: ["python", "-m", "app.migrasi"]
+    restart: "no"
+    depends_on:
+      db: { condition: service_healthy }
+
+  api:
+    <<: *backend
+    depends_on:
+      migrasi: { condition: service_completed_successfully }
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/sehat')"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+
+  worker:
+    <<: *backend
+    build:
+      context: ./backend
+      args: { PROFIL: "${WORKER_PROFIL:-ringan}" }
+    image: airen-worker-${WORKER_PROFIL:-ringan}:${VERSI_APP:-1.0.0}
+    command: ["python", "-m", "app.pekerja.utama"]
+    deploy:
+      replicas: ${WORKER_REPLIKA:-1}
+    depends_on:
+      migrasi: { condition: service_completed_successfully }
+
+  web:
+    build:
+      context: ./frontend
+      target: produksi
+    image: airen-web:${VERSI_APP:-1.0.0}
+    ports:
+      - "${PORT_WEB:-8080}:80"
+    networks: [internal, publik]
+    depends_on:
+      api: { condition: service_healthy }
+    restart: unless-stopped
+
+  # Hanya untuk `make setup`: satu-satunya layanan dengan akses internet (unduh model).
+  pengunduh:
+    image: airen-worker-${WORKER_PROFIL:-ringan}:${VERSI_APP:-1.0.0}
+    profiles: ["setup"]
+    pull_policy: never
+    env_file: .env
+    environment:
+      HF_HUB_OFFLINE: "0"
+      TRANSFORMERS_OFFLINE: "0"
+    volumes:
+      - ./data:/data
+    networks: [publik]
+    command: ["python", "-m", "app.pekerja.unduh_model"]
+
+networks:
+  internal:
+    internal: true
+  publik: {}
+
+volumes:
+  pgdata: {}

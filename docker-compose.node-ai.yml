@@ -1,0 +1,80 @@
+# Node AI (GPU sewaan): hanya worker + llm. Tidak ada data permanen: PDF diambil lewat API ke tmpfs (RAM)
+# dan dihapus setelah job; hasil langsung ditulis ke database instansi lewat WireGuard (desain §2.4).
+# Lalu lintas keluar selain terowongan diblokir di firewall host (lihat docs/instalasi-offline.md).
+name: airen-node-ai
+
+services:
+  llm:
+    image: vllm/vllm-openai:v0.30.0
+    command:
+      - --model=/data/models/${LLM_MODEL}
+      - --served-model-name=${LLM_MODEL}
+      - --max-model-len=${LLM_KONTEKS:-65536}
+      - --gpu-memory-utilization=${LLM_GPU_UTIL:-0.85}
+      - --max-num-seqs=${LLM_MAKS_PARALEL:-16}
+      - --reasoning-parser=${LLM_REASONING_PARSER:-deepseek_r1}
+      - --limit-mm-per-prompt={"image":1}
+      - --dtype=${LLM_DTYPE:-auto}
+      - --seed=${LLM_SEED:-20261012}
+      - --disable-log-requests
+    environment:
+      HF_HUB_OFFLINE: "1"
+      VLLM_NO_USAGE_STATS: "1"
+      DO_NOT_TRACK: "1"
+    volumes:
+      - ./data/models:/data/models:ro
+    ipc: host
+    networks: [ai_internal]
+    deploy:
+      resources:
+        reservations:
+          devices: [{ driver: nvidia, count: all, capabilities: [gpu] }]
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 15s
+      timeout: 5s
+      retries: 80
+      start_period: 180s
+    restart: unless-stopped
+
+  worker:
+    build:
+      context: ./backend
+      args: { PROFIL: lengkap }
+    image: airen-worker-lengkap:${VERSI_APP:-1.0.0}
+    command: ["python", "-m", "app.pekerja.utama"]
+    env_file: .env
+    environment:
+      DATA_DIR: /data
+      FOLDER_KERJA: /tmp/kerja
+    volumes:
+      - ./data/models:/data/models:ro
+      - ./data/logs:/data/logs
+    tmpfs:
+      - /tmp/kerja:size=4g,mode=1777
+    networks: [ai_internal, keluar_terowongan]
+    depends_on:
+      llm: { condition: service_healthy }
+    deploy:
+      resources:
+        reservations:
+          devices: [{ driver: nvidia, count: all, capabilities: [gpu] }]
+    restart: unless-stopped
+
+  pengunduh:
+    image: airen-worker-lengkap:${VERSI_APP:-1.0.0}
+    profiles: ["setup"]
+    pull_policy: never
+    env_file: .env
+    environment:
+      HF_HUB_OFFLINE: "0"
+      TRANSFORMERS_OFFLINE: "0"
+      DATA_DIR: /data
+    volumes:
+      - ./data:/data
+    command: ["python", "-m", "app.pekerja.unduh_model"]
+
+networks:
+  ai_internal:
+    internal: true
+  keluar_terowongan: {}  # hanya untuk mencapai server instansi via WireGuard; sisanya diblokir firewall host

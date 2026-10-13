@@ -1,0 +1,31 @@
+# Mode pengembangan: kode di-mount dengan hot reload — developer tidak perlu menginstal Python/Node di laptop.
+services:
+  api:
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload", "--reload-dir", "/app/app"]
+    volumes:
+      - ./data:/data
+      - ./backend/app:/app/app
+      - ./backend/tests:/app/tests
+      - ./backend/migrasi:/app/migrasi
+
+  migrasi:
+    volumes:
+      - ./data:/data
+      - ./backend/app:/app/app
+      - ./backend/migrasi:/app/migrasi
+
+  worker:
+    volumes:
+      - ./data:/data
+      - ./backend/app:/app/app
+
+  web:
+    build:
+      context: ./frontend
+      target: dev
+    image: airen-web-dev:${VERSI_APP:-1.0.0}
+    volumes:
+      - ./frontend/src:/app/src
+      - ./frontend/index.html:/app/index.html
+    ports: !override
+      - "${PORT_WEB:-8080}:8080"

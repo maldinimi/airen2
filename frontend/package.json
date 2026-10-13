@@ -1,0 +1,31 @@
+{
+  "name": "airen-web",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0 --port 8080",
+    "build": "tsc -b && vite build",
+    "cek-offline": "node scripts/cek-offline.mjs"
+  },
+  "dependencies": {
+    "@fontsource/inter": "5.1.0",
+    "@radix-ui/react-dialog": "1.1.2",
+    "@radix-ui/react-popover": "1.1.2",
+    "@tanstack/react-query": "5.59.20",
+    "lucide-react": "0.460.0",
+    "pdfjs-dist": "4.10.38",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "react-router-dom": "6.28.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "4.1.13",
+    "@types/react": "18.3.12",
+    "@types/react-dom": "18.3.1",
+    "@vitejs/plugin-react": "4.3.4",
+    "tailwindcss": "4.1.13",
+    "typescript": "5.7.2",
+    "vite": "6.0.7"
+  }
+}

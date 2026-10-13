@@ -1,0 +1,48 @@
+# Layanan model (vLLM) + akses GPU untuk worker (ekstraksi Docling, embedding, reranker).
+services:
+  llm:
+    image: vllm/vllm-openai:v0.30.0
+    command:
+      - --model=/data/models/${LLM_MODEL}
+      - --served-model-name=${LLM_MODEL}
+      - --max-model-len=${LLM_KONTEKS:-32768}
+      - --gpu-memory-utilization=${LLM_GPU_UTIL:-0.70}
+      - --max-num-seqs=${LLM_MAKS_PARALEL:-4}
+      - --reasoning-parser=${LLM_REASONING_PARSER:-deepseek_r1}
+      - --limit-mm-per-prompt={"image":1}
+      - --dtype=${LLM_DTYPE:-auto}
+      - --seed=${LLM_SEED:-20261012}
+      - --disable-log-requests
+    environment:
+      HF_HUB_OFFLINE: "1"
+      VLLM_NO_USAGE_STATS: "1"
+      DO_NOT_TRACK: "1"
+    volumes:
+      - ./data/models:/data/models:ro
+    ipc: host
+    networks: [internal]
+    deploy:
+      resources:
+        reservations:
+          devices: [{ driver: nvidia, count: all, capabilities: [gpu] }]
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 15s
+      timeout: 5s
+      retries: 80
+      start_period: 120s
+    restart: unless-stopped
+
+  worker:
+    depends_on:
+      llm: { condition: service_healthy }
+    deploy:
+      resources:
+        reservations:
+          devices: [{ driver: nvidia, count: all, capabilities: [gpu] }]
+
+  pengunduh:
+    deploy:
+      resources:
+        reservations:
+          devices: [{ driver: nvidia, count: all, capabilities: [gpu] }]
