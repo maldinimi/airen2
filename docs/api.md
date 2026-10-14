@@ -58,7 +58,7 @@ Hak akses selalu dicek di backend:
 Detail review berisi:
 
 - **status**: `status, final, tampilan (reviewer|pengusul), boleh_override, proses, model_info`;
-- **acuan**: `acuan{checklist_versi, kategori_versi, panduan[]}`;
+- **acuan**: `acuan{checklist_versi, kategori_versi, panduan_versi, panduan[]}`;
 - **hasil**:
   - `label{ai, hitung, final, diubah, tidak_konsisten, terpenuhi, total, override}`;
   - `kategori{ai, final, alasan, rujukan[], pilihan[], override}`;
@@ -82,11 +82,13 @@ Setiap `rujukan` berisi `{peran (bukti_dokumen|dasar_panduan), dokumen (TOR|RAB|
 
 | Metode | Path | Role | Keterangan |
 | --- | --- | --- | --- |
-| GET | `/panduan?termasuk_dihapus=` | login | Daftar + versi + `status_proses` (BELUM/DIPROSES/SIAP/GAGAL) |
+| GET | `/panduan` | login | Daftar panduan yang tidak dihapus + versi + `status_proses` (BELUM/DIPROSES/SIAP/GAGAL) |
 | POST | `/panduan` | Admin | multipart `files` (boleh banyak) |
 | PUT | `/panduan/{id}` | Admin | multipart `judul, deskripsi?, file?` → versi baru |
 | DELETE | `/panduan/{id}` | Admin | Soft delete (file tetap ada) |
 | POST | `/panduan/{id}/proses-ulang` | Admin | Ulangi pemrosesan yang GAGAL |
+| GET | `/panduan/versi` | login | Versi daftar panduan `{aktif, versi[]}` (format sama dengan `/checklist`). Unggah/ubah/hapus otomatis membuat versi baru |
+| GET | `/panduan/versi/{id}` | login | Isi satu versi: panduan + nomor versinya saat itu |
 
 ## File, Dashboard, Administrasi
 

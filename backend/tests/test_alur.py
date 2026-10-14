@@ -169,6 +169,13 @@ def test_panduan_berversi_dan_dipakai_review(klien):
     assert rv["acuan"]["panduan"][0]["judul"] == "PMK Standar Biaya"
     dasar = [r for i in rv["item"] for r in i["rujukan"] if r["peran"] == "dasar_panduan"]
     assert dasar and all(r["dokumen"] == "PANDUAN" for r in dasar)
+    # Versi daftar panduan: unggah = v1, ubah = v2 (dipakai review), hapus = v3 kosong; isi v1 tidak berubah.
+    assert rv["acuan"]["panduan_versi"]["nomor"] == 2
+    admin.delete(f"/api/panduan/{pd['id']}")
+    vs = admin.get("/api/panduan/versi").json()
+    assert [v["nomor"] for v in vs["versi"]] == [3, 2, 1] and vs["aktif"]["nomor"] == 3 and vs["aktif"]["jumlah_item"] == 0
+    v1 = admin.get(f"/api/panduan/versi/{vs['versi'][2]['id']}").json()
+    assert [(x["judul"], x["nomor"]) for x in v1["item"]] == [("pmk", 1)]
 
 
 def test_tidak_ada_koneksi_keluar_selama_review(klien, monkeypatch):

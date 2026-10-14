@@ -6,9 +6,9 @@ import { Link } from "react-router-dom";
 import { api } from "../api";
 import { useAuth } from "../auth";
 import Unggah from "../components/Unggah";
-import { tanggal } from "../format";
-import type { Panduan, VersiPanduan } from "../types";
-import { AreaTeks, Dialog, Input, Judul, Kartu, Kolom, Kosong, Lencana, Memuat, Peringatan, Tombol } from "../ui";
+import { tanggal, waktu } from "../format";
+import type { Panduan, RingkasVersi, Versi, VersiPanduan } from "../types";
+import { AreaTeks, Dialog, Input, Judul, Kartu, Kolom, Kosong, Lencana, Memuat, Peringatan, Tab, Tombol } from "../ui";
 
 const STATUS: Record<VersiPanduan["status_proses"], [string, string]> = {
   BELUM: ["Antre", "bg-blue-50 text-blue-700 ring-blue-200"], DIPROSES: ["Diproses", "bg-blue-50 text-blue-700 ring-blue-200"],
@@ -19,11 +19,12 @@ export default function PanduanPage() {
   const { punya } = useAuth();
   const admin = punya("ADMIN");
   const qc = useQueryClient();
-  const [dihapus, setDihapus] = useState(false);
   const q = useQuery({
-    queryKey: ["panduan", dihapus], queryFn: () => api.get<Panduan[]>(`/api/panduan?termasuk_dihapus=${dihapus}`),
+    queryKey: ["panduan"], queryFn: () => api.get<Panduan[]>("/api/panduan"),
     refetchInterval: (x) => (x.state.data?.some((p) => ["BELUM", "DIPROSES"].includes(p.terkini.status_proses)) ? 5000 : false),
   });
+  const daftarVersi = useQuery({ queryKey: ["panduan", "versi"], queryFn: () => api.get<{ aktif: RingkasVersi | null; versi: RingkasVersi[] }>("/api/panduan/versi") });
+  const [tab, setTab] = useState<"aktif" | "versi">("aktif");
   const [unggahBuka, setUnggahBuka] = useState(false);
   const [ubah, setUbah] = useState<Panduan | null>(null);
   const segarkan = () => qc.invalidateQueries({ queryKey: ["panduan"] });
@@ -34,7 +35,9 @@ export default function PanduanPage() {
     <div>
       <Judul judul="Panduan" sub="Peraturan, kebijakan, dan standar yang menjadi acuan review AI. Hanya panduan berstatus Siap yang dipakai review."
         aksi={admin && <Tombol onClick={() => setUnggahBuka(true)}><Upload className="size-4" />Unggah Panduan</Tombol>} />
-      {admin && <label className="mb-3 flex items-center gap-2 text-sm text-slate-600"><input type="checkbox" checked={dihapus} onChange={(e) => setDihapus(e.target.checked)} />Tampilkan yang dihapus</label>}
+      <Tab aktif={tab} ubah={setTab} pilihan={[{ nilai: "aktif", label: `Panduan aktif${daftarVersi.data?.aktif ? ` (v${daftarVersi.data.aktif.nomor})` : ""}` }, { nilai: "versi", label: "Daftar versi" }]} />
+      <div className="mt-4">
+      {tab === "versi" ? <DaftarVersi data={daftarVersi.data?.versi} /> : <>
       {q.isLoading ? <Memuat /> : !q.data?.length ? <Kosong>Belum ada panduan.</Kosong> : (
         <div className="grid gap-3 md:grid-cols-2">
           {q.data.map((p) => {
@@ -47,9 +50,9 @@ export default function PanduanPage() {
                   <Lencana className={warna}>{(v.status_proses === "DIPROSES" || v.status_proses === "BELUM") && <Loader2 className="size-3 animate-spin" />}{nama}</Lencana>
                 </div>
                 {v.deskripsi && <p className="text-sm text-slate-600">{v.deskripsi}</p>}
-                <p className="text-xs text-slate-500">{v.nama_file} · {v.jumlah_halaman} hlm · versi {v.nomor} · {tanggal(v.dibuat_at)}{p.dihapus && " · DIHAPUS"}</p>
+                <p className="text-xs text-slate-500">{v.nama_file} · {v.jumlah_halaman} hlm · versi {v.nomor} · {tanggal(v.dibuat_at)}</p>
                 {v.status_proses === "GAGAL" && <Peringatan>{v.pesan_gagal ?? "Pemrosesan gagal."}</Peringatan>}
-                {admin && !p.dihapus && (
+                {admin && (
                   <div className="flex flex-wrap gap-1.5">
                     <Tombol kecil varian="sekunder" onClick={() => setUbah(p)}><Pencil className="size-3.5" />Ubah / ganti file</Tombol>
                     {v.status_proses === "GAGAL" && <Tombol kecil varian="sekunder" onClick={() => ulang.mutate(p.id)}><RotateCcw className="size-3.5" />Proses ulang</Tombol>}
@@ -68,8 +71,37 @@ export default function PanduanPage() {
           })}
         </div>
       )}
+      </>}
+      </div>
       {unggahBuka && <DialogUnggah tutup={() => { setUnggahBuka(false); segarkan(); }} />}
       {ubah && <DialogUbah p={ubah} tutup={() => { setUbah(null); segarkan(); }} />}
+    </div>
+  );
+}
+
+/** Daftar versi daftar panduan; klik untuk melihat panduan (dan versinya) yang tercatat pada versi itu. */
+function DaftarVersi({ data }: { data?: RingkasVersi[] }) {
+  const [lihat, setLihat] = useState<string | null>(null);
+  const isi = useQuery({ queryKey: ["panduan", "versi", lihat], queryFn: () => api.get<Versi<VersiPanduan>>(`/api/panduan/versi/${lihat}`), enabled: !!lihat });
+  if (!data) return <Memuat />;
+  if (!data.length) return <Kosong>Belum ada versi. Versi pertama dibuat saat panduan pertama diunggah.</Kosong>;
+  return (
+    <div className="space-y-2">
+      {data.map((v) => (
+        <Kartu key={v.id} className="p-3">
+          <button className="flex w-full flex-wrap items-center gap-2 text-left text-sm" onClick={() => setLihat(lihat === v.id ? null : v.id)}>
+            <span className="font-semibold">Versi {v.nomor}</span>{v.aktif && <Lencana className="bg-emerald-50 text-emerald-700 ring-emerald-300">Aktif</Lencana>}
+            <span className="text-slate-500">{v.jumlah_item} panduan · {waktu(v.dibuat_at)} · {v.dibuat_oleh ?? "sistem"}</span>
+            {v.catatan && <span className="w-full text-xs text-slate-500">{v.catatan}</span>}
+          </button>
+          {lihat === v.id && (isi.isLoading ? <Memuat /> : (
+            <ol className="mt-3 space-y-1 border-t border-slate-100 pt-3 text-sm">{isi.data?.item.map((x) => (
+              <li key={x.id}><Link className="text-utama-600 hover:underline" to={`/pdf/${x.file_id}?judul=${encodeURIComponent(x.judul)}`}>{x.judul}</Link>
+                <span className="text-xs text-slate-500"> · v{x.nomor} · {x.nama_file}</span></li>))}
+              {!isi.data?.item.length && <li className="text-slate-500">Tidak ada panduan pada versi ini.</li>}</ol>
+          ))}
+        </Kartu>
+      ))}
     </div>
   );
 }

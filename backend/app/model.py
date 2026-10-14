@@ -237,6 +237,28 @@ class PanduanVersi(Base):
     file: Mapped[File] = relationship(lazy="joined")
 
 
+class PanduanKoleksiVersi(Base):
+    """Snapshot daftar panduan (seperti versi checklist/kategori): setiap unggah/ubah/hapus → versi baru.
+    Isi = versi terbaru tiap panduan yang tidak dihapus saat itu; baris lama tidak pernah diubah."""
+    __tablename__ = "panduan_koleksi_versi"
+    id: Mapped[uuid.UUID] = _id()
+    created_at: Mapped[datetime] = _dibuat()
+    nomor: Mapped[int] = mapped_column(Integer, unique=True)
+    aktif: Mapped[bool] = mapped_column(Boolean, default=True)
+    dibuat_oleh: Mapped[uuid.UUID | None] = _fk("pengguna", nullable=True, index=False)
+    catatan: Mapped[str | None] = mapped_column(Text)
+    item: Mapped[list["PanduanKoleksiItem"]] = relationship(order_by="PanduanKoleksiItem.urutan", lazy="selectin")
+
+
+class PanduanKoleksiItem(Base):
+    __tablename__ = "panduan_koleksi_item"
+    id: Mapped[uuid.UUID] = _id()
+    versi_id: Mapped[uuid.UUID] = _fk("panduan_koleksi_versi")
+    urutan: Mapped[int] = mapped_column(Integer)
+    panduan_versi_id: Mapped[uuid.UUID] = _fk("panduan_versi", index=False)
+    panduan_versi: Mapped[PanduanVersi] = relationship(lazy="joined")
+
+
 # ---------------------------------------------------------------- review
 class Review(Base):
     """Satu revisi = satu review sukses. Review GAGAL boleh diulang → baris baru."""
@@ -248,6 +270,8 @@ class Review(Base):
     status: Mapped[str] = mapped_column(String(20), default="ANTRE")  # ANTRE|DIPROSES|SELESAI|GAGAL
     checklist_versi_id: Mapped[uuid.UUID | None] = _fk("checklist_versi", nullable=True, index=False)
     kategori_versi_id: Mapped[uuid.UUID | None] = _fk("kategori_versi", nullable=True, index=False)
+    # Versi daftar panduan saat dikunci; file yang benar-benar dipakai (hanya yang SIAP) ada di review_panduan.
+    panduan_koleksi_versi_id: Mapped[uuid.UUID | None] = _fk("panduan_koleksi_versi", nullable=True, index=False)
     fingerprint: Mapped[str | None] = mapped_column(String(64), index=True)
     disalin_dari_id: Mapped[uuid.UUID | None] = _fk("review", nullable=True, index=False)
     model_info: Mapped[dict | None] = mapped_column(JSONB)

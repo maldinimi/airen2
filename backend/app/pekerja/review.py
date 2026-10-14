@@ -20,7 +20,7 @@ from app.db import SessionLokal
 from app.konfigurasi import konfigurasi
 from app.log import log, set_konteks, tahap
 from app.model import (ChecklistItem, ChecklistVersi, Elemen, File, HasilItem, HasilKategori, KategoriVersi, Panduan,
-                       PanduanVersi, Rekomendasi, Review, ReviewPanduan, Revisi, Rujukan, Usulan)
+                       PanduanKoleksiVersi, PanduanVersi, Rekomendasi, Review, ReviewPanduan, Revisi, Rujukan, Usulan)
 from app.nilai_final import hitung_label
 from app.pekerja import prompt as pr
 from app.pekerja.llm import info_model
@@ -159,6 +159,7 @@ def kunci_acuan(db: Session, review: Review) -> None:
     review.kategori_versi_id = db.scalar(select(KategoriVersi.id).where(KategoriVersi.aktif))
     if review.checklist_versi_id is None or review.kategori_versi_id is None:
         raise GalatPengguna("Checklist atau kategori aktif belum diatur oleh Admin.")
+    review.panduan_koleksi_versi_id = db.scalar(select(PanduanKoleksiVersi.id).where(PanduanKoleksiVersi.aktif))
     # Per panduan yang tidak dihapus: versi terbaru yang filenya sudah SIAP.
     for pd in db.scalars(select(Panduan).where(Panduan.dihapus_at.is_(None))):
         siap = [v for v in pd.versi if v.file.status_ekstraksi == "SIAP"]

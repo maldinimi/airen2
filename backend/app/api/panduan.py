@@ -1,16 +1,20 @@
-"""Endpoint Modul D — Panduan (berversi, soft delete, status pemrosesan)."""
+"""Endpoint Modul D — Panduan (berversi, soft delete, status pemrosesan).
+
+Dua tingkat versi: tiap panduan punya versi sendiri (ganti judul/file), dan daftar panduan secara
+keseluruhan punya versi seperti checklist/kategori — setiap unggah/ubah/hapus menyimpan snapshot baru.
+"""
 import uuid
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, File as FormFile, Form, Request, UploadFile
-from sqlalchemy import select
+from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
 from app.akses import ADMIN, pengguna_saat_ini, wajib_role
 from app.audit import catat
 from app.db import sesi_db
 from app.galat import Galat
-from app.model import File, Job, Panduan, PanduanVersi, Pengguna
+from app.model import File, Job, Panduan, PanduanKoleksiItem, PanduanKoleksiVersi, PanduanVersi, Pengguna
 from app.penyimpanan import simpan_unggahan
 
 router = APIRouter(prefix="/api/panduan", tags=["panduan"])
@@ -24,6 +28,23 @@ def antrekan_ekstraksi(db: Session, f: File) -> None:
             db.add(Job(jenis="PROSES_PANDUAN", ref_id=f.id, trace_id=uuid.uuid4().hex))
 
 
+def versi_koleksi_baru(db: Session, p: Pengguna, catatan: str) -> PanduanKoleksiVersi:
+    """Snapshot daftar panduan saat ini (versi terbaru tiap panduan yang tidak dihapus) sebagai versi baru.
+    Versi lama hanya dinonaktifkan, isinya tidak diubah."""
+    db.flush()
+    db.execute(select(PanduanKoleksiVersi.id).with_for_update())  # serialisasi penomoran versi
+    nomor = (db.scalar(select(func.max(PanduanKoleksiVersi.nomor))) or 0) + 1
+    db.execute(update(PanduanKoleksiVersi).where(PanduanKoleksiVersi.aktif).values(aktif=False))
+    v = PanduanKoleksiVersi(nomor=nomor, aktif=True, dibuat_oleh=p.id, catatan=catatan)
+    db.add(v)
+    db.flush()
+    daftar = db.scalars(select(Panduan).where(Panduan.dihapus_at.is_(None)).order_by(Panduan.judul_terkini))
+    for urutan, pd in enumerate(daftar, 1):
+        db.refresh(pd, ["versi"])
+        db.add(PanduanKoleksiItem(versi_id=v.id, urutan=urutan, panduan_versi_id=pd.versi[-1].id))
+    return v
+
+
 def _versi(v: PanduanVersi) -> dict:
     return {"id": str(v.id), "nomor": v.nomor, "judul": v.judul, "deskripsi": v.deskripsi, "file_id": str(v.file_id),
             "nama_file": v.nama_file, "status_proses": v.file.status_ekstraksi, "pesan_gagal": v.file.pesan_ekstraksi,
@@ -32,17 +53,41 @@ def _versi(v: PanduanVersi) -> dict:
 
 def _panduan(p: Panduan) -> dict:
     terkini = p.versi[-1]
-    return {"id": str(p.id), "judul": terkini.judul, "dihapus": p.dihapus_at is not None, "terkini": _versi(terkini),
+    return {"id": str(p.id), "judul": terkini.judul, "terkini": _versi(terkini),
             "versi": [_versi(v) for v in reversed(p.versi)]}
 
 
 @router.get("")
-def daftar(termasuk_dihapus: bool = False, db: Session = Depends(sesi_db), _: Pengguna = Depends(pengguna_saat_ini)) -> list[dict]:
+def daftar(db: Session = Depends(sesi_db), _: Pengguna = Depends(pengguna_saat_ini)) -> list[dict]:
     """Daftar panduan beserta versi & status proses. Semua pengguna dapat membaca panduan (D3)."""
-    kueri = select(Panduan).order_by(Panduan.judul_terkini)
-    if not termasuk_dihapus:
-        kueri = kueri.where(Panduan.dihapus_at.is_(None))
+    kueri = select(Panduan).where(Panduan.dihapus_at.is_(None)).order_by(Panduan.judul_terkini)
     return [_panduan(p) for p in db.scalars(kueri)]
+
+
+def _nama(db: Session, pid) -> str | None:
+    return db.get(Pengguna, pid).nama if pid else None
+
+
+def _ringkas_koleksi(db: Session, v: PanduanKoleksiVersi) -> dict:
+    return {"id": str(v.id), "nomor": v.nomor, "aktif": v.aktif, "catatan": v.catatan, "jumlah_item": len(v.item),
+            "dibuat_at": v.created_at.isoformat(), "dibuat_oleh": _nama(db, v.dibuat_oleh)}
+
+
+@router.get("/versi")
+def daftar_versi(db: Session = Depends(sesi_db), _: Pengguna = Depends(pengguna_saat_ini)) -> dict:
+    """Daftar versi daftar panduan, terbaru dulu (format sama dengan /api/checklist)."""
+    semua = db.scalars(select(PanduanKoleksiVersi).order_by(PanduanKoleksiVersi.nomor.desc())).all()
+    aktif = next((v for v in semua if v.aktif), None)
+    return {"aktif": _ringkas_koleksi(db, aktif) if aktif else None, "versi": [_ringkas_koleksi(db, v) for v in semua]}
+
+
+@router.get("/versi/{versi_id}")
+def isi_versi(versi_id: uuid.UUID, db: Session = Depends(sesi_db), _: Pengguna = Depends(pengguna_saat_ini)) -> dict:
+    """Isi satu versi: panduan beserta versi masing-masing yang tercatat saat itu. Error: 404."""
+    v = db.get(PanduanKoleksiVersi, versi_id)
+    if v is None:
+        raise Galat(404, "Versi panduan tidak ditemukan.")
+    return {**_ringkas_koleksi(db, v), "item": [_versi(i.panduan_versi) for i in v.item]}
 
 
 @router.post("")
@@ -62,6 +107,7 @@ def unggah(request: Request, files: list[UploadFile] = FormFile(...), db: Sessio
         db.flush()
         db.refresh(pd)
         hasil.append(_panduan(pd))
+    versi_koleksi_baru(db, p, "Unggah: " + ", ".join(h["judul"] for h in hasil))
     db.commit()
     return hasil
 
@@ -87,6 +133,7 @@ def ubah(panduan_id: uuid.UUID, request: Request, judul: str = Form(...), deskri
     pd.judul_terkini = v.judul
     catat(db, request, "PANDUAN_UBAH", "panduan", pd.id, sebelum={"versi": lama.nomor, "judul": lama.judul, "file": lama.nama_file},
           sesudah={"versi": v.nomor, "judul": v.judul, "file": nama_file})
+    versi_koleksi_baru(db, p, f"Ubah: {v.judul}" + (" (ganti file)" if file_id != lama.file_id else ""))
     db.commit()
     db.refresh(pd)
     return _panduan(pd)
@@ -100,6 +147,7 @@ def hapus(panduan_id: uuid.UUID, request: Request, db: Session = Depends(sesi_db
         raise Galat(404, "Panduan tidak ditemukan.")
     pd.dihapus_at = datetime.now(timezone.utc)
     catat(db, request, "PANDUAN_HAPUS", "panduan", pd.id, sebelum={"judul": pd.judul_terkini})
+    versi_koleksi_baru(db, p, f"Hapus: {pd.judul_terkini}")
     db.commit()
     return {"ok": True}
 

@@ -48,7 +48,7 @@ export type DetailReview = {
   usulan: { id: string; satker: string; tahun_anggaran: number; kode_ro: string; nama_ro: string; diarsipkan: boolean };
   revisi: { id: string; nomor: number; status: StatusRevisi; tor: Dok; rab: Dok };
   boleh_override: boolean;
-  acuan?: { checklist_versi: { id: string; nomor: number }; kategori_versi: { id: string; nomor: number };
+  acuan?: { checklist_versi: { id: string; nomor: number }; kategori_versi: { id: string; nomor: number }; panduan_versi: { id: string; nomor: number } | null;
     panduan: { judul: string; nomor: number; file_id: string; nama_file: string }[] };
   item?: ItemReview[];
   label?: { ai: string; hitung: string; final: string; diubah: boolean; tidak_konsisten: boolean; terpenuhi: number; total: number; override: Override | null };
@@ -66,4 +66,4 @@ export type RingkasVersi = { id: string; nomor: number; aktif: boolean; catatan:
 
 export type VersiPanduan = { id: string; nomor: number; judul: string; deskripsi: string | null; file_id: string; nama_file: string;
   status_proses: "BELUM" | "DIPROSES" | "SIAP" | "GAGAL"; pesan_gagal: string | null; jumlah_halaman: number; dibuat_at: string };
-export type Panduan = { id: string; judul: string; dihapus: boolean; terkini: VersiPanduan; versi: VersiPanduan[] };
+export type Panduan = { id: string; judul: string; terkini: VersiPanduan; versi: VersiPanduan[] };

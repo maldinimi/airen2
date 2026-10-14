@@ -173,7 +173,8 @@ Ekstraksi disimpan per `file` (berdasarkan SHA), sehingga file yang terbawa ke r
 | Tabel | Kolom penting | Kegunaan |
 | --- | --- | --- |
 | `review` | `revisi_id`, `trace_id`, `checklist_versi_id`, `kategori_versi_id`, `fingerprint`, `model_info` (jsonb: nama/versi model, versi prompt), `diajukan_oleh`, `mulai_at`, `selesai_at`, `progres` (jsonb: tahap & persen), `error_pesan`, `difinalkan_oleh`, `difinalkan_at` | Satu revisi = satu review sukses (§5). Review GAGAL boleh diulang → baris baru. `trace_id` muncul di semua log (§8.1). `fingerprint` dijelaskan di §4.6. |
-| `review_panduan` | `review_id`, `panduan_versi_id` | Panduan + versi yang berlaku saat review (D5, §7.3). |
+| `panduan_koleksi_versi`, `panduan_koleksi_item` | `nomor`, `aktif`, `catatan`; item → `panduan_versi_id` | Versi **daftar** panduan, setara versi checklist/kategori. Setiap unggah/ubah/hapus menyimpan snapshot versi terbaru tiap panduan yang tidak dihapus. `review.panduan_koleksi_versi_id` mencatat versi yang aktif saat review dikunci. |
+| `review_panduan` | `review_id`, `panduan_versi_id` | Panduan + versi yang benar-benar dipakai review (hanya yang SIAP) (D5, §7.3). |
 | `hasil_item` | `review_id`, `checklist_item_id`, `terpenuhi` (bool), `alasan`, `yang_kurang` | Penilaian AI per item (Screening 1, keluaran #2). |
 | `hasil_label` | `review_id`, `label_ai` | Label AI — **dihitung oleh kode** dari `hasil_item` (§7.1), bukan dari LLM. |
 | `hasil_kategori` | `review_id`, `kategori_item_id`, `alasan` | Screening 2. |

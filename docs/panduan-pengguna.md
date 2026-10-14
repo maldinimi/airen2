@@ -61,6 +61,7 @@ Lihat [panduan-admin.md](panduan-admin.md) untuk administrasi teknis. Fitur di a
   - **Ubah / ganti file** membuat versi baru.
   - **Hapus** hanya menyembunyikan panduan dari review berikutnya; file tetap ada untuk rujukan review lama.
   - Panduan berstatus Gagal dapat diproses ulang.
+  - Seperti Checklist dan Kategori, daftar panduan berversi. Setiap unggah, ubah, atau hapus otomatis membuat versi baru. Tab **Daftar versi** menampilkan isi tiap versi, dan halaman review menampilkan versi panduan yang dipakai (mis. "Panduan v3").
 - **Pengguna & Satker**: buat akun, pilih satu atau beberapa role, dan hubungkan Pengusul ke Satker (wajib). Anda juga dapat menonaktifkan akun atau mereset password. Satker tempat Reviewer bernaung mengusulkan dengan **akun Pengusul tersendiri**.
 - **Node AI**: memantau server AI yang terhubung, mendaftarkan node GPU sewaan (token sekali tampil), dan mencabut akses.
 - **Dashboard**: menampilkan panjang antrean, node aktif, dan perkiraan waktu selesai, sebagai dasar memutuskan penambahan atau pematian node GPU.
