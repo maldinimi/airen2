@@ -31,8 +31,8 @@ from app import model  # noqa: E402,F401
 from app.db import Base, SessionLokal, engine  # noqa: E402
 
 with engine.begin() as _c:
-    _c.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
-Base.metadata.drop_all(engine)
+    # Skema dibuat ulang dari nol (bukan drop_all): sisa tabel/constraint dari model versi lama ikut terhapus.
+    _c.execute(text("DROP SCHEMA public CASCADE; CREATE SCHEMA public; CREATE EXTENSION IF NOT EXISTS vector"))
 Base.metadata.create_all(engine)
 
 

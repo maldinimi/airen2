@@ -48,7 +48,7 @@ export type DetailReview = {
   usulan: { id: string; satker: string; tahun_anggaran: number; kode_ro: string; nama_ro: string; diarsipkan: boolean };
   revisi: { id: string; nomor: number; status: StatusRevisi; tor: Dok; rab: Dok };
   boleh_override: boolean;
-  acuan?: { checklist_versi: { id: string; nomor: number }; kategori_versi: { id: string; nomor: number }; panduan_versi: { id: string; nomor: number } | null;
+  acuan?: { checklist: { jumlah_item: number }; kategori_versi: { id: string; nomor: number }; panduan_versi: { id: string; nomor: number } | null;
     panduan: { judul: string; nomor: number; file_id: string; nama_file: string }[] };
   item?: ItemReview[];
   label?: { ai: string; hitung: string; final: string; diubah: boolean; tidak_konsisten: boolean; terpenuhi: number; total: number; override: Override | null };
@@ -59,7 +59,10 @@ export type DetailReview = {
   riwayat_override?: Override[];
 };
 
-export type ItemChecklist = { id?: string; kode: string; judul: string; kriteria: string; berlaku_untuk: "TOR" | "RAB" | "KEDUANYA" };
+export type ItemChecklist = {
+  id?: string; kode: string; judul: string; kriteria: string; berlaku_untuk: "TOR" | "RAB" | "TOR & RAB"; aktif: boolean;
+  diubah_oleh?: string | null; diubah_at?: string;
+};
 export type ItemKategori = { id?: string; kode: string; nama: string; definisi: string; diteruskan: boolean };
 export type Versi<T> = { id: string; nomor: number; aktif: boolean; catatan: string | null; dibuat_at: string; dibuat_oleh: string | null; item: T[] };
 export type RingkasVersi = { id: string; nomor: number; aktif: boolean; catatan: string | null; jumlah_item: number; dibuat_at: string; dibuat_oleh: string | null };
