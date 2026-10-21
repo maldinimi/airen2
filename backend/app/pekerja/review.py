@@ -20,7 +20,7 @@ from app.db import SessionLokal
 from app.konfigurasi import konfigurasi
 from app.log import log, set_konteks, tahap
 from app.model import (ChecklistItem, ChecklistVersi, Elemen, File, HasilItem, HasilKategori, KategoriVersi, Panduan,
-                       PanduanKoleksiVersi, PanduanVersi, Rekomendasi, Review, ReviewPanduan, Revisi, Rujukan, Usulan)
+                       Rekomendasi, Review, ReviewPanduan, Revisi, Rujukan, Usulan)
 from app.nilai_final import hitung_label
 from app.pekerja import prompt as pr
 from app.pekerja.llm import info_model
@@ -159,12 +159,14 @@ def kunci_acuan(db: Session, review: Review) -> None:
     review.kategori_versi_id = db.scalar(select(KategoriVersi.id).where(KategoriVersi.aktif))
     if review.checklist_versi_id is None or review.kategori_versi_id is None:
         raise GalatPengguna("Checklist atau kategori aktif belum diatur oleh Admin.")
-    review.panduan_koleksi_versi_id = db.scalar(select(PanduanKoleksiVersi.id).where(PanduanKoleksiVersi.aktif))
-    # Per panduan yang tidak dihapus: versi terbaru yang filenya sudah SIAP.
-    for pd in db.scalars(select(Panduan).where(Panduan.dihapus_at.is_(None))):
-        siap = [v for v in pd.versi if v.file.status_ekstraksi == "SIAP"]
-        if siap:
-            db.add(ReviewPanduan(review_id=review.id, panduan_versi_id=siap[-1].id))
+    # Per panduan berstatus Aktif: versi terbaru (terkini, lalu riwayat) yang filenya sudah SIAP.
+    # Disalin ke review_panduan agar catatan tetap benar walau panduan diedit kemudian (D5).
+    for pd in db.scalars(select(Panduan).where(Panduan.aktif)):
+        pilih = next(((n, x) for n, x in pd.daftar_versi() if x.file.status_ekstraksi == "SIAP"), None)
+        if pilih:
+            nomor, x = pilih
+            db.add(ReviewPanduan(review_id=review.id, panduan_id=pd.id, nomor=nomor, judul=x.panduan, file_id=x.file_id,
+                                 nama_file=x.nama_file))
     review.model_info = info_model()
 
 
@@ -203,11 +205,10 @@ def _jalankan(db: Session, review: Review, revisi: Revisi, llm) -> None:
     _progres(db, review, "Ekstraksi RAB", 15)
     proses_file(revisi.rab_file_id, llm)
 
-    pv = db.scalars(select(PanduanVersi).join(ReviewPanduan, ReviewPanduan.panduan_versi_id == PanduanVersi.id)
-                    .where(ReviewPanduan.review_id == review.id)).all()
+    pv = db.scalars(select(ReviewPanduan).where(ReviewPanduan.review_id == review.id)).all()
     tor, rab = db.get(File, revisi.tor_file_id), db.get(File, revisi.rab_file_id)
     review.fingerprint = fingerprint(tor.sha256, rab.sha256, review.checklist_versi_id, review.kategori_versi_id,
-                                     [v.id for v in pv], review.model_info)
+                                     [f"{v.panduan_id}:{v.nomor}" for v in pv], review.model_info)
     db.commit()
     asal = db.scalar(select(Review).where(Review.fingerprint == review.fingerprint, Review.status == "SELESAI",
                                           Review.id != review.id, Review.disalin_dari_id.is_(None))

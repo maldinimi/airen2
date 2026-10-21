@@ -13,7 +13,7 @@ from app.db import sesi_db
 from app.galat import Galat
 from app.keamanan import hash_token
 from app.layanan_review import node_aktif
-from app.model import File, Job, KategoriItem, NodeAI, PanduanVersi, Pengguna, Review, Revisi, Usulan
+from app.model import File, Job, KategoriItem, NodeAI, Panduan, PanduanHistori, Pengguna, Review, Revisi, Usulan
 from app.penyimpanan import path_absolut
 
 router = APIRouter(prefix="/api", tags=["dashboard & file"])
@@ -81,7 +81,7 @@ def unduh(file_id: uuid.UUID, db: Session = Depends(sesi_db), p: Pengguna = Depe
     f = db.get(File, file_id)
     if f is None:
         raise Galat(404, "File tidak ditemukan.")
-    boleh = db.scalar(select(PanduanVersi.id).where(PanduanVersi.file_id == f.id).limit(1)) is not None
+    boleh = any(db.scalar(select(kolom).where(kolom == f.id).limit(1)) for kolom in (Panduan.file_id, PanduanHistori.file_id))
     if not boleh:
         for u in db.scalars(select(Usulan).join(Revisi, Revisi.usulan_id == Usulan.id)
                             .where(or_(Revisi.tor_file_id == f.id, Revisi.rab_file_id == f.id)).distinct()):

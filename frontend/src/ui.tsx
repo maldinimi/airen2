@@ -7,9 +7,10 @@ import type { KategoriRingkas, StatusRevisi } from "./types";
 
 export const cx = (...k: (string | false | null | undefined)[]) => k.filter(Boolean).join(" ");
 
-type Varian = "utama" | "sekunder" | "bahaya" | "hantu" | "ubah";
+type Varian = "utama" | "lembut" | "sekunder" | "bahaya" | "hantu" | "ubah";
 const gayaTombol: Record<Varian, string> = {
   utama: "bg-utama-600 text-white hover:bg-utama-700 shadow-sm",
+  lembut: "bg-utama-100 text-utama-700 hover:brightness-95 shadow-sm",
   sekunder: "bg-white text-slate-700 border border-slate-300 hover:bg-slate-50 shadow-sm",
   bahaya: "bg-red-600 text-white hover:bg-red-700 shadow-sm",
   hantu: "text-slate-600 hover:bg-slate-100",
@@ -40,6 +41,17 @@ export function Kolom({ label, wajib, petunjuk, children }: { label: string; waj
       {children}
       {petunjuk && <span className="block text-xs text-slate-500">{petunjuk}</span>}
     </label>
+  );
+}
+
+/** Saklar Aktif/Nonaktif (role="switch" agar terbaca pembaca layar). */
+export function Saklar({ nyala, ubah, label, disabled }: { nyala: boolean; ubah: (v: boolean) => void; label: string; disabled?: boolean }) {
+  return (
+    <button type="button" role="switch" aria-checked={nyala} aria-label={label} disabled={disabled} onClick={() => ubah(!nyala)}
+      className={cx("relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-utama-500 disabled:opacity-50",
+        nyala ? "bg-emerald-500" : "bg-slate-300")}>
+      <span className={cx("inline-block size-4 rounded-full bg-white shadow transition-transform", nyala ? "translate-x-4" : "translate-x-0.5")} />
+    </button>
   );
 }
 
@@ -116,22 +128,57 @@ export function Kosong({ children }: { children: ReactNode }) {
   return <div className="rounded-xl border border-dashed border-slate-300 bg-white py-12 text-center text-sm text-slate-500">{children}</div>;
 }
 
-export function Dialog({ buka, ubahBuka, judul, children, lebar = "max-w-lg" }:
-  { buka: boolean; ubahBuka: (b: boolean) => void; judul: string; children: ReactNode; lebar?: string }) {
+/** `ikon` diisi → ikon di atas tengah, judul di tengah, tombol tutup di pojok kanan atas. */
+export function Dialog({ buka, ubahBuka, judul, children, lebar = "max-w-lg", ikon }:
+  { buka: boolean; ubahBuka: (b: boolean) => void; judul: string; children: ReactNode; lebar?: string; ikon?: ReactNode }) {
   return (
     <D.Root open={buka} onOpenChange={ubahBuka}>
       <D.Portal>
         <D.Overlay className="fixed inset-0 z-40 bg-slate-900/40" />
         <D.Content className={cx("fixed left-1/2 top-1/2 z-50 max-h-[90vh] w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-xl bg-white p-5 shadow-xl", lebar)}>
-          <div className="mb-4 flex items-start justify-between gap-4">
+          {ikon && <div className="mb-3 flex justify-center">{ikon}</div>}
+          <div className={cx("mb-4 flex items-start gap-4", ikon ? "justify-center text-center" : "justify-between")}>
             <D.Title className="text-lg font-semibold text-slate-900">{judul}</D.Title>
-            <D.Close className="rounded p-1 text-slate-500 hover:bg-slate-100" aria-label="Tutup"><X className="size-5" /></D.Close>
+            <D.Close className={cx("rounded p-1 text-slate-500 hover:bg-slate-100", !!ikon && "absolute right-4 top-4")} aria-label="Tutup"><X className="size-5" /></D.Close>
           </div>
           <D.Description className="sr-only">{judul}</D.Description>
           {children}
         </D.Content>
       </D.Portal>
     </D.Root>
+  );
+}
+
+/** Daftar label–nilai berbingkai (ringkasan isian, detail data). */
+export function Ringkasan({ baris }: { baris: [string, ReactNode][] }) {
+  return (
+    <dl className="divide-y divide-slate-100 rounded-lg border border-slate-200 text-sm">
+      {baris.map(([k, v]) => (
+        <div key={k} className="grid grid-cols-3 gap-2 px-3 py-2"><dt className="text-slate-500">{k}</dt><dd className="col-span-2 break-words">{v}</dd></div>
+      ))}
+    </dl>
+  );
+}
+
+/** Pop-up konfirmasi: ringkasan + pertanyaan. Bawaan = "Periksa kembali" sebelum menyimpan; `bahaya` = tindakan yang
+ *  tidak dapat dibatalkan (ikon peringatan, tombol merah). Tombol batal menutup tanpa melakukan apa pun. */
+export function Konfirmasi({ buka, baris, batal, ya, memuat, galat, bahaya, judul = "Periksa kembali",
+  pesan = "Apakah Anda yakin data di atas sudah benar dan ingin menyimpannya?", teksYa = "Ya, simpan", teksBatal = "Periksa kembali" }:
+  { buka: boolean; baris: [string, ReactNode][]; batal: () => void; ya: () => void; memuat?: boolean; galat?: string | null;
+    bahaya?: boolean; judul?: string; pesan?: ReactNode; teksYa?: string; teksBatal?: string }) {
+  return (
+    <Dialog buka={buka} ubahBuka={(b) => !b && !memuat && batal()} judul={judul}
+      ikon={bahaya && <span className="flex size-12 items-center justify-center rounded-full bg-red-100"><AlertTriangle className="size-6 text-red-600" aria-hidden /></span>}>
+      <div className="space-y-4">
+        <Ringkasan baris={baris} />
+        <p className="text-sm text-slate-700">{pesan}</p>
+        {galat && <Peringatan>{galat}</Peringatan>}
+        <div className="flex justify-end gap-2">
+          <Tombol varian="hantu" disabled={memuat} onClick={batal}>{teksBatal}</Tombol>
+          <Tombol varian={bahaya ? "bahaya" : "utama"} memuat={memuat} onClick={ya}>{teksYa}</Tombol>
+        </div>
+      </div>
+    </Dialog>
   );
 }
 

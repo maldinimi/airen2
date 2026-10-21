@@ -10,6 +10,7 @@ export default function Login() {
   const [password, setPassword] = useState("");
   const [galat, setGalat] = useState<string | null>(null);
   const [memuat, setMemuat] = useState(false);
+  const [lihat, setLihat] = useState(false);
   if (pengguna) return <Navigate to="/" replace />;
 
   const kirim = async (e: FormEvent) => {
@@ -32,7 +33,15 @@ export default function Login() {
         </div>
         {galat && <Peringatan>{galat}</Peringatan>}
         <Kolom label="Username"><Input autoFocus autoComplete="username" value={username} onChange={(e) => setUsername(e.target.value)} required /></Kolom>
-        <Kolom label="Password"><Input type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} required /></Kolom>
+        <Kolom label="Password">
+          <div className="relative">
+            <Input type={lihat ? "text" : "password"} autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} required className="pr-24" />
+            <button type="button" onClick={() => setLihat(!lihat)} aria-pressed={lihat}
+              className="absolute inset-y-0 right-0 px-3 text-xs font-medium text-utama-700 hover:text-utama-900">
+              {lihat ? "Sembunyikan" : "Lihat"}
+            </button>
+          </div>
+        </Kolom>
         <Tombol type="submit" memuat={memuat} className="w-full">Masuk</Tombol>
         <p className="text-center text-xs text-slate-400">Seluruh pemrosesan berjalan di lingkungan instansi.</p>
       </form>

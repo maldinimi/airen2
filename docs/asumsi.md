@@ -24,8 +24,17 @@ Hal kecil yang tidak diatur PRD/desain.md, diputuskan dengan asumsi wajar (CLAUD
 
 **Panduan**
 
-- Panduan yang dipakai review adalah versi terbaru berstatus SIAP dari setiap panduan yang tidak dihapus. Selama versi baru diproses, versi lama yang SIAP tetap dipakai — panduan tidak "hilang" sementara.
-- Unggah panduan maksimal 50 file sekaligus, masing-masing ≤100 MB; nginx menerima hingga 1 GB per permintaan — PRD §8 membatasi per file.
+- Panduan yang dipakai review adalah versi terbaru berstatus SIAP dari setiap panduan Aktif yang tidak dihapus. Selama versi baru diproses, versi lama yang SIAP tetap dipakai — panduan tidak "hilang" sementara.
+- Unggah panduan satu file per form (Nama Acuan, Deskripsi, Status diisi per file), menggantikan unggah banyak file sekaligus (PRD D2) — permintaan pemilik produk 2026-10-19; nama, deskripsi, dan status berlaku per file.
+- Panduan berstatus Nonaktif tetap tampil di daftar tetapi tidak dipakai review berikutnya; berbeda dengan Hapus yang menghapusnya permanen — permintaan saklar Aktif/Nonaktif.
+- Kolom "Last Modify By/Date" ditampilkan sebagai "Diinput Oleh"/"Tanggal Input" (input/perubahan terakhir) dan diperbarui saat unggah atau ubah (termasuk ganti status), bukan saat proses ulang — antarmuka wajib berbahasa Indonesia.
+- Form Edit panduan mengubah Nama Acuan, Deskripsi, dan Status; file tidak dapat diganti, baik dari antarmuka maupun API (PRD v2 D2; jalur ganti file di `PUT /api/panduan/{id}` dihapus 2026-10-21). Nama Acuan maksimal 500 karakter (batas kolom database). Untuk mengganti file: unggah panduan baru lalu nonaktifkan yang lama.
+- Menyimpan form Edit tanpa perubahan apa pun tidak membuat versi baru — menghindari versi kembar. Mengubah status saja membuat versi baru agar tampil di Panduan Histori (kolom Status).
+- Status per versi untuk data sebelum migrasi 0004 tidak diketahui: versi terbaru diisi status panduan saat itu, versi lama dianggap Aktif.
+- "Tanggal Input" di detail panduan = tanggal versi pertama (saat diunggah).
+- `panduan_histori` (dulu `panduan_versi`) menyalin utuh baris `panduan` sebelum perubahan: `created_by`/`created_date` = pengunggah & waktu unggah pertama (sama untuk semua versi), `updated_by`/`updated_date` = penginput & waktu versi itu — kolom permintaan pemilik produk 2026-10-21 sama di kedua tabel, dan riwayat tetap menampilkan siapa/kapan tiap versi diinput.
+- Migrasi 0007 mengisi `panduan.created_by` dari penginput versi 1 (riwayat tertua, atau penginput versi terkini bila belum ada riwayat), dan menghapus permanen sisa panduan *soft delete* lama — tanpa `dihapus_at` panduan itu akan tampil lagi; hapus sudah permanen sejak PRD v2 D6.
+- Nama kolom API (`judul`, `nomor`, `dibuat_oleh`, `dibuat_at`, `diubah_oleh`, `diubah_at`) tidak ikut diganti — permintaan hanya untuk kolom database; frontend tidak perlu diubah.
 
 **Data contoh & aturan AI**
 
@@ -53,3 +62,5 @@ Hal kecil yang tidak diatur PRD/desain.md, diputuskan dengan asumsi wajar (CLAUD
 - Daftar usulan menampilkan 25 baris per halaman — responsif untuk ±50 pengguna.
 - Image worker GPU berukuran besar (±15 GB: PyTorch + CUDA + Docling); siapkan disk kosong ≥60 GB untuk dev (image + model) — dependensi AI tidak dapat diperkecil tanpa mengorbankan B3.
 - WireGuard dikonfigurasi di host (wg-quick), bukan sebagai kontainer — butuh modul kernel/akses jaringan host; panduan ada di docs/instalasi-offline.md.
+- Mode dev & tiruan membuka akses database untuk GUI di `127.0.0.1:5433` lewat penerus TCP `db-gui` (scripts/teruskan_tcp.py, image backend yang sudah ada). Kontainer `db` tetap hanya di jaringan internal: menyambungkannya langsung ke jaringan lain memberi jalur ke internet di Docker Desktop (opsi tanpa NAT tidak dihormati), melanggar B1.
+- Setelah migrasi 0005, review berikutnya untuk TOR/RAB yang identik tidak menyalin hasil review sebelum migrasi (kunci fingerprint panduan berubah menjadi `panduan_id:nomor`), melainkan dijalankan ulang sekali.

@@ -48,7 +48,7 @@ export type DetailReview = {
   usulan: { id: string; satker: string; tahun_anggaran: number; kode_ro: string; nama_ro: string; diarsipkan: boolean };
   revisi: { id: string; nomor: number; status: StatusRevisi; tor: Dok; rab: Dok };
   boleh_override: boolean;
-  acuan?: { checklist_versi: { id: string; nomor: number }; kategori_versi: { id: string; nomor: number }; panduan_versi: { id: string; nomor: number } | null;
+  acuan?: { checklist_versi: { id: string; nomor: number }; kategori_versi: { id: string; nomor: number };
     panduan: { judul: string; nomor: number; file_id: string; nama_file: string }[] };
   item?: ItemReview[];
   label?: { ai: string; hitung: string; final: string; diubah: boolean; tidak_konsisten: boolean; terpenuhi: number; total: number; override: Override | null };
@@ -64,6 +64,6 @@ export type ItemKategori = { id?: string; kode: string; nama: string; definisi: 
 export type Versi<T> = { id: string; nomor: number; aktif: boolean; catatan: string | null; dibuat_at: string; dibuat_oleh: string | null; item: T[] };
 export type RingkasVersi = { id: string; nomor: number; aktif: boolean; catatan: string | null; jumlah_item: number; dibuat_at: string; dibuat_oleh: string | null };
 
-export type VersiPanduan = { id: string; nomor: number; judul: string; deskripsi: string | null; file_id: string; nama_file: string;
-  status_proses: "BELUM" | "DIPROSES" | "SIAP" | "GAGAL"; pesan_gagal: string | null; jumlah_halaman: number; dibuat_at: string };
-export type Panduan = { id: string; judul: string; terkini: VersiPanduan; versi: VersiPanduan[] };
+export type VersiPanduan = { id: string; nomor: number; judul: string; deskripsi: string | null; file_id: string; nama_file: string; aktif: boolean;
+  status_proses: "BELUM" | "DIPROSES" | "SIAP" | "GAGAL"; pesan_gagal: string | null; jumlah_halaman: number; dibuat_at: string; dibuat_oleh: string | null };
+export type Panduan = { id: string; judul: string; aktif: boolean; diubah_oleh: string | null; diubah_at: string; terkini: VersiPanduan; versi: VersiPanduan[] };

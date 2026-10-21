@@ -127,7 +127,7 @@ export default function ReviewDetail() {
               {kat.override && <p className="text-xs text-ubah-700">Alasan override: {kat.override.alasan} — {kat.override.oleh}</p>}
             </div>
             <div className="p-4 text-xs text-slate-500">
-              <span className="font-semibold uppercase">Acuan</span>: Checklist v{r.acuan!.checklist_versi.nomor} · Kategori v{r.acuan!.kategori_versi.nomor} · {r.acuan!.panduan_versi && `Panduan v${r.acuan!.panduan_versi.nomor} · `}{r.acuan!.panduan.length} panduan
+              <span className="font-semibold uppercase">Acuan</span>: Checklist v{r.acuan!.checklist_versi.nomor} · Kategori v{r.acuan!.kategori_versi.nomor} · {r.acuan!.panduan.length} panduan
               <Lipat judul="Lihat panduan yang dipakai">
                 <ul className="space-y-1">{r.acuan!.panduan.map((p) => (
                   <li key={p.file_id}><button className="text-left text-utama-600 hover:underline" onClick={() => bukaDok(p.file_id, `Panduan — ${p.judul}`)}>{p.judul} (v{p.nomor})</button></li>

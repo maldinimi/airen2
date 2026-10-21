@@ -11,7 +11,8 @@ pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
 
 export type Sorotan = { halaman: number; bbox: number[] | null } | null;
 
-export default function PdfViewer({ fileId, judul, sorot }: { fileId: string; judul?: string; sorot?: Sorotan }) {
+/** `fileId` = PDF di server (berizin); `file` = PDF lokal yang belum diunggah (pratinjau sebelum unggah). */
+export default function PdfViewer({ fileId, file, judul, sorot }: { fileId?: string; file?: File; judul?: string; sorot?: Sorotan }) {
   const [doc, setDoc] = useState<PDFDocumentProxy | null>(null);
   const [galat, setGalat] = useState<string | null>(null);
   const [hlm, setHlm] = useState(sorot?.halaman ?? 1);
@@ -23,12 +24,18 @@ export default function PdfViewer({ fileId, judul, sorot }: { fileId: string; ju
 
   useEffect(() => {
     setDoc(null); setGalat(null);
-    const tugas = pdfjs.getDocument({ url: urlFile(fileId), withCredentials: true, isEvalSupported: false,
-      cMapUrl: "/pdfjs/cmaps/", cMapPacked: true, standardFontDataUrl: "/pdfjs/standard_fonts/" });
+    const opsi = { isEvalSupported: false, cMapUrl: "/pdfjs/cmaps/", cMapPacked: true, standardFontDataUrl: "/pdfjs/standard_fonts/" };
+    // File lokal dibaca sebagai data, bukan URL blob: — CSP produksi (connect-src 'self') memblokir blob:.
+    const sumber: Promise<Parameters<typeof pdfjs.getDocument>[0]> = file
+      ? file.arrayBuffer().then((b) => ({ ...opsi, data: new Uint8Array(b) }))
+      : Promise.resolve({ ...opsi, url: urlFile(fileId!), withCredentials: true });
     let batal = false;
-    tugas.promise.then((d) => !batal && setDoc(d), () => !batal && setGalat("PDF tidak dapat dibuka atau Anda tidak memiliki akses."));
-    return () => { batal = true; tugas.destroy(); };
-  }, [fileId]);
+    let tugas: ReturnType<typeof pdfjs.getDocument> | undefined;
+    sumber.then((s) => { if (batal) return; tugas = pdfjs.getDocument(s); return tugas.promise; })
+      .then((d) => { if (d && !batal) setDoc(d); },
+        () => !batal && setGalat(file ? "PDF tidak dapat dibuka. Periksa kembali file Anda." : "PDF tidak dapat dibuka atau Anda tidak memiliki akses."));
+    return () => { batal = true; tugas?.destroy(); };
+  }, [fileId, file]);
 
   useEffect(() => { if (sorot?.halaman) setHlm(sorot.halaman); }, [sorot]);
 
@@ -77,7 +84,7 @@ export default function PdfViewer({ fileId, judul, sorot }: { fileId: string; ju
             onChange={(e) => { const n = Number(e.target.value); if (n >= 1 && (!doc || n <= doc.numPages)) setHlm(n); }} /> / {doc?.numPages ?? "…"}
         </span>
         <Tombol varian="hantu" kecil disabled={!doc || hlm >= doc.numPages} onClick={() => setHlm(hlm + 1)} aria-label="Halaman berikutnya"><ChevronRight className="size-4" /></Tombol>
-        <a href={urlFile(fileId)} target="_blank" rel="noreferrer" className="rounded p-1.5 text-slate-600 hover:bg-slate-100" title="Buka di tab baru"><Download className="size-4" /></a>
+        {fileId && <a href={urlFile(fileId)} target="_blank" rel="noreferrer" className="rounded p-1.5 text-slate-600 hover:bg-slate-100" title="Buka di tab baru"><Download className="size-4" /></a>}
       </div>
       <div ref={wadah} className="min-h-0 flex-1 overflow-auto bg-slate-200 p-px">
         {!doc && <Memuat teks="Membuka PDF…" />}

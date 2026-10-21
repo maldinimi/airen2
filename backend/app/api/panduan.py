@@ -1,21 +1,23 @@
-"""Endpoint Modul D — Panduan (berversi, soft delete, status pemrosesan).
+"""Endpoint Modul D — Panduan (berversi, status Aktif/Nonaktif, hapus permanen D6, status pemrosesan).
 
-Dua tingkat versi: tiap panduan punya versi sendiri (ganti judul/file), dan daftar panduan secara
-keseluruhan punya versi seperti checklist/kategori — setiap unggah/ubah/hapus menyimpan snapshot baru.
+Tiap panduan berversi: isi terkini di tabel `panduan`, versi sebelumnya (riwayat) di `panduan_histori`.
+Panduan + versi yang dipakai tiap review disalin ke `review_panduan` (D5).
 """
+import os
 import uuid
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, File as FormFile, Form, Request, UploadFile
-from sqlalchemy import func, select, update
+from sqlalchemy import delete, or_, select, text
 from sqlalchemy.orm import Session
 
 from app.akses import ADMIN, pengguna_saat_ini, wajib_role
 from app.audit import catat
 from app.db import sesi_db
 from app.galat import Galat
-from app.model import File, Job, Panduan, PanduanKoleksiItem, PanduanKoleksiVersi, PanduanVersi, Pengguna
-from app.penyimpanan import simpan_unggahan
+from app.model import (Chunk, Elemen, File, Halaman, Job, Panduan, PanduanHistori, Pengguna, Review, ReviewPanduan, Revisi,
+                       Rujukan)
+from app.penyimpanan import path_absolut, simpan_unggahan
 
 router = APIRouter(prefix="/api/panduan", tags=["panduan"])
 
@@ -28,112 +30,84 @@ def antrekan_ekstraksi(db: Session, f: File) -> None:
             db.add(Job(jenis="PROSES_PANDUAN", ref_id=f.id, trace_id=uuid.uuid4().hex))
 
 
-def versi_koleksi_baru(db: Session, p: Pengguna, catatan: str) -> PanduanKoleksiVersi:
-    """Snapshot daftar panduan saat ini (versi terbaru tiap panduan yang tidak dihapus) sebagai versi baru.
-    Versi lama hanya dinonaktifkan, isinya tidak diubah."""
-    db.flush()
-    db.execute(select(PanduanKoleksiVersi.id).with_for_update())  # serialisasi penomoran versi
-    nomor = (db.scalar(select(func.max(PanduanKoleksiVersi.nomor))) or 0) + 1
-    db.execute(update(PanduanKoleksiVersi).where(PanduanKoleksiVersi.aktif).values(aktif=False))
-    v = PanduanKoleksiVersi(nomor=nomor, aktif=True, dibuat_oleh=p.id, catatan=catatan)
-    db.add(v)
-    db.flush()
-    daftar = db.scalars(select(Panduan).where(Panduan.dihapus_at.is_(None)).order_by(Panduan.judul_terkini))
-    for urutan, pd in enumerate(daftar, 1):
-        db.refresh(pd, ["versi"])
-        db.add(PanduanKoleksiItem(versi_id=v.id, urutan=urutan, panduan_versi_id=pd.versi[-1].id))
-    return v
+def _nama_acuan(judul: str) -> str:
+    """Nama Acuan wajib, maks. 500 karakter (kolom `panduan`). Dicek sebelum PDF disimpan agar tidak ada file yatim."""
+    judul = judul.strip()
+    if not judul or len(judul) > 500:
+        raise Galat(400, "Nama acuan wajib diisi, maksimal 500 karakter.")
+    return judul
 
 
-def _versi(v: PanduanVersi) -> dict:
-    return {"id": str(v.id), "nomor": v.nomor, "judul": v.judul, "deskripsi": v.deskripsi, "file_id": str(v.file_id),
-            "nama_file": v.nama_file, "status_proses": v.file.status_ekstraksi, "pesan_gagal": v.file.pesan_ekstraksi,
-            "jumlah_halaman": v.file.jumlah_halaman, "dibuat_at": v.created_at.isoformat()}
+def _tandai(pd: Panduan, p: Pengguna) -> None:
+    """Catat pengubah & waktu perubahan terakhir (kolom "Diinput Oleh"/"Tanggal Input" di daftar panduan)."""
+    pd.updated_by, pd.updated_date = p.id, datetime.now(timezone.utc)
+
+
+def _versi(nomor: int, x: Panduan | PanduanHistori) -> dict:
+    f = x.file
+    return {"id": str(x.id), "nomor": nomor, "judul": x.panduan, "deskripsi": x.deskripsi, "file_id": str(f.id),
+            "nama_file": x.nama_file, "aktif": x.aktif, "status_proses": f.status_ekstraksi, "pesan_gagal": f.pesan_ekstraksi,
+            "jumlah_halaman": f.jumlah_halaman, "dibuat_at": x.updated_date.isoformat(),
+            "dibuat_oleh": x.pengubah.nama if x.pengubah else None}
 
 
 def _panduan(p: Panduan) -> dict:
-    terkini = p.versi[-1]
-    return {"id": str(p.id), "judul": terkini.judul, "terkini": _versi(terkini),
-            "versi": [_versi(v) for v in reversed(p.versi)]}
+    """Bentuk respons tetap: `versi` = [terkini (dari `panduan`), lalu riwayat terbaru dulu (dari `panduan_histori`)]."""
+    versi = [_versi(n, x) for n, x in p.daftar_versi()]
+    terkini = versi[0]
+    return {"id": str(p.id), "judul": p.panduan, "aktif": p.aktif, "diubah_oleh": terkini["dibuat_oleh"],
+            "diubah_at": terkini["dibuat_at"], "terkini": terkini, "versi": versi}
 
 
 @router.get("")
 def daftar(db: Session = Depends(sesi_db), _: Pengguna = Depends(pengguna_saat_ini)) -> list[dict]:
     """Daftar panduan beserta versi & status proses. Semua pengguna dapat membaca panduan (D3)."""
-    kueri = select(Panduan).where(Panduan.dihapus_at.is_(None)).order_by(Panduan.judul_terkini)
+    kueri = select(Panduan).order_by(Panduan.panduan)
     return [_panduan(p) for p in db.scalars(kueri)]
 
 
-def _nama(db: Session, pid) -> str | None:
-    return db.get(Pengguna, pid).nama if pid else None
-
-
-def _ringkas_koleksi(db: Session, v: PanduanKoleksiVersi) -> dict:
-    return {"id": str(v.id), "nomor": v.nomor, "aktif": v.aktif, "catatan": v.catatan, "jumlah_item": len(v.item),
-            "dibuat_at": v.created_at.isoformat(), "dibuat_oleh": _nama(db, v.dibuat_oleh)}
-
-
-@router.get("/versi")
-def daftar_versi(db: Session = Depends(sesi_db), _: Pengguna = Depends(pengguna_saat_ini)) -> dict:
-    """Daftar versi daftar panduan, terbaru dulu (format sama dengan /api/checklist)."""
-    semua = db.scalars(select(PanduanKoleksiVersi).order_by(PanduanKoleksiVersi.nomor.desc())).all()
-    aktif = next((v for v in semua if v.aktif), None)
-    return {"aktif": _ringkas_koleksi(db, aktif) if aktif else None, "versi": [_ringkas_koleksi(db, v) for v in semua]}
-
-
-@router.get("/versi/{versi_id}")
-def isi_versi(versi_id: uuid.UUID, db: Session = Depends(sesi_db), _: Pengguna = Depends(pengguna_saat_ini)) -> dict:
-    """Isi satu versi: panduan beserta versi masing-masing yang tercatat saat itu. Error: 404."""
-    v = db.get(PanduanKoleksiVersi, versi_id)
-    if v is None:
-        raise Galat(404, "Versi panduan tidak ditemukan.")
-    return {**_ringkas_koleksi(db, v), "item": [_versi(i.panduan_versi) for i in v.item]}
-
-
 @router.post("")
-def unggah(request: Request, files: list[UploadFile] = FormFile(...), db: Session = Depends(sesi_db),
-           p: Pengguna = Depends(wajib_role(ADMIN))) -> list[dict]:
-    """Unggah satu atau beberapa PDF panduan sekaligus; judul awal = nama file (D2)."""
-    hasil = []
-    for unggahan in files:
-        f, nama = simpan_unggahan(db, unggahan)
-        judul = nama.rsplit(".", 1)[0]
-        pd = Panduan(judul_terkini=judul)
-        db.add(pd)
-        db.flush()
-        db.add(PanduanVersi(panduan_id=pd.id, nomor=1, judul=judul, file_id=f.id, nama_file=nama, dibuat_oleh=p.id))
-        antrekan_ekstraksi(db, f)
-        catat(db, request, "PANDUAN_UNGGAH", "panduan", pd.id, sesudah={"judul": judul, "file": nama, "sha256": f.sha256})
-        db.flush()
-        db.refresh(pd)
-        hasil.append(_panduan(pd))
-    versi_koleksi_baru(db, p, "Unggah: " + ", ".join(h["judul"] for h in hasil))
+def unggah(request: Request, file: UploadFile = FormFile(...), judul: str = Form(...), deskripsi: str | None = Form(None),
+           aktif: bool = Form(True), db: Session = Depends(sesi_db), p: Pengguna = Depends(wajib_role(ADMIN))) -> dict:
+    """Unggah satu PDF panduan beserta nama, deskripsi, dan status (D2). Error: 400 Nama Acuan tidak valid / file tidak valid."""
+    judul = _nama_acuan(judul)
+    f, nama = simpan_unggahan(db, file)
+    pd = Panduan(panduan=judul, deskripsi=(deskripsi or "").strip() or None, file_id=f.id, nama_file=nama,
+                 aktif=aktif, created_by=p.id, updated_by=p.id)
+    db.add(pd)
+    db.flush()
+    antrekan_ekstraksi(db, f)
+    catat(db, request, "PANDUAN_UNGGAH", "panduan", pd.id, sesudah={"judul": judul, "file": nama, "sha256": f.sha256, "aktif": aktif})
     db.commit()
-    return hasil
+    db.refresh(pd)
+    return _panduan(pd)
 
 
 @router.put("/{panduan_id}")
 def ubah(panduan_id: uuid.UUID, request: Request, judul: str = Form(...), deskripsi: str | None = Form(None),
-         file: UploadFile | None = FormFile(None), db: Session = Depends(sesi_db), p: Pengguna = Depends(wajib_role(ADMIN))) -> dict:
-    """Ubah judul/deskripsi dan/atau ganti file → versi baru. Versi lama tetap ada (D5, D6)."""
-    pd = db.get(Panduan, panduan_id)
-    if pd is None or pd.dihapus_at:
+         aktif: bool | None = Form(None), db: Session = Depends(sesi_db), p: Pengguna = Depends(wajib_role(ADMIN))) -> dict:
+    """Ubah Nama Acuan/deskripsi/status (`aktif`, kosong = tetap) → isi lama disalin ke riwayat (`panduan_histori`),
+    lalu `panduan` diperbarui sebagai versi baru (D9). File tidak dapat diganti (D2): unggah panduan baru.
+    Yang Nonaktif tidak dipakai review berikutnya. Tanpa perubahan apa pun = tidak membuat versi. Error: 400 Nama Acuan tidak valid, 404."""
+    # Kunci baris: dua edit bersamaan tidak boleh menyalin versi yang sama dua kali (nomor versi dihitung dari riwayat).
+    pd = db.get(Panduan, panduan_id, with_for_update={"of": Panduan})
+    if pd is None:
         raise Galat(404, "Panduan tidak ditemukan.")
-    if not judul.strip():
-        raise Galat(400, "Judul wajib diisi.")
-    lama = pd.versi[-1]
-    file_id, nama_file = lama.file_id, lama.nama_file
-    if file is not None and file.filename:
-        f, nama_file = simpan_unggahan(db, file)
-        file_id = f.id
-        antrekan_ekstraksi(db, f)
-    v = PanduanVersi(panduan_id=pd.id, nomor=lama.nomor + 1, judul=judul.strip(), deskripsi=(deskripsi or "").strip() or None,
-                     file_id=file_id, nama_file=nama_file, dibuat_oleh=p.id)
-    db.add(v)
-    pd.judul_terkini = v.judul
-    catat(db, request, "PANDUAN_UBAH", "panduan", pd.id, sebelum={"versi": lama.nomor, "judul": lama.judul, "file": lama.nama_file},
-          sesudah={"versi": v.nomor, "judul": v.judul, "file": nama_file})
-    versi_koleksi_baru(db, p, f"Ubah: {v.judul}" + (" (ganti file)" if file_id != lama.file_id else ""))
+    judul, deskripsi = _nama_acuan(judul), (deskripsi or "").strip() or None
+    aktif = pd.aktif if aktif is None else aktif
+    if (judul, deskripsi, aktif) == (pd.panduan, pd.deskripsi, pd.aktif):
+        return _panduan(pd)
+    # Baris terkini disalin utuh ke riwayat (termasuk pengunggah pertama & penginput versi itu), lalu panduan memuat versi baru.
+    nomor_lama = len(pd.versi) + 1
+    lama = PanduanHistori(created_by=pd.created_by, created_date=pd.created_date, updated_by=pd.updated_by,
+                        updated_date=pd.updated_date, panduan_id=pd.id, panduan=pd.panduan, aktif=pd.aktif,
+                        file_id=pd.file_id, nama_file=pd.nama_file, deskripsi=pd.deskripsi)
+    db.add(lama)
+    pd.panduan, pd.deskripsi, pd.aktif = judul, deskripsi, aktif
+    _tandai(pd, p)
+    catat(db, request, "PANDUAN_UBAH", "panduan", pd.id,
+          sebelum={"versi": nomor_lama, "judul": lama.panduan, "aktif": lama.aktif},
+          sesudah={"versi": nomor_lama + 1, "judul": judul, "aktif": aktif})
     db.commit()
     db.refresh(pd)
     return _panduan(pd)
@@ -141,14 +115,47 @@ def ubah(panduan_id: uuid.UUID, request: Request, judul: str = Form(...), deskri
 
 @router.delete("/{panduan_id}")
 def hapus(panduan_id: uuid.UUID, request: Request, db: Session = Depends(sesi_db), p: Pengguna = Depends(wajib_role(ADMIN))) -> dict:
-    """Soft delete: panduan tidak dipakai review berikutnya, tetapi file & versinya tetap ada (D6)."""
+    """Hapus PERMANEN panduan beserta semua versinya; file PDF + hasil ekstraksinya ikut dihapus bila tidak dipakai data lain.
+
+    Keputusan pemilik produk 2026-10-19 (PRD v2 D6, lihat desain.md §7 no. 14): review lama kehilangan
+    catatan panduan ini dan rujukan dasar panduannya. Error: 404; 409 bila dipakai review yang berjalan / file sedang diproses.
+    """
     pd = db.get(Panduan, panduan_id)
-    if pd is None or pd.dihapus_at:
+    if pd is None:
         raise Galat(404, "Panduan tidak ditemukan.")
-    pd.dihapus_at = datetime.now(timezone.utc)
-    catat(db, request, "PANDUAN_HAPUS", "panduan", pd.id, sebelum={"judul": pd.judul_terkini})
-    versi_koleksi_baru(db, p, f"Hapus: {pd.judul_terkini}")
+    jumlah_versi, file_ids, judul = len(pd.versi) + 1, {pd.file_id, *(v.file_id for v in pd.versi)}, pd.panduan
+    # ponytail: review yang mengunci acuan bersamaan dengan hapus ini bisa gagal (FK); cukup diajukan ulang.
+    if db.scalar(select(Review.id).join(ReviewPanduan, ReviewPanduan.review_id == Review.id)
+                 .where(ReviewPanduan.panduan_id == pd.id, Review.status.in_(("ANTRE", "DIPROSES"))).limit(1)):
+        raise Galat(409, "Panduan sedang dipakai review yang berjalan. Coba lagi setelah review selesai.")
+    for fid in file_ids:  # worker memegang kunci yang sama selama ekstraksi (pekerja/proses_file.py)
+        if not db.scalar(text("SELECT pg_try_advisory_xact_lock(hashtext(:id))"), {"id": str(fid)}):
+            raise Galat(409, "File panduan sedang diproses. Coba lagi setelah selesai.")
+    for tabel in (ReviewPanduan, PanduanHistori):
+        db.execute(delete(tabel).where(tabel.panduan_id == pd.id))
+    db.execute(delete(Panduan).where(Panduan.id == pd.id))
+    path_dihapus = []
+    for fid in file_ids:
+        # File identik (SHA sama) bisa dipakai panduan lain (terkini/riwayat/salinan) atau TOR/RAB — biarkan.
+        if any(db.scalar(select(kolom).where(kolom == fid).limit(1)) for kolom in (
+                Panduan.file_id, PanduanHistori.file_id, ReviewPanduan.file_id)) or db.scalar(
+                select(Revisi.id).where(or_(Revisi.tor_file_id == fid, Revisi.rab_file_id == fid)).limit(1)):
+            continue
+        db.execute(delete(Rujukan).where(Rujukan.elemen_id.in_(select(Elemen.id).where(Elemen.file_id == fid))))
+        for tabel in (Chunk, Elemen, Halaman):
+            db.execute(delete(tabel).where(tabel.file_id == fid))
+        db.execute(delete(Job).where(Job.ref_id == fid))
+        f = db.get(File, fid)
+        path_dihapus.append(path_absolut(f))
+        db.delete(f)
+    catat(db, request, "PANDUAN_HAPUS", "panduan", panduan_id,
+          sebelum={"judul": judul, "jumlah_versi": jumlah_versi, "file_dihapus": len(path_dihapus)})
     db.commit()
+    for path in path_dihapus:  # setelah commit: bila transaksi gagal, PDF tetap ada
+        try:
+            os.remove(path)
+        except FileNotFoundError:
+            pass
     return {"ok": True}
 
 
@@ -158,7 +165,7 @@ def proses_ulang(panduan_id: uuid.UUID, request: Request, db: Session = Depends(
     pd = db.get(Panduan, panduan_id)
     if pd is None:
         raise Galat(404, "Panduan tidak ditemukan.")
-    f = pd.versi[-1].file
+    f = pd.file
     if f.status_ekstraksi != "GAGAL":
         raise Galat(409, "Hanya panduan berstatus Gagal yang dapat diproses ulang.")
     antrekan_ekstraksi(db, f)

@@ -75,6 +75,13 @@ def tandai_review_gagal(db, job: Job) -> None:
         st.pindah_status(revisi, st.GAGAL)
 
 
+def tandai_file_gagal(db, job: Job) -> None:
+    """File yang job-nya gagal tidak boleh tertinggal DIPROSES: "Proses ulang" panduan hanya untuk status GAGAL."""
+    db.execute(update(File).where(File.id == job.ref_id, File.status_ekstraksi == "DIPROSES").values(
+        status_ekstraksi="GAGAL",
+        pesan_ekstraksi="Pemrosesan file terhenti. Coba proses ulang; bila gagal lagi, periksa file (mis. ukurannya terlalu besar)."))
+
+
 def lepas_job_macet() -> None:
     """Kembalikan job yang worker-nya mati (detak berhenti) ke antrean; tandai gagal bila terlalu sering."""
     batas = datetime.now(timezone.utc) - timedelta(minutes=konfigurasi().job_batas_kunci_menit)
@@ -83,6 +90,8 @@ def lepas_job_macet() -> None:
             job.status = "ANTRE" if job.percobaan < MAKS_PERCOBAAN else "GAGAL"
             if job.status == "GAGAL" and job.jenis == "REVIEW":
                 tandai_review_gagal(db, job)
+            if job.status == "GAGAL" and job.jenis == "PROSES_PANDUAN":
+                tandai_file_gagal(db, job)
             log(logger, logging.WARNING, "job macet dilepas", job_id=str(job.id), status_baru=job.status, trace_id_job=job.trace_id)
         db.commit()
 
@@ -118,7 +127,7 @@ def jalankan_job(job: Job, llm) -> None:
             if status == "GAGAL" and job.jenis == "REVIEW":  # jaga-jaga bila review belum sempat ditandai gagal
                 tandai_review_gagal(db, job)
             if status == "GAGAL" and job.jenis == "PROSES_PANDUAN":
-                db.execute(update(File).where(File.id == job.ref_id, File.status_ekstraksi == "DIPROSES").values(status_ekstraksi="GAGAL"))
+                tandai_file_gagal(db, job)
             db.commit()
         bersihkan_konteks()
 

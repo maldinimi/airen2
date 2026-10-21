@@ -15,8 +15,8 @@ from app.akses import boleh_kelola_usulan, boleh_lihat_semua, pastikan
 from app.audit import catat
 from app.galat import Galat
 from app.model import (CatatanReviewer, ChecklistItem, ChecklistVersi, Elemen, HasilItem, HasilKategori, Job,
-                       KategoriItem, KategoriVersi, NodeAI, Override, PanduanVersi, Pengguna, Rekomendasi, Review,
-                       PanduanKoleksiVersi, ReviewPanduan, Revisi, Rujukan, Usulan)
+                       KategoriItem, KategoriVersi, NodeAI, Override, Pengguna, Rekomendasi, Review,
+                       ReviewPanduan, Revisi, Rujukan, Usulan)
 from app.nilai_final import NilaiFinal, hitung_nilai_final
 from app.pekerja.rujukan import nomor_kalimat
 
@@ -136,9 +136,7 @@ def _rujukan(db: Session, review: Review, revisi: Revisi, pemilik_ids: list) -> 
     baris = db.execute(select(Rujukan, Elemen).join(Elemen, Elemen.id == Rujukan.elemen_id)
                        .where(Rujukan.review_id == review.id, Rujukan.pemilik_id.in_(pemilik_ids))
                        .order_by(Rujukan.urutan)).all()
-    panduan = {pv.file_id: pv for pv in db.scalars(
-        select(PanduanVersi).join(ReviewPanduan, ReviewPanduan.panduan_versi_id == PanduanVersi.id)
-        .where(ReviewPanduan.review_id == review.id))}
+    panduan = {pv.file_id: pv for pv in db.scalars(select(ReviewPanduan).where(ReviewPanduan.review_id == review.id))}
     hasil: dict[str, list[dict]] = {}
     for r, e in baris:
         if e.file_id == revisi.tor_file_id:
@@ -193,13 +191,10 @@ def detail_review(db: Session, review: Review, p: Pengguna) -> dict:
 
     cv = db.get(ChecklistVersi, review.checklist_versi_id)
     kv = db.get(KategoriVersi, review.kategori_versi_id)
-    pk = db.get(PanduanKoleksiVersi, review.panduan_koleksi_versi_id) if review.panduan_koleksi_versi_id else None
-    panduan = db.scalars(select(PanduanVersi).join(ReviewPanduan, ReviewPanduan.panduan_versi_id == PanduanVersi.id)
-                         .where(ReviewPanduan.review_id == review.id).order_by(PanduanVersi.judul)).all()
+    panduan = db.scalars(select(ReviewPanduan).where(ReviewPanduan.review_id == review.id).order_by(ReviewPanduan.judul)).all()
     data["acuan"] = {
         "checklist_versi": {"id": str(cv.id), "nomor": cv.nomor},
         "kategori_versi": {"id": str(kv.id), "nomor": kv.nomor},
-        "panduan_versi": {"id": str(pk.id), "nomor": pk.nomor} if pk else None,
         "panduan": [{"judul": pv.judul, "nomor": pv.nomor, "file_id": str(pv.file_id), "nama_file": pv.nama_file} for pv in panduan],
     }
 

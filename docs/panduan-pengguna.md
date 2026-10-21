@@ -57,11 +57,16 @@ Lihat [panduan-admin.md](panduan-admin.md) untuk administrasi teknis. Fitur di a
 
 - **Checklist / Kategori**: tambah, ubah, hapus, dan urutkan item pada draf, lalu klik **Simpan sebagai versi baru** (sertakan catatan perubahan). Tab **Daftar versi** menampilkan isi setiap versi. Review yang sedang berjalan atau sudah selesai tidak terpengaruh.
   - Kategori dengan centang "Diteruskan" dihapus akan ditandai "Tidak diteruskan".
-- **Panduan**: unggah satu atau beberapa PDF. Statusnya **Antre → Diproses → Siap**; hanya panduan **Siap** yang dipakai review berikutnya.
-  - **Ubah / ganti file** membuat versi baru.
-  - **Hapus** hanya menyembunyikan panduan dari review berikutnya; file tetap ada untuk rujukan review lama.
+- **Panduan**: ditampilkan sebagai tabel (No, Nama Acuan, Deskripsi, Status, Diinput Oleh, Tanggal Input, Aksi; keduanya menunjukkan input/perubahan terakhir). Klik **Nama Acuan** untuk membuka PDF-nya. Klik judul kolom **Status** lalu pilih urutan: **Default** (urut nama), **Aktif** (Aktif di atas), atau **Nonaktif** (Nonaktif di atas).
+  - Kolom **Aksi** berisi ikon (arahkan kursor untuk melihat namanya): **Lihat detail** (ikon mata, semua pengguna) membuka halaman berisi data lengkap panduan dan **Panduan Histori**-nya; **Edit** (ikon pensil) dan **Hapus** (ikon tempat sampah) khusus Admin.
+  - **Unggah Panduan** membuka halaman form: Nama Acuan, Deskripsi, Status, dan file PDF. Setelah file dipilih, klik **Pratinjau** pada baris file untuk membuka PDF di jendela pop-up (bisa diperbesar dan dipindah halaman) agar file dapat diperiksa sebelum diunggah; file yang rusak langsung ditandai. Tombol **Reset** mengosongkan semua isian (termasuk PDF) dan mengembalikan Status ke Aktif. **Edit** membuka halaman form untuk mengubah Nama Acuan, Deskripsi, dan Status; file tidak dapat diganti (unggah panduan baru bila perlu).
+  - Saat **Unggah** atau **Simpan** (Edit), muncul pop-up **Periksa kembali** berisi ringkasan isian. Klik **Ya, simpan** untuk menyimpan, atau **Periksa kembali** untuk kembali ke form.
+  - Status pemrosesan file **Antre → Diproses → Siap** tampil di bawah nama. Hanya panduan **Siap** dan berstatus **Aktif** yang dipakai review berikutnya.
+  - **Status** Aktif/Nonaktif diatur saat unggah atau lewat **Edit**, tanpa menghapus panduan. Setiap perubahan (termasuk status) tercatat sebagai versi baru di Panduan Histori.
+  - Mengubah nama atau deskripsi lewat **Edit** membuat versi baru; halaman **Lihat detail** menampilkan data panduan dengan tombol **Lihat PDF**, tanggal input, dan akun yang menginput, serta tabel **Panduan Histori** berisi versi-versi **sebelum** perubahan terakhir (tanggal input, akun yang menginput, status, nama, dan deskripsi). Versi terkini hanya tampil di bagian atas.
+  - **Hapus** (setelah konfirmasi di pop-up berisi ringkasan panduan, tombol merah **Ya, hapus**) menghapus panduan secara **permanen** dari database, termasuk Panduan Histori dan file PDF-nya, dan tidak dapat dikembalikan. Hasil review lama kehilangan rujukan ke panduan tersebut. Untuk sekadar tidak memakainya di review berikutnya, ubah Status menjadi **Nonaktif** lewat Edit.
   - Panduan berstatus Gagal dapat diproses ulang.
-  - Seperti Checklist dan Kategori, daftar panduan berversi. Setiap unggah, ubah, atau hapus otomatis membuat versi baru. Tab **Daftar versi** menampilkan isi tiap versi, dan halaman review menampilkan versi panduan yang dipakai (mis. "Panduan v3").
+  - Halaman hasil review menampilkan daftar panduan yang dipakai beserta nomor versinya (mis. "PMK Standar Biaya (v2)"); catatan ini tidak berubah walaupun panduan diedit kemudian.
 - **Pengguna & Satker**: buat akun, pilih satu atau beberapa role, dan hubungkan Pengusul ke Satker (wajib). Anda juga dapat menonaktifkan akun atau mereset password. Satker tempat Reviewer bernaung mengusulkan dengan **akun Pengusul tersendiri**.
 - **Node AI**: memantau server AI yang terhubung, mendaftarkan node GPU sewaan (token sekali tampil), dan mencabut akses.
 - **Dashboard**: menampilkan panjang antrean, node aktif, dan perkiraan waktu selesai, sebagai dasar memutuskan penambahan atau pematian node GPU.

@@ -58,7 +58,7 @@ Hak akses selalu dicek di backend:
 Detail review berisi:
 
 - **status**: `status, final, tampilan (reviewer|pengusul), boleh_override, proses, model_info`;
-- **acuan**: `acuan{checklist_versi, kategori_versi, panduan_versi, panduan[]}`;
+- **acuan**: `acuan{checklist_versi, kategori_versi, panduan[{judul, nomor, file_id, nama_file}]}`;
 - **hasil**:
   - `label{ai, hitung, final, diubah, tidak_konsisten, terpenuhi, total, override}`;
   - `kategori{ai, final, alasan, rujukan[], pilihan[], override}`;
@@ -83,12 +83,10 @@ Setiap `rujukan` berisi `{peran (bukti_dokumen|dasar_panduan), dokumen (TOR|RAB|
 | Metode | Path | Role | Keterangan |
 | --- | --- | --- | --- |
 | GET | `/panduan` | login | Daftar panduan yang tidak dihapus + versi + `status_proses` (BELUM/DIPROSES/SIAP/GAGAL) |
-| POST | `/panduan` | Admin | multipart `files` (boleh banyak) |
-| PUT | `/panduan/{id}` | Admin | multipart `judul, deskripsi?, file?` → versi baru |
-| DELETE | `/panduan/{id}` | Admin | Soft delete (file tetap ada) |
+| POST | `/panduan` | Admin | multipart `file, judul, deskripsi?, aktif?` (default `true`) |
+| PUT | `/panduan/{id}` | Admin | multipart `judul, deskripsi?, aktif?`. Ubah nama/deskripsi/status → versi panduan baru; file tidak dapat diganti (unggah panduan baru) (status dicatat per versi) (Nonaktif = tidak dipakai review berikutnya). Tanpa perubahan = tidak membuat versi |
+| DELETE | `/panduan/{id}` | Admin | Hapus **permanen**: panduan, semua versi, dan file + ekstraksinya (bila tidak dipakai data lain). Review lama kehilangan catatan & rujukan panduan ini. 409 bila dipakai review yang berjalan / file sedang diproses |
 | POST | `/panduan/{id}/proses-ulang` | Admin | Ulangi pemrosesan yang GAGAL |
-| GET | `/panduan/versi` | login | Versi daftar panduan `{aktif, versi[]}` (format sama dengan `/checklist`). Unggah/ubah/hapus otomatis membuat versi baru |
-| GET | `/panduan/versi/{id}` | login | Isi satu versi: panduan + nomor versinya saat itu |
 
 ## File, Dashboard, Administrasi
 
