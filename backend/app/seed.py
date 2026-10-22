@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.keamanan import hash_password
 from app.konfigurasi import konfigurasi
-from app.model import (ChecklistItem, ChecklistVersi, KategoriItem, KategoriVersi, Pengguna, PenggunaRole,
+from app.model import (ChecklistHistory, ChecklistItem, KategoriItem, KategoriVersi, Pengguna, PenggunaRole,
                        Satker)
 
 logger = logging.getLogger(__name__)
@@ -42,7 +42,7 @@ CHECKLIST_CONTOH = [
     ("C05", "Jadwal pelaksanaan", "TOR memuat jadwal/waktu pelaksanaan kegiatan.", "TOR"),
     ("C06", "Penerima manfaat", "TOR menyebutkan penerima manfaat kegiatan.", "TOR"),
     ("C07", "Rincian biaya sesuai standar biaya", "RAB merinci komponen biaya dengan volume, satuan, dan harga satuan yang sesuai standar biaya yang berlaku.", "RAB"),
-    ("C08", "Kesesuaian komponen biaya dengan kegiatan", "Setiap komponen biaya pada RAB memiliki dasar kegiatan pada TOR.", "KEDUANYA"),
+    ("C08", "Kesesuaian komponen biaya dengan kegiatan", "Setiap komponen biaya pada RAB memiliki dasar kegiatan pada TOR.", "TOR & RAB"),
 ]
 
 
@@ -81,9 +81,10 @@ def _seed_contoh(db: Session) -> None:
         p = Pengguna(username=username, nama=nama, password_hash=sandi, satker_id=satker_id)
         p.roles = [PenggunaRole(role=r) for r in roles]
         db.add(p)
-    versi = ChecklistVersi(nomor=1, aktif=True, catatan="Checklist contoh (mode dev)")
-    db.add(versi)
-    db.flush()
     for i, (kode, judul, kriteria, berlaku) in enumerate(CHECKLIST_CONTOH, 1):
-        db.add(ChecklistItem(versi_id=versi.id, urutan=i, kode=kode, judul=judul, kriteria=kriteria, berlaku_untuk=berlaku))
+        isi = {"no_urut": i, "kode": kode, "checklist": judul, "kriteria": kriteria, "berlaku_untuk": berlaku, "aktif": True}
+        item = ChecklistItem(**isi)
+        db.add(item)
+        db.flush()
+        db.add(ChecklistHistory(checklist_id=item.id, **isi))
     logger.info("seed contoh dibuat (satker, pengusul, reviewer, checklist)")

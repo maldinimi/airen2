@@ -10,7 +10,7 @@ from datetime import datetime
 
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import (BigInteger, Boolean, Computed, DateTime, ForeignKey, Index, Integer, String, Text,
-                        UniqueConstraint, func)
+                        UniqueConstraint, func, text)
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB, TSVECTOR, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -168,26 +168,43 @@ class Revisi(Base):
 
 
 # ---------------------------------------------------------------- checklist, kategori, panduan (berversi)
-class ChecklistVersi(Base):
-    __tablename__ = "checklist_versi"
-    id: Mapped[uuid.UUID] = _id()
-    created_at: Mapped[datetime] = _dibuat()
-    nomor: Mapped[int] = mapped_column(Integer, unique=True)
-    aktif: Mapped[bool] = mapped_column(Boolean, default=True)
-    dibuat_oleh: Mapped[uuid.UUID | None] = _fk("pengguna", nullable=True, index=False)
-    catatan: Mapped[str | None] = mapped_column(Text)
-    item: Mapped[list["ChecklistItem"]] = relationship(order_by="ChecklistItem.urutan", lazy="selectin")
-
-
 class ChecklistItem(Base):
+    """Isi TERBARU satu item checklist (satu baris per item). Isi sebelum setiap ubah disimpan di `checklist_histori`."""
     __tablename__ = "checklist_item"
     id: Mapped[uuid.UUID] = _id()
-    versi_id: Mapped[uuid.UUID] = _fk("checklist_versi")
-    urutan: Mapped[int] = mapped_column(Integer)
-    kode: Mapped[str] = mapped_column(String(50))
-    judul: Mapped[str] = mapped_column(String(500))
+    created_by: Mapped[uuid.UUID | None] = _fk("pengguna", nullable=True, index=False)
+    create_date: Mapped[datetime] = _dibuat()
+    update_by: Mapped[uuid.UUID | None] = _fk("pengguna", nullable=True, index=False)
+    update_date: Mapped[datetime] = _dibuat()
+    no_urut: Mapped[int] = mapped_column(Integer, index=True)  # dipakai CLUSTER (app/checklist.py:urut_ulang)
+    kode: Mapped[str] = mapped_column(String(50), unique=True)
+    checklist: Mapped[str] = mapped_column(String(500))
     kriteria: Mapped[str] = mapped_column(Text)
-    berlaku_untuk: Mapped[str] = mapped_column(String(10))  # TOR|RAB|KEDUANYA
+    berlaku_untuk: Mapped[str] = mapped_column(String(10))  # TOR | RAB | TOR & RAB
+    # Item nonaktif tidak dinilai AI dan tidak dihitung dalam label.
+    aktif: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true", nullable=False)
+
+
+class ChecklistHistory(Base):
+    """Semua versi item checklist: salinan baris `checklist_item` setiap tambah & ubah (termasuk versi terbaru).
+    `checklist_id` → item asalnya (FK, ikut terhapus bila item dihapus); `kode` = kode pada versi itu.
+    Isi checklist review disusun ulang dari kedua tabel (app/checklist.py)."""
+    __tablename__ = "checklist_histori"
+    # Dipakai CLUSTER agar baris terbaru tersimpan paling atas (pgAdmin "All Rows" tanpa ORDER BY), lihat master.py.
+    __table_args__ = (Index("ix_checklist_histori_update_date", text("update_date DESC")),)
+    id: Mapped[uuid.UUID] = _id()
+    created_by: Mapped[uuid.UUID | None] = _fk("pengguna", nullable=True, index=False)
+    create_date: Mapped[datetime] = _dibuat()
+    update_by: Mapped[uuid.UUID | None] = _fk("pengguna", nullable=True, index=False)
+    update_date: Mapped[datetime] = _dibuat()
+    checklist_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("checklist_item.id", ondelete="CASCADE"), index=True)
+    no_urut: Mapped[int] = mapped_column(Integer)
+    kode: Mapped[str] = mapped_column(String(50))
+    checklist: Mapped[str] = mapped_column(String(500))
+    kriteria: Mapped[str] = mapped_column(Text)
+    berlaku_untuk: Mapped[str] = mapped_column(String(10))  # TOR | RAB | TOR & RAB
+    # Item nonaktif tidak dinilai AI dan tidak dihitung dalam label.
+    aktif: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true", nullable=False)
 
 
 class KategoriVersi(Base):
@@ -268,7 +285,6 @@ class Review(Base):
     revisi_id: Mapped[uuid.UUID] = _fk("revisi")
     trace_id: Mapped[str] = mapped_column(String(32), index=True)
     status: Mapped[str] = mapped_column(String(20), default="ANTRE")  # ANTRE|DIPROSES|SELESAI|GAGAL
-    checklist_versi_id: Mapped[uuid.UUID | None] = _fk("checklist_versi", nullable=True, index=False)
     kategori_versi_id: Mapped[uuid.UUID | None] = _fk("kategori_versi", nullable=True, index=False)
     # Versi daftar panduan saat dikunci; file yang benar-benar dipakai (hanya yang SIAP) ada di review_panduan.
     panduan_koleksi_versi_id: Mapped[uuid.UUID | None] = _fk("panduan_koleksi_versi", nullable=True, index=False)
@@ -298,7 +314,8 @@ class HasilItem(Base):
     __table_args__ = (UniqueConstraint("review_id", "checklist_item_id"),)
     id: Mapped[uuid.UUID] = _id()
     review_id: Mapped[uuid.UUID] = _fk("review")
-    checklist_item_id: Mapped[uuid.UUID] = _fk("checklist_item", index=False)
+    # Tanpa FK: item boleh dihapus permanen (lihat app/checklist.py).
+    checklist_item_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True))
     terpenuhi: Mapped[bool]
     ditemukan: Mapped[bool] = mapped_column(Boolean, default=True)  # False = "tidak ditemukan di dokumen"
     alasan: Mapped[str] = mapped_column(Text)
@@ -320,7 +337,7 @@ class Rekomendasi(Base):
     dokumen: Mapped[str] = mapped_column(String(10))  # TOR|RAB
     urutan: Mapped[int] = mapped_column(Integer)
     teks: Mapped[str] = mapped_column(Text)
-    checklist_item_id: Mapped[uuid.UUID | None] = _fk("checklist_item", nullable=True, index=False)
+    checklist_item_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))  # tanpa FK, lihat HasilItem
     tidak_diperlukan: Mapped[bool] = mapped_column(Boolean, default=False)
 
 
@@ -344,7 +361,7 @@ class Override(Base):
     created_at: Mapped[datetime] = _dibuat()
     review_id: Mapped[uuid.UUID] = _fk("review")
     target: Mapped[str] = mapped_column(String(10))  # ITEM|LABEL|KATEGORI
-    checklist_item_id: Mapped[uuid.UUID | None] = _fk("checklist_item", nullable=True, index=False)
+    checklist_item_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))  # tanpa FK, lihat HasilItem
     nilai_sebelum: Mapped[str] = mapped_column(String(100))
     nilai_sesudah: Mapped[str] = mapped_column(String(100))
     alasan: Mapped[str] = mapped_column(Text)

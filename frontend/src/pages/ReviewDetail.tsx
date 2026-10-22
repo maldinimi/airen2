@@ -127,7 +127,7 @@ export default function ReviewDetail() {
               {kat.override && <p className="text-xs text-ubah-700">Alasan override: {kat.override.alasan} — {kat.override.oleh}</p>}
             </div>
             <div className="p-4 text-xs text-slate-500">
-              <span className="font-semibold uppercase">Acuan</span>: Checklist v{r.acuan!.checklist_versi.nomor} · Kategori v{r.acuan!.kategori_versi.nomor} · {r.acuan!.panduan_versi && `Panduan v${r.acuan!.panduan_versi.nomor} · `}{r.acuan!.panduan.length} panduan
+              <span className="font-semibold uppercase">Acuan</span>: Checklist {r.acuan!.checklist.jumlah_item} item · Kategori v{r.acuan!.kategori_versi.nomor} · {r.acuan!.panduan_versi && `Panduan v${r.acuan!.panduan_versi.nomor} · `}{r.acuan!.panduan.length} panduan
               <Lipat judul="Lihat panduan yang dipakai">
                 <ul className="space-y-1">{r.acuan!.panduan.map((p) => (
                   <li key={p.file_id}><button className="text-left text-utama-600 hover:underline" onClick={() => bukaDok(p.file_id, `Panduan — ${p.judul}`)}>{p.judul} (v{p.nomor})</button></li>
@@ -233,7 +233,7 @@ function KartuItem({ i, reviewer, buka, override, batal }: { i: ItemReview; revi
           <span className="ml-2 inline-flex flex-wrap gap-1 align-middle">
             <span className={cx("text-xs font-medium", i.terpenuhi ? "text-emerald-700" : "text-red-700")}>{i.terpenuhi ? "Terpenuhi" : "Tidak terpenuhi"}</span>
             {i.diubah ? <><TandaUbah title={infoOverride(i.override)} /><span className="text-xs text-slate-400 line-through">AI: {i.ai_terpenuhi ? "terpenuhi" : "tidak terpenuhi"}</span></> : <TandaAI />}
-            <Lencana className="bg-white text-slate-500 ring-slate-200">{i.berlaku_untuk === "KEDUANYA" ? "TOR & RAB" : i.berlaku_untuk}</Lencana>
+            <Lencana className="bg-white text-slate-500 ring-slate-200">{i.berlaku_untuk}</Lencana>
           </span>
         </span>
         <ChevronDown className={cx("size-4 shrink-0 text-slate-400 transition-transform", buka_ && "rotate-180")} />

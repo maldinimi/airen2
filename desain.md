@@ -161,8 +161,8 @@ Ekstraksi disimpan per `file` (berdasarkan SHA), sehingga file yang terbawa ke r
 
 | Tabel | Kolom penting | Kegunaan |
 | --- | --- | --- |
-| `checklist_versi` | `nomor`, `aktif`, `dibuat_oleh`, `catatan` | Setiap simpan perubahan → versi baru, versi lama nonaktif (B3). |
-| `checklist_item` | `versi_id`, `urutan`, `kode`, `judul`, `kriteria`, `berlaku_untuk` (`TOR`/`RAB`/`KEDUANYA`) | Isi item **untuk versi tersebut**. Disalin seluruhnya saat versi baru dibuat. |
+| `checklist_item` | `id`, `created_by`, `create_date`, `update_by`, `update_date`, `no_urut`, `kode` (unik), `checklist`, `kriteria` (text), `berlaku_untuk` (`TOR`/`RAB`/`TOR & RAB`), `aktif` | Isi **terbaru** item, satu baris per item. Hapus item selalu permanen (beserta riwayatnya). `hasil_item`/`rekomendasi`/`override.checklist_item_id` tanpa FK karena item boleh dihapus. |
+| `checklist_histori` | `id`, `checklist_id` (FK → `checklist_item.id`, ON DELETE CASCADE), lalu kolom sama dengan `checklist_item` | **Semua versi** item: setiap tambah & ubah menyalin isi item saat itu (termasuk versi terbaru); `kode` = kode pada versi itu, jadi ganti kode tetap tercatat. Isi checklist sebuah review disusun ulang dari kedua tabel pada `review.mulai_at`: versi dengan `update_date` terakhir ≤ waktu itu (`app/checklist.py`). |
 | `kategori_versi` | `nomor`, `aktif`, `dibuat_oleh` | Sama seperti checklist (C3). |
 | `kategori_item` | `versi_id`, `kode` (K1…), `nama`, `definisi`, `diteruskan` (bool) | Definisi yang dipakai AI (C2). `diteruskan=false` untuk K4 (C6) — tidak di-hardcode. Seed: 4 kategori persis PRD C1. |
 | `panduan` | `judul_terkini`, `dihapus_at` | Identitas sebuah panduan. Hapus = *soft delete*. |
@@ -172,7 +172,7 @@ Ekstraksi disimpan per `file` (berdasarkan SHA), sehingga file yang terbawa ke r
 
 | Tabel | Kolom penting | Kegunaan |
 | --- | --- | --- |
-| `review` | `revisi_id`, `trace_id`, `checklist_versi_id`, `kategori_versi_id`, `fingerprint`, `model_info` (jsonb: nama/versi model, versi prompt), `diajukan_oleh`, `mulai_at`, `selesai_at`, `progres` (jsonb: tahap & persen), `error_pesan`, `difinalkan_oleh`, `difinalkan_at` | Satu revisi = satu review sukses (§5). Review GAGAL boleh diulang → baris baru. `trace_id` muncul di semua log (§8.1). `fingerprint` dijelaskan di §4.6. |
+| `review` | `revisi_id`, `trace_id`, `kategori_versi_id`, `fingerprint`, `model_info` (jsonb: nama/versi model, versi prompt), `diajukan_oleh`, `mulai_at`, `selesai_at`, `progres` (jsonb: tahap & persen), `error_pesan`, `difinalkan_oleh`, `difinalkan_at` | Satu revisi = satu review sukses (§5). Review GAGAL boleh diulang → baris baru. `trace_id` muncul di semua log (§8.1). `fingerprint` dijelaskan di §4.6. |
 | `panduan_koleksi_versi`, `panduan_koleksi_item` | `nomor`, `aktif`, `catatan`; item → `panduan_versi_id` | Versi **daftar** panduan, setara versi checklist/kategori. Setiap unggah/ubah/hapus menyimpan snapshot versi terbaru tiap panduan yang tidak dihapus. `review.panduan_koleksi_versi_id` mencatat versi yang aktif saat review dikunci. |
 | `review_panduan` | `review_id`, `panduan_versi_id` | Panduan + versi yang benar-benar dipakai review (hanya yang SIAP) (D5, §7.3). |
 | `hasil_item` | `review_id`, `checklist_item_id`, `terpenuhi` (bool), `alasan`, `yang_kurang` | Penilaian AI per item (Screening 1, keluaran #2). |
@@ -358,6 +358,8 @@ Dua lapis:
 | 10 | Satu file compose + env per skenario | `docker-compose.yml` dasar + `gpu`/`dev`/`prod`/`node-ai`, dipilih lewat `COMPOSE_FILE` di `.env`; tambahan `.env.node-ai` | `cp .env.x .env && make up` tetap satu perintah. Server aplikasi prod tanpa GPU; node AI terpisah. |
 | 11 | Dokumentasi API OpenAPI otomatis | Skema tersedia di `/api/openapi.json`; Swagger UI dimatikan; ringkasan di docs/api.md | Swagger UI memuat aset dari CDN (melanggar B1). |
 | 12 | Tailwind CSS | Tailwind 4.1.13 | 4.0.0 gagal memproses CSS di Vite. |
+| 13 | Kelola Checklist: sunting draf → "Simpan sebagai versi baru", tab "Daftar versi" (PRD B5) | Tabel item; tambah/ubah/hapus langsung disimpan per item. `checklist_item` menyimpan isi terbaru, `checklist_versi` menyimpan versi lama tiap item (bukan salinan seluruh daftar). Admin melihat versi lama per item di halaman Detail ("Riwayat Data"), bukan daftar versi seluruh checklist | Keputusan pemilik produk (2026-10-19/20) demi tampilan dan tabel yang lebih sederhana. B3/B4 tetap terpenuhi: review menyimpan nomor perubahan saat dikunci dan isi checklist saat itu disusun ulang dari versi lama. Halaman Kategori tidak berubah. |
+| 14 | Snapshot checklist tidak pernah dihapus (CLAUDE.md aturan 4); PRD B4 "menghapus/mengubah item tidak boleh mengubah tampilan hasil review lama" (WAJIB) | Hanya dua tabel checklist (`checklist_item`, `checklist_histori`). Item yang dihapus dihapus **permanen** beserta riwayatnya, sehingga **ikut hilang dari tampilan review lama** (jumlah item review lama bisa berkurang). Mengganti kode item ikut tampil di review lama. Perubahan isi item tetap tidak mengubah review lama | Keputusan pemilik produk (2026-10-21) setelah diberi tahu bahwa ini melanggar B4; alternatif yang ditolak: tabel salinan per review, atau melarang hapus item yang sudah dipakai review. Nama kolom & nilai `TOR & RAB` juga permintaan pemilik produk. |
 
 ---
 
