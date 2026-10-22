@@ -1,6 +1,10 @@
 # PRD — Asisten AI Offline untuk Review Dokumen TOR & RAB
 
-**Status:** Disetujui | **Pemilik:** Maldini | **Versi:** 1 | **Tanggal:** 2026-10-12
+**Status:** Disetujui | **Pemilik:** Maldini | **Versi:** 2.1 | **Tanggal:** 2026-10-21 (v1: 2026-10-12, v2: 2026-10-20)
+
+**Perubahan v2 (2026-10-20):** Modul D — Panduan direvisi berdasarkan keputusan pemilik produk: unggah satu file per form dengan Nama Acuan, Deskripsi, dan Status; status Aktif/Nonaktif; edit tanpa ganti file; hapus permanen; daftar berupa tabel; halaman detail dengan riwayat versi; data terkini disimpan terpisah dari riwayat versi; catatan panduan pada review tidak berubah walaupun panduan diedit (D2, D4–D9, §7.3, §9).
+
+**Perubahan v2.1 (2026-10-21):** Modul D — riwayat versi pada detail panduan disebut **Panduan Histori**; form unggah dilengkapi **pratinjau PDF** sebelum diunggah dan tombol **Reset**; Nama Acuan maksimal 500 karakter; konfirmasi hapus menampilkan ringkasan panduan yang akan dihapus; file yang pemrosesannya terhenti ditandai gagal agar dapat diproses ulang; penjelasan data yang ikut terhapus (D2, D4, D6, D9, §9).
 
 ---
 
@@ -22,7 +26,8 @@
 | **Satker** | Satuan Kerja. Unit organisasi yang mengusulkan RO. |
 | **Usulan** | Satu pasang dokumen TOR + RAB untuk satu RO, beserta seluruh riwayat revisi dan review-nya. |
 | **Checklist** | Daftar hal yang wajib dipenuhi/dijawab oleh TOR dan RAB. |
-| **Panduan** | Kumpulan PDF referensi (peraturan, kebijakan, standar biaya, dsb.) yang wajib dirujuk AI. |
+| **Panduan** | Kumpulan PDF referensi (peraturan, kebijakan, standar biaya, dsb.) yang wajib dirujuk AI. Setiap panduan memiliki **Nama Acuan**, deskripsi, dan status **Aktif/Nonaktif**. |
+| **Panduan Histori** | Riwayat versi sebuah panduan: isi panduan sebelum tiap perubahan (nama, deskripsi, status), beserta tanggal dan penginputnya. |
 | **Kategori** | Klasifikasi prioritas anggaran RO: K1, K2, K3, K4. |
 | **Screening 1** | Penilaian AI terhadap pemenuhan checklist → label LOLOS / TIDAK LOLOS + alasan + rekomendasi. |
 | **Screening 2** | Rekomendasi kategori (K1–K4) oleh AI untuk RO tersebut. |
@@ -162,11 +167,14 @@ Aturan alur:
 ### Modul D — Panduan
 
 - D1. Penyimpanan khusus (folder di dalam aplikasi) untuk file PDF panduan.
-- D2. Form unggah (dapat beberapa file sekaligus), serta CRUD: ubah judul/deskripsi, ganti file, hapus.
-- D3. Pengguna dapat **membaca isi PDF panduan** di dalam aplikasi.
-- D4. Panduan baru atau yang diganti harus diproses (dibaca, termasuk tabel, gambar, dan scan) agar siap dirujuk AI. Status pemrosesan tiap file ditampilkan (mis. diproses / siap / gagal).
-- D5. **Versioning:** setiap review **WAJIB** mencatat panduan apa saja (dan versinya) yang berlaku saat review, sehingga pengguna dapat mengetahui TOR & RAB tersebut direview dengan acuan panduan apa saja.
-- D6. File panduan lama yang pernah dipakai review tidak boleh hilang permanen, agar rujukan pada hasil review lama tetap dapat dibuka.
+- D2. **Unggah** dilakukan di halaman form tersendiri: satu file PDF per unggahan, beserta **Nama Acuan** (wajib, maksimal 500 karakter), **Deskripsi**, dan **Status** (Aktif/Nonaktif, bawaan Aktif). File yang dipilih dapat **dipratinjau** (dibuka dan dibaca) sebelum diunggah, sehingga Admin dapat memastikan file yang benar; file PDF yang rusak langsung ditandai. Tombol **Reset** mengosongkan seluruh isian, termasuk file. **Edit** juga di halaman form tersendiri untuk mengubah Nama Acuan, Deskripsi, dan Status; file **tidak dapat diganti** (untuk mengganti file, unggah panduan baru lalu nonaktifkan atau hapus yang lama). Sebelum unggah/edit disimpan, tampil ringkasan isian untuk **diperiksa kembali dan dikonfirmasi**. Unggah, edit, dan hapus hanya oleh Admin.
+- D3. Semua pengguna dapat melihat daftar dan detail panduan serta **membaca isi PDF panduan** di dalam aplikasi.
+- D4. Panduan baru harus diproses (dibaca, termasuk tabel, gambar, dan scan) agar siap dirujuk AI. Status pemrosesan tiap file ditampilkan (mis. antre / diproses / siap / gagal), dan file yang gagal dapat diproses ulang. Pemrosesan yang terhenti berulang kali (mis. file terlalu berat) tidak boleh tertahan di status "diproses"; file tersebut ditandai gagal beserta keterangannya agar dapat diproses ulang.
+- D5. **Versioning:** setiap review **WAJIB** mencatat panduan apa saja (dan versinya) yang berlaku saat review, sehingga pengguna dapat mengetahui TOR & RAB tersebut direview dengan acuan panduan apa saja. Catatan ini adalah **salinan** saat review dijalankan, sehingga **tidak berubah** walaupun panduan diedit kemudian; catatan hanya hilang bila panduan dihapus (lihat D6).
+- D6. **Hapus bersifat permanen:** panduan, seluruh Panduan Histori-nya, dan file PDF-nya (beserta hasil pemrosesannya) dihapus dari aplikasi dan database, dan tidak dapat dikembalikan. File PDF yang isinya sama dan masih dipakai data lain (panduan lain atau TOR/RAB) tetap disimpan. Jejak siapa dan kapan menghapus tetap tercatat di audit log (§7.3), tanpa isi dokumen. Akibatnya, hasil review lama kehilangan catatan dan rujukan ke panduan tersebut — sebelum menghapus, Admin diberi peringatan jelas berisi ringkasan panduan yang akan dihapus (Nama Acuan, file, status, jumlah versi di Panduan Histori) dan harus mengonfirmasinya. Penghapusan ditolak bila panduan sedang dipakai review yang berjalan atau filenya sedang diproses. Untuk berhenti memakai panduan **tanpa kehilangan data**, gunakan status Nonaktif (D7).
+- D7. **Status Aktif/Nonaktif:** hanya panduan **Aktif** yang sudah **siap** yang dipakai review berikutnya. Panduan Nonaktif tetap tampil di daftar, tetap dapat dibuka, dan dapat diaktifkan kembali lewat Edit.
+- D8. **Daftar panduan** berupa tabel: No, Nama Acuan, Deskripsi, Status, Diinput Oleh, Tanggal Input (input/perubahan terakhir), dan Aksi berupa ikon — **Lihat detail** (semua pengguna), **Edit** dan **Hapus** (Admin). Kolom Status dapat diurutkan: Default (urut nama), Aktif, atau Nonaktif.
+- D9. **Detail panduan** (halaman tersendiri) menampilkan Nama Acuan, Deskripsi, Status, status pemrosesan, file, tombol **Lihat PDF**, Tanggal Input, dan Diinput Oleh (unggahan pertama), serta **Panduan Histori** (riwayat versi): setiap unggah dan setiap edit (nama, deskripsi, maupun status) tercatat sebagai versi; tabel Panduan Histori menampilkan versi-versi sebelum perubahan terakhir (Tanggal Input, Diinput Oleh, Status, Nama Acuan, Deskripsi), sedangkan versi terkini ditampilkan di bagian atas detail. **Data terkini disimpan terpisah dari riwayat:** riwayat hanya berisi versi sebelum perubahan; setiap edit memindahkan data terkini ke riwayat (dengan tanggal dan penginput aslinya), lalu data terkini diperbarui. Riwayat tidak pernah diubah.
 
 ### Modul E — Review AI
 
@@ -236,7 +244,7 @@ Aturan:
 - Rekomendasi kategori AI wajib beralasan dan merujuk definisi kategori.
 
 ### 7.3 Ketertelusuran (Audit)
-- Setiap review menyimpan: revisi dokumen yang direview, versi checklist, daftar panduan + versinya, versi kategori, hasil AI, override, siapa yang menjalankan/memfinalkan, dan waktu.
+- Setiap review menyimpan: revisi dokumen yang direview, versi checklist, daftar panduan + versinya (kecuali panduan yang kemudian dihapus permanen, D6), versi kategori, hasil AI, override, siapa yang menjalankan/memfinalkan, dan waktu.
 - Perubahan pada Checklist, Kategori, Panduan, pengguna, dan override tercatat di audit log (siapa, kapan, apa).
 
 ---
@@ -305,7 +313,8 @@ Ketentuan:
 | Riwayat Usulan | Semua | Timeline revisi & review, perbandingan |
 | Kelola Checklist | Admin | CRUD + daftar versi |
 | Kelola Kategori | Admin | CRUD + daftar versi |
-| Kelola Panduan | Admin | Unggah, CRUD, viewer, status pemrosesan |
+| Panduan | Semua (kelola: Admin) | Tabel daftar panduan + urut status (D8), detail & Panduan Histori (D9), viewer PDF, status pemrosesan, konfirmasi hapus (D6) |
+| Unggah / Edit Panduan | Admin | Form D2 (unggah: pratinjau PDF & Reset) + konfirmasi periksa kembali |
 | Kelola Pengguna | Admin | Pengguna, role, Satker |
 | Audit Log | Admin | — |
 

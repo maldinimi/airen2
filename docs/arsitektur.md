@@ -81,7 +81,7 @@ Lapis 2: `fingerprint = sha256(SHA TOR, SHA RAB, versi checklist, versi kategori
 
 Tabel dan kegunaannya mengikuti desain.md §3. Ringkasannya:
 
-- **Berversi & tidak berubah**: `checklist_versi/item`, `kategori_versi/item`, `panduan_versi`. Perubahan selalu berupa baris versi baru.
+- **Berversi & tidak berubah**: `checklist_versi/item`, `kategori_versi/item`, `panduan_histori` (riwayat panduan; versi terkini di `panduan`). Perubahan selalu berupa baris versi baru; review menyimpan salinan panduan + nomor versinya di `review_panduan`.
 - **Ekstraksi per file**: `file` (unik per SHA) → `halaman`, `elemen`, `chunk` (pgvector 1024 dim + kolom `tsv` hasil `to_tsvector('indonesian')`).
 - **Review**: `review` (acuan, fingerprint, model_info, progres, label_ai, snapshot final), `hasil_item`, `hasil_kategori`, `rekomendasi`, `rujukan` (hanya `elemen_id` + kutipan), `override` (terpisah, dapat dibatalkan), `catatan_reviewer`, `review_panduan`.
 - **Operasional**: `job` (antrean), `node_ai` (detak & token node), `audit_log` (hanya tambah), `sesi`.

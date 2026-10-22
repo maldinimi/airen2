@@ -1,149 +1,177 @@
-/** Panduan (Modul D): semua pengguna dapat membaca; Admin mengunggah, mengubah (versi baru), mengganti file, menghapus. */
+/** Panduan (Modul D): semua pengguna dapat membaca; Admin mengunggah, mengubah (versi baru), mengaktifkan/menonaktifkan, menghapus. */
+import * as Pop from "@radix-ui/react-popover";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Loader2, Pencil, RotateCcw, Trash2, Upload } from "lucide-react";
+import { ArrowDown, ArrowLeft, ArrowUp, ArrowUpDown, Check, Eye, FileText, Loader2, Pencil, RotateCcw, Trash2, Upload } from "lucide-react";
 import { useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { api } from "../api";
 import { useAuth } from "../auth";
-import Unggah from "../components/Unggah";
-import { tanggal, waktu } from "../format";
-import type { Panduan, RingkasVersi, Versi, VersiPanduan } from "../types";
-import { AreaTeks, Dialog, Input, Judul, Kartu, Kolom, Kosong, Lencana, Memuat, Peringatan, Tab, Tombol } from "../ui";
+import { waktu } from "../format";
+import type { Panduan, VersiPanduan } from "../types";
+import { cx, Judul, Kartu, Konfirmasi, Kosong, Lencana, Memuat, Ringkasan, Tombol } from "../ui";
 
 const STATUS: Record<VersiPanduan["status_proses"], [string, string]> = {
   BELUM: ["Antre", "bg-blue-50 text-blue-700 ring-blue-200"], DIPROSES: ["Diproses", "bg-blue-50 text-blue-700 ring-blue-200"],
   SIAP: ["Siap", "bg-emerald-50 text-emerald-700 ring-emerald-300"], GAGAL: ["Gagal", "bg-red-100 text-red-900 ring-red-300"],
 };
 
+type Urut = "" | "aktif" | "tidak";
+const OPSI_URUT: Record<Urut, string> = { "": "Default", aktif: "Aktif", tidak: "Nonaktif" };
+
+// Dipakai daftar & detail: muat ulang tiap 5 detik selama ada file yang masih Antre/Diproses.
+const kueriPanduan = {
+  queryKey: ["panduan"], queryFn: () => api.get<Panduan[]>("/api/panduan"),
+  refetchInterval: (x: { state: { data?: Panduan[] } }) => (x.state.data?.some((p) => ["BELUM", "DIPROSES"].includes(p.terkini.status_proses)) ? 5000 : false),
+};
+
 export default function PanduanPage() {
   const { punya } = useAuth();
   const admin = punya("ADMIN");
   const qc = useQueryClient();
-  const q = useQuery({
-    queryKey: ["panduan"], queryFn: () => api.get<Panduan[]>("/api/panduan"),
-    refetchInterval: (x) => (x.state.data?.some((p) => ["BELUM", "DIPROSES"].includes(p.terkini.status_proses)) ? 5000 : false),
-  });
-  const daftarVersi = useQuery({ queryKey: ["panduan", "versi"], queryFn: () => api.get<{ aktif: RingkasVersi | null; versi: RingkasVersi[] }>("/api/panduan/versi") });
-  const [tab, setTab] = useState<"aktif" | "versi">("aktif");
-  const [unggahBuka, setUnggahBuka] = useState(false);
-  const [ubah, setUbah] = useState<Panduan | null>(null);
+  const nav = useNavigate();
+  const q = useQuery(kueriPanduan);
+  const [urut, setUrut] = useState<Urut>("");
+  // sort() stabil: dalam satu status, urutan nama dari server tetap.
+  const baris = urut ? [...(q.data ?? [])].sort((a, b) => (+b.aktif - +a.aktif) * (urut === "aktif" ? 1 : -1)) : q.data ?? [];
   const segarkan = () => qc.invalidateQueries({ queryKey: ["panduan"] });
-  const hapus = useMutation({ mutationFn: (id: string) => api.del(`/api/panduan/${id}`), onSuccess: segarkan, onError: (e) => alert((e as Error).message) });
+  const [dihapus, setDihapus] = useState<Panduan | null>(null);
+  // Gagal (mis. 409 dipakai review berjalan) → pesan tampil di pop-up konfirmasi.
+  const hapus = useMutation({ mutationFn: (id: string) => api.del(`/api/panduan/${id}`), onSuccess: () => { setDihapus(null); segarkan(); } });
   const ulang = useMutation({ mutationFn: (id: string) => api.post(`/api/panduan/${id}/proses-ulang`), onSuccess: segarkan, onError: (e) => alert((e as Error).message) });
 
   return (
     <div>
-      <Judul judul="Panduan" sub="Peraturan, kebijakan, dan standar yang menjadi acuan review AI. Hanya panduan berstatus Siap yang dipakai review."
-        aksi={admin && <Tombol onClick={() => setUnggahBuka(true)}><Upload className="size-4" />Unggah Panduan</Tombol>} />
-      <Tab aktif={tab} ubah={setTab} pilihan={[{ nilai: "aktif", label: `Panduan aktif${daftarVersi.data?.aktif ? ` (v${daftarVersi.data.aktif.nomor})` : ""}` }, { nilai: "versi", label: "Daftar versi" }]} />
-      <div className="mt-4">
-      {tab === "versi" ? <DaftarVersi data={daftarVersi.data?.versi} /> : <>
+      <Judul judul="Panduan" sub="Peraturan, kebijakan, dan standar yang menjadi acuan review AI. Hanya panduan Aktif yang berstatus Siap yang dipakai review."
+        aksi={admin && <Tombol onClick={() => nav("/panduan/unggah")}><Upload className="size-4" />Unggah Panduan</Tombol>} />
       {q.isLoading ? <Memuat /> : !q.data?.length ? <Kosong>Belum ada panduan.</Kosong> : (
-        <div className="grid gap-3 md:grid-cols-2">
-          {q.data.map((p) => {
-            const v = p.terkini;
-            const [nama, warna] = STATUS[v.status_proses];
-            return (
-              <Kartu key={p.id} className="space-y-2 p-4">
-                <div className="flex items-start justify-between gap-2">
-                  <Link to={`/pdf/${v.file_id}?judul=${encodeURIComponent(v.judul)}`} className="font-medium text-utama-700 hover:underline">{v.judul}</Link>
-                  <Lencana className={warna}>{(v.status_proses === "DIPROSES" || v.status_proses === "BELUM") && <Loader2 className="size-3 animate-spin" />}{nama}</Lencana>
-                </div>
-                {v.deskripsi && <p className="text-sm text-slate-600">{v.deskripsi}</p>}
-                <p className="text-xs text-slate-500">{v.nama_file} · {v.jumlah_halaman} hlm · versi {v.nomor} · {tanggal(v.dibuat_at)}</p>
-                {v.status_proses === "GAGAL" && <Peringatan>{v.pesan_gagal ?? "Pemrosesan gagal."}</Peringatan>}
-                {admin && (
-                  <div className="flex flex-wrap gap-1.5">
-                    <Tombol kecil varian="sekunder" onClick={() => setUbah(p)}><Pencil className="size-3.5" />Ubah / ganti file</Tombol>
-                    {v.status_proses === "GAGAL" && <Tombol kecil varian="sekunder" onClick={() => ulang.mutate(p.id)}><RotateCcw className="size-3.5" />Proses ulang</Tombol>}
-                    <Tombol kecil varian="hantu" className="text-red-600" onClick={() => confirm(`Hapus panduan "${v.judul}"? File tetap disimpan untuk rujukan review lama.`) && hapus.mutate(p.id)}>
-                      <Trash2 className="size-3.5" />Hapus</Tombol>
-                  </div>
-                )}
-                {p.versi.length > 1 && (
-                  <details className="text-xs text-slate-500"><summary className="cursor-pointer">Versi sebelumnya ({p.versi.length - 1})</summary>
-                    <ul className="mt-1 space-y-0.5">{p.versi.slice(1).map((x) => (
-                      <li key={x.id}>v{x.nomor}: <Link className="text-utama-600 hover:underline" to={`/pdf/${x.file_id}?judul=${encodeURIComponent(x.judul)}`}>{x.judul}</Link> · {x.nama_file} · {tanggal(x.dibuat_at)}</li>))}</ul>
-                  </details>
-                )}
-              </Kartu>
-            );
-          })}
-        </div>
-      )}
-      </>}
-      </div>
-      {unggahBuka && <DialogUnggah tutup={() => { setUnggahBuka(false); segarkan(); }} />}
-      {ubah && <DialogUbah p={ubah} tutup={() => { setUbah(null); segarkan(); }} />}
-    </div>
-  );
-}
-
-/** Daftar versi daftar panduan; klik untuk melihat panduan (dan versinya) yang tercatat pada versi itu. */
-function DaftarVersi({ data }: { data?: RingkasVersi[] }) {
-  const [lihat, setLihat] = useState<string | null>(null);
-  const isi = useQuery({ queryKey: ["panduan", "versi", lihat], queryFn: () => api.get<Versi<VersiPanduan>>(`/api/panduan/versi/${lihat}`), enabled: !!lihat });
-  if (!data) return <Memuat />;
-  if (!data.length) return <Kosong>Belum ada versi. Versi pertama dibuat saat panduan pertama diunggah.</Kosong>;
-  return (
-    <div className="space-y-2">
-      {data.map((v) => (
-        <Kartu key={v.id} className="p-3">
-          <button className="flex w-full flex-wrap items-center gap-2 text-left text-sm" onClick={() => setLihat(lihat === v.id ? null : v.id)}>
-            <span className="font-semibold">Versi {v.nomor}</span>{v.aktif && <Lencana className="bg-emerald-50 text-emerald-700 ring-emerald-300">Aktif</Lencana>}
-            <span className="text-slate-500">{v.jumlah_item} panduan · {waktu(v.dibuat_at)} · {v.dibuat_oleh ?? "sistem"}</span>
-            {v.catatan && <span className="w-full text-xs text-slate-500">{v.catatan}</span>}
-          </button>
-          {lihat === v.id && (isi.isLoading ? <Memuat /> : (
-            <ol className="mt-3 space-y-1 border-t border-slate-100 pt-3 text-sm">{isi.data?.item.map((x) => (
-              <li key={x.id}><Link className="text-utama-600 hover:underline" to={`/pdf/${x.file_id}?judul=${encodeURIComponent(x.judul)}`}>{x.judul}</Link>
-                <span className="text-xs text-slate-500"> · v{x.nomor} · {x.nama_file}</span></li>))}
-              {!isi.data?.item.length && <li className="text-slate-500">Tidak ada panduan pada versi ini.</li>}</ol>
-          ))}
+        <Kartu className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="bg-slate-50 text-left text-xs text-slate-500"><tr>
+              {["No", "Nama Acuan", "Deskripsi", "Status", "Diinput Oleh", "Tanggal Input", "Aksi"].map((h) => (
+                <th key={h} className="px-3 py-2 text-center" aria-sort={h === "Status" ? ({ "": "none", aktif: "descending", tidak: "ascending" } as const)[urut] : undefined}>
+                  {h !== "Status" ? h : (
+                    <Pop.Root>
+                      <Pop.Trigger className="inline-flex items-center gap-1 hover:text-slate-800" aria-label={`Urutkan status: ${OPSI_URUT[urut]}`}>
+                        Status{urut === "aktif" ? <ArrowDown className="size-3.5" /> : urut === "tidak" ? <ArrowUp className="size-3.5" /> : <ArrowUpDown className="size-3.5" />}
+                      </Pop.Trigger>
+                      <Pop.Portal>
+                        <Pop.Content sideOffset={6} className="z-50 w-44 rounded-xl border border-slate-200 bg-white p-1 text-sm shadow-xl">
+                          {(Object.entries(OPSI_URUT) as [Urut, string][]).map(([k, label]) => (
+                            <Pop.Close key={k} aria-pressed={urut === k} onClick={() => setUrut(k)}
+                              className={cx("flex w-full items-center justify-between rounded-lg px-3 py-1.5 text-left hover:bg-slate-100", urut === k && "font-medium text-utama-700")}>
+                              {label}{urut === k && <Check className="size-4" />}
+                            </Pop.Close>
+                          ))}
+                        </Pop.Content>
+                      </Pop.Portal>
+                    </Pop.Root>
+                  )}
+                </th>))}
+            </tr></thead>
+            <tbody className="divide-y divide-slate-100">{baris.map((p, i) => {
+              const v = p.terkini;
+              return (
+                <tr key={p.id} className="align-top">
+                  <td className="px-3 py-2 text-slate-500">{i + 1}</td>
+                  <td className="min-w-56 space-y-1 px-3 py-2">
+                    <Link to={pdf(v)} className="font-medium text-utama-700 hover:underline">{v.judul}</Link>
+                    <div className="flex flex-wrap items-center gap-1.5 text-xs text-slate-500">
+                      <LencanaProses v={v} />{v.nama_file} · {v.jumlah_halaman} hlm · v{v.nomor}
+                    </div>
+                    {v.status_proses === "GAGAL" && <p className="text-xs text-red-700">{v.pesan_gagal ?? "Pemrosesan gagal."}</p>}
+                  </td>
+                  <td className="max-w-md px-3 py-2 text-slate-600">{v.deskripsi ?? "—"}</td>
+                  <td className="px-3 py-2"><LencanaAktif aktif={p.aktif} /></td>
+                  <td className="px-3 py-2">{p.diubah_oleh ?? "—"}</td>
+                  <td className="whitespace-nowrap px-3 py-2 text-slate-500">{waktu(p.diubah_at)}</td>
+                  <td className="px-3 py-2">
+                    <div className="flex justify-center gap-1">
+                      <Tombol kecil varian="hantu" title="Lihat detail" aria-label={`Lihat detail ${v.judul}`} onClick={() => nav(`/panduan/${p.id}`)}>
+                        <Eye className="size-4 text-emerald-600" /></Tombol>
+                      {admin && <>
+                        <Tombol kecil varian="hantu" title="Edit" aria-label={`Edit ${v.judul}`} onClick={() => nav(`/panduan/${p.id}/ubah`)}>
+                          <Pencil className="size-4 text-blue-600" /></Tombol>
+                        {v.status_proses === "GAGAL" && <Tombol kecil varian="hantu" title="Proses ulang" aria-label={`Proses ulang ${v.judul}`} onClick={() => ulang.mutate(p.id)}>
+                          <RotateCcw className="size-4" /></Tombol>}
+                        <Tombol kecil varian="hantu" title="Hapus" aria-label={`Hapus ${v.judul}`}
+                          onClick={() => { hapus.reset(); setDihapus(p); }}>
+                          <Trash2 className="size-4 text-red-600" /></Tombol>
+                      </>}
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}</tbody>
+          </table>
         </Kartu>
-      ))}
+      )}
+      {dihapus && (
+        <Konfirmasi bahaya buka judul="Hapus panduan secara permanen?" teksYa="Ya, hapus" teksBatal="Batal"
+          baris={[["Nama Acuan", dihapus.judul], ["File", dihapus.terkini.nama_file], ["Status", dihapus.aktif ? "Aktif" : "Nonaktif"],
+            ["Panduan Histori", dihapus.versi.length > 1 ? `${dihapus.versi.length - 1} versi` : "—"]]}
+          pesan="Panduan beserta Panduan Histori dan file PDF-nya dihapus dari database dan tidak dapat dikembalikan. Hasil review lama kehilangan rujukan ke panduan ini."
+          galat={hapus.error?.message} memuat={hapus.isPending} batal={() => setDihapus(null)} ya={() => hapus.mutate(dihapus.id)} />
+      )}
     </div>
   );
 }
 
-function DialogUnggah({ tutup }: { tutup: () => void }) {
-  const [file, setFile] = useState<File[]>([]);
-  const kirim = useMutation({
-    mutationFn: () => { const fd = new FormData(); file.forEach((f) => fd.append("files", f)); return api.post("/api/panduan", fd); },
-    onSuccess: tutup,
-  });
-  return (
-    <Dialog buka ubahBuka={(b) => !b && tutup()} judul="Unggah panduan">
-      <div className="space-y-4">
-        {kirim.error && <Peringatan>{(kirim.error as Error).message}</Peringatan>}
-        <Unggah label="File PDF (dapat beberapa sekaligus)" banyak file={file} ubah={setFile} />
-        <p className="text-xs text-slate-500">Judul awal = nama file; dapat diubah setelah diunggah. File diproses (teks, tabel, gambar, scan) sebelum siap dirujuk AI.</p>
-        <div className="flex justify-end gap-2"><Tombol varian="hantu" onClick={tutup}>Batal</Tombol>
-          <Tombol disabled={!file.length} memuat={kirim.isPending} onClick={() => kirim.mutate()}>Unggah {file.length || ""} file</Tombol></div>
-      </div>
-    </Dialog>
-  );
+const pdf = (x: VersiPanduan) => `/pdf/${x.file_id}?judul=${encodeURIComponent(x.judul)}`;
+
+function LencanaProses({ v }: { v: VersiPanduan }) {
+  const [nama, warna] = STATUS[v.status_proses];
+  return <Lencana className={warna}>{(v.status_proses === "DIPROSES" || v.status_proses === "BELUM") && <Loader2 className="size-3 animate-spin" />}{nama}</Lencana>;
 }
 
-function DialogUbah({ p, tutup }: { p: Panduan; tutup: () => void }) {
-  const [judul, setJudul] = useState(p.terkini.judul);
-  const [deskripsi, setDeskripsi] = useState(p.terkini.deskripsi ?? "");
-  const [file, setFile] = useState<File | null>(null);
-  const kirim = useMutation({
-    mutationFn: () => { const fd = new FormData(); fd.set("judul", judul); fd.set("deskripsi", deskripsi); if (file) fd.set("file", file); return api.put(`/api/panduan/${p.id}`, fd); },
-    onSuccess: tutup,
-  });
+const LencanaAktif = ({ aktif }: { aktif: boolean }) =>
+  <Lencana className={aktif ? "bg-emerald-50 text-emerald-700 ring-emerald-300" : "bg-red-50 text-red-700 ring-red-200"}>{aktif ? "Aktif" : "Nonaktif"}</Lencana>;
+
+/** Halaman detail panduan: data terkini (+ tombol Lihat PDF) dan Panduan Histori. Semua pengguna (D3). */
+export function PanduanDetail() {
+  const { id } = useParams();
+  const nav = useNavigate();
+  // Memakai daftar panduan (kunci cache sama dengan halaman Panduan) — tidak perlu endpoint per panduan.
+  const q = useQuery(kueriPanduan);
+  if (q.isLoading) return <Memuat />;
+  const p = q.data?.find((x) => x.id === id);
+  if (!p) return <Kosong>Panduan tidak ditemukan.</Kosong>;
+  const v = p.terkini, awal = p.versi[p.versi.length - 1]; // versi pertama = saat diunggah
   return (
-    <Dialog buka ubahBuka={(b) => !b && tutup()} judul="Ubah panduan">
-      <div className="space-y-4">
-        {kirim.error && <Peringatan>{(kirim.error as Error).message}</Peringatan>}
-        <Kolom label="Judul" wajib><Input value={judul} onChange={(e) => setJudul(e.target.value)} /></Kolom>
-        <Kolom label="Deskripsi"><AreaTeks value={deskripsi} onChange={(e) => setDeskripsi(e.target.value)} /></Kolom>
-        <Unggah label="Ganti file (opsional)" file={file} ubah={(f) => setFile(f[0] ?? null)} keterangan={`Saat ini: ${p.terkini.nama_file}`} />
-        <Peringatan jenis="info">Perubahan disimpan sebagai versi baru. Versi lama tetap tersimpan untuk rujukan review sebelumnya.</Peringatan>
-        <div className="flex justify-end gap-2"><Tombol varian="hantu" onClick={tutup}>Batal</Tombol>
-          <Tombol disabled={!judul.trim()} memuat={kirim.isPending} onClick={() => kirim.mutate()}>Simpan versi baru</Tombol></div>
-      </div>
-    </Dialog>
+    <div className="max-w-3xl space-y-6">
+      <Link to="/panduan" className="inline-flex items-center gap-1 text-sm text-slate-500 hover:text-slate-800"><ArrowLeft className="size-4" />Panduan</Link>
+      <Judul judul="Detail Panduan" sub={v.judul} />
+      <Kartu className="space-y-5 p-5">
+        <Ringkasan baris={[
+          ["Nama Acuan", v.judul],
+          ["Deskripsi", v.deskripsi ?? "—"],
+          ["Status", <LencanaAktif aktif={p.aktif} />],
+          ["Pemrosesan", <><LencanaProses v={v} />{v.status_proses === "GAGAL" && <span className="ml-2 text-xs text-red-700">{v.pesan_gagal ?? "Pemrosesan gagal."}</span>}</>],
+          ["File", `${v.nama_file} · ${v.jumlah_halaman} hlm`],
+          ["PDF", <Tombol kecil varian="sekunder" onClick={() => nav(pdf(v))}><FileText className="size-4" />Lihat PDF</Tombol>],
+          ["Tanggal Input", waktu(awal.dibuat_at)],
+          ["Diinput Oleh", awal.dibuat_oleh ?? "—"],
+        ]} />
+        <div>
+          <h2 className="mb-2 text-sm font-semibold text-slate-700">Panduan Histori</h2>
+          {p.versi.length < 2 ? <p className="text-sm text-slate-500">Belum ada perubahan.</p> : (
+          <div className="overflow-x-auto rounded-lg border border-slate-200">
+            <table className="w-full text-sm">
+              <thead className="bg-slate-50 text-xs text-slate-500"><tr>
+                {["Tanggal Input", "Diinput Oleh", "Status", "Nama Acuan", "Deskripsi"].map((h) => <th key={h} className="px-3 py-2 text-center">{h}</th>)}
+              </tr></thead>
+              {/* versi[0] = terkini, sudah tampil di bagian atas; riwayat hanya versi sebelumnya. */}
+              <tbody className="divide-y divide-slate-100">{p.versi.slice(1).map((x) => (
+                <tr key={x.id} className="align-top">
+                  <td className="whitespace-nowrap px-3 py-2 text-slate-500">{waktu(x.dibuat_at)}</td>
+                  <td className="px-3 py-2">{x.dibuat_oleh ?? "sistem"}</td>
+                  <td className="px-3 py-2"><LencanaAktif aktif={x.aktif} /></td>
+                  <td className="px-3 py-2">{x.judul}</td>
+                  <td className="px-3 py-2 text-slate-600">{x.deskripsi ?? "—"}</td>
+                </tr>))}</tbody>
+            </table>
+          </div>)}
+        </div>
+      </Kartu>
+    </div>
   );
 }

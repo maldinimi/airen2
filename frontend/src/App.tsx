@@ -9,7 +9,8 @@ import NodeAI from "./pages/admin/NodeAI";
 import KelolaPengguna from "./pages/admin/Pengguna";
 import Dashboard from "./pages/Dashboard";
 import Login from "./pages/Login";
-import PanduanPage from "./pages/Panduan";
+import PanduanPage, { PanduanDetail } from "./pages/Panduan";
+import PanduanForm from "./pages/PanduanForm";
 import Pdf from "./pages/Pdf";
 import ReviewDetail from "./pages/ReviewDetail";
 import Riwayat from "./pages/Riwayat";
@@ -41,6 +42,9 @@ export default function App() {
           <Route path="review/:id" element={<ReviewDetail />} />
           <Route path="pdf/:fileId" element={<Pdf />} />
           <Route path="panduan" element={<PanduanPage />} />
+          <Route path="panduan/:id" element={<PanduanDetail />} />
+          <Route path="panduan/unggah" element={<Wajib role={["ADMIN"]}><PanduanForm mode="unggah" /></Wajib>} />
+          <Route path="panduan/:id/ubah" element={<Wajib role={["ADMIN"]}><PanduanForm mode="ubah" /></Wajib>} />
           <Route path="akun" element={<Akun />} />
           <Route path="kelola/checklist" element={<Wajib role={["ADMIN"]}><KelolaChecklist /></Wajib>} />
           <Route path="kelola/kategori" element={<Wajib role={["ADMIN"]}><KelolaKategori /></Wajib>} />

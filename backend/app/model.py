@@ -230,50 +230,49 @@ class KategoriItem(Base):
 
 
 class Panduan(Base):
+    """Panduan beserta isi versi TERKINI (panduan = Nama Acuan, deskripsi, file, status). Versi sebelumnya ada di `panduan_histori`.
+    Nama & urutan kolom ditetapkan pemilik produk (desain.md §7 no. 17)."""
     __tablename__ = "panduan"
     id: Mapped[uuid.UUID] = _id()
-    created_at: Mapped[datetime] = _dibuat()
-    judul_terkini: Mapped[str] = mapped_column(String(500))
-    dihapus_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))  # soft delete (D6)
-    versi: Mapped[list["PanduanVersi"]] = relationship(order_by="PanduanVersi.nomor", lazy="selectin")
-
-
-class PanduanVersi(Base):
-    """Setiap ganti judul/deskripsi/file → versi baru. Status pemrosesan mengikuti `file.status_ekstraksi`."""
-    __tablename__ = "panduan_versi"
-    __table_args__ = (UniqueConstraint("panduan_id", "nomor"),)
-    id: Mapped[uuid.UUID] = _id()
-    created_at: Mapped[datetime] = _dibuat()
-    panduan_id: Mapped[uuid.UUID] = _fk("panduan")
-    nomor: Mapped[int] = mapped_column(Integer)
-    judul: Mapped[str] = mapped_column(String(500))
-    deskripsi: Mapped[str | None] = mapped_column(Text)
+    created_by: Mapped[uuid.UUID | None] = _fk("pengguna", nullable=True, index=False)  # pengunggah pertama (versi 1)
+    created_date: Mapped[datetime] = _dibuat()
+    updated_by: Mapped[uuid.UUID | None] = _fk("pengguna", nullable=True, index=False)  # yang menginput versi terkini
+    updated_date: Mapped[datetime] = _dibuat()  # waktu input versi terkini
+    panduan: Mapped[str] = mapped_column(String(500))
+    # Nonaktif = tetap tampil, tetapi tidak dipakai review berikutnya.
+    aktif: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
     file_id: Mapped[uuid.UUID] = _fk("file", index=False)
     nama_file: Mapped[str] = mapped_column(String(255))
-    dibuat_oleh: Mapped[uuid.UUID | None] = _fk("pengguna", nullable=True, index=False)
+    deskripsi: Mapped[str | None] = mapped_column(Text)
+    pengubah: Mapped[Pengguna | None] = relationship(foreign_keys=[updated_by], lazy="joined")
     file: Mapped[File] = relationship(lazy="joined")
+    versi: Mapped[list["PanduanHistori"]] = relationship(order_by="PanduanHistori.updated_date", lazy="selectin")  # riwayat saja
+
+    def daftar_versi(self) -> list[tuple[int, "Panduan | PanduanHistori"]]:
+        """[(nomor versi, baris)], terbaru dulu: terkini lalu riwayat. Nomor versi tidak disimpan (desain.md §7 no. 18):
+        riwayat ke-n menurut `updated_date` = versi n, terkini = jumlah riwayat + 1. Stabil karena riwayat tidak pernah
+        diubah dan hanya terhapus bersama panduannya (D6)."""
+        return [(len(self.versi) + 1, self), *((n, v) for n, v in reversed(list(enumerate(self.versi, 1))))]
 
 
-class PanduanKoleksiVersi(Base):
-    """Snapshot daftar panduan (seperti versi checklist/kategori): setiap unggah/ubah/hapus → versi baru.
-    Isi = versi terbaru tiap panduan yang tidak dihapus saat itu; baris lama tidak pernah diubah."""
-    __tablename__ = "panduan_koleksi_versi"
+class PanduanHistori(Base):
+    """Riwayat (Panduan Histori): salinan utuh baris `panduan` SEBELUM tiap perubahan — created_by/created_date tetap
+    milik pengunggah pertama, updated_by/updated_date = penginput & waktu versi itu. Versi terkini ada di `panduan`.
+    Baris tidak pernah diubah. Status pemrosesan mengikuti `file.status_ekstraksi`."""
+    __tablename__ = "panduan_histori"
     id: Mapped[uuid.UUID] = _id()
-    created_at: Mapped[datetime] = _dibuat()
-    nomor: Mapped[int] = mapped_column(Integer, unique=True)
-    aktif: Mapped[bool] = mapped_column(Boolean, default=True)
-    dibuat_oleh: Mapped[uuid.UUID | None] = _fk("pengguna", nullable=True, index=False)
-    catatan: Mapped[str | None] = mapped_column(Text)
-    item: Mapped[list["PanduanKoleksiItem"]] = relationship(order_by="PanduanKoleksiItem.urutan", lazy="selectin")
-
-
-class PanduanKoleksiItem(Base):
-    __tablename__ = "panduan_koleksi_item"
-    id: Mapped[uuid.UUID] = _id()
-    versi_id: Mapped[uuid.UUID] = _fk("panduan_koleksi_versi")
-    urutan: Mapped[int] = mapped_column(Integer)
-    panduan_versi_id: Mapped[uuid.UUID] = _fk("panduan_versi", index=False)
-    panduan_versi: Mapped[PanduanVersi] = relationship(lazy="joined")
+    created_by: Mapped[uuid.UUID | None] = _fk("pengguna", nullable=True, index=False)
+    created_date: Mapped[datetime] = _dibuat()
+    updated_by: Mapped[uuid.UUID | None] = _fk("pengguna", nullable=True, index=False)
+    updated_date: Mapped[datetime] = _dibuat()
+    panduan_id: Mapped[uuid.UUID] = _fk("panduan")
+    panduan: Mapped[str] = mapped_column(String(500))
+    aktif: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")  # status saat versi dibuat
+    file_id: Mapped[uuid.UUID] = _fk("file", index=False)
+    nama_file: Mapped[str] = mapped_column(String(255))
+    deskripsi: Mapped[str | None] = mapped_column(Text)
+    file: Mapped[File] = relationship(lazy="joined")
+    pengubah: Mapped[Pengguna | None] = relationship(foreign_keys=[updated_by], lazy="joined")
 
 
 # ---------------------------------------------------------------- review
@@ -286,8 +285,6 @@ class Review(Base):
     trace_id: Mapped[str] = mapped_column(String(32), index=True)
     status: Mapped[str] = mapped_column(String(20), default="ANTRE")  # ANTRE|DIPROSES|SELESAI|GAGAL
     kategori_versi_id: Mapped[uuid.UUID | None] = _fk("kategori_versi", nullable=True, index=False)
-    # Versi daftar panduan saat dikunci; file yang benar-benar dipakai (hanya yang SIAP) ada di review_panduan.
-    panduan_koleksi_versi_id: Mapped[uuid.UUID | None] = _fk("panduan_koleksi_versi", nullable=True, index=False)
     fingerprint: Mapped[str | None] = mapped_column(String(64), index=True)
     disalin_dari_id: Mapped[uuid.UUID | None] = _fk("review", nullable=True, index=False)
     model_info: Mapped[dict | None] = mapped_column(JSONB)
@@ -304,9 +301,15 @@ class Review(Base):
 
 
 class ReviewPanduan(Base):
+    """Panduan + versi yang dipakai review (D5): salinan saat acuan dikunci, sehingga tetap benar walau panduan diedit
+    (versi terkini tidak punya baris di `panduan_histori`)."""
     __tablename__ = "review_panduan"
     review_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("review.id"), primary_key=True)
-    panduan_versi_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("panduan_versi.id"), primary_key=True)
+    panduan_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("panduan.id"), primary_key=True)
+    nomor: Mapped[int] = mapped_column(Integer)
+    judul: Mapped[str] = mapped_column(String(500))
+    file_id: Mapped[uuid.UUID] = _fk("file", index=False)
+    nama_file: Mapped[str] = mapped_column(String(255))
 
 
 class HasilItem(Base):

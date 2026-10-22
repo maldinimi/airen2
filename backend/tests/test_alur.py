@@ -3,10 +3,10 @@ finalkan → revisi → riwayat; plus invarian rujukan, konsistensi (fingerprint
 import socket
 import uuid
 
-from sqlalchemy import select, text
+from sqlalchemy import select, text, update
 
 from app.db import SessionLokal
-from app.model import Elemen, Review, Rujukan
+from app.model import Elemen, Panduan, Review, Rujukan
 from tests.conftest import RAB_CONTOH, TOR_CONTOH, buat_pdf, jalankan_antrean, unggah
 
 TOR = buat_pdf(TOR_CONTOH)
@@ -113,6 +113,7 @@ def test_hak_akses(klien):
         assert c.get("/api/pengguna").status_code == 403
         assert c.post("/api/checklist/item", json={"kode": "Z1", "judul": "a", "kriteria": "b", "berlaku_untuk": "TOR"}).status_code == 403
         assert c.get("/api/audit").status_code == 403
+        assert c.put("/api/panduan/00000000-0000-0000-0000-000000000000", data={"judul": "x", "aktif": "false"}).status_code == 403
     anonim = klien()
     assert anonim.get("/api/usulan").status_code == 401
     assert anonim.get(f"/api/file/{u['tor']['file_id']}").status_code == 401
@@ -240,8 +241,12 @@ def test_panduan_berversi_dan_dipakai_review(klien):
     admin = klien("admin", "GantiSegera!2026")
     pdf = buat_pdf(["Pasal 5", "(1) Indikator keluaran wajib memuat target kuantitatif dan satuan.",
                     "(2) Honor narasumber paling tinggi Rp1.700.000 per orang jam."])
-    pd = admin.post("/api/panduan", files=[("files", ("pmk.pdf", io.BytesIO(pdf), "application/pdf"))]).json()[0]
-    assert pd["terkini"]["status_proses"] == "BELUM"
+    assert admin.post("/api/panduan", files={"file": ("pmk.pdf", io.BytesIO(pdf), "application/pdf")},
+                      data={"judul": "x" * 501}).status_code == 400  # ditolak sebelum PDF disimpan
+    pd = admin.post("/api/panduan", files={"file": ("pmk.pdf", io.BytesIO(pdf), "application/pdf")},
+                    data={"judul": "pmk", "deskripsi": "Standar biaya", "aktif": "true"}).json()
+    assert pd["terkini"]["status_proses"] == "BELUM" and pd["aktif"] and pd["diubah_oleh"] and pd["terkini"]["deskripsi"] == "Standar biaya"
+    assert pd["terkini"]["dibuat_oleh"] == pd["diubah_oleh"]  # akun yang membuat versi
     jalankan_antrean()
     daftar = admin.get("/api/panduan").json()
     assert daftar[0]["terkini"]["status_proses"] == "SIAP"
@@ -253,13 +258,55 @@ def test_panduan_berversi_dan_dipakai_review(klien):
     assert rv["acuan"]["panduan"][0]["judul"] == "PMK Standar Biaya"
     dasar = [r for i in rv["item"] for r in i["rujukan"] if r["peran"] == "dasar_panduan"]
     assert dasar and all(r["dokumen"] == "PANDUAN" for r in dasar)
-    # Versi daftar panduan: unggah = v1, ubah = v2 (dipakai review), hapus = v3 kosong; isi v1 tidak berubah.
-    assert rv["acuan"]["panduan_versi"]["nomor"] == 2
-    admin.delete(f"/api/panduan/{pd['id']}")
-    vs = admin.get("/api/panduan/versi").json()
-    assert [v["nomor"] for v in vs["versi"]] == [3, 2, 1] and vs["aktif"]["nomor"] == 3 and vs["aktif"]["jumlah_item"] == 0
-    v1 = admin.get(f"/api/panduan/versi/{vs['versi'][2]['id']}").json()
-    assert [(x["judul"], x["nomor"]) for x in v1["item"]] == [("pmk", 1)]
+    assert rv["acuan"]["panduan"][0]["nomor"] == 2  # review mencatat versi panduan yang dipakai (D5)
+    nonaktif = admin.put(f"/api/panduan/{pd['id']}", data={"judul": "PMK Standar Biaya", "aktif": "false"}).json()
+    assert nonaktif["aktif"] is False and nonaktif["terkini"]["nomor"] == 3 and nonaktif["terkini"]["aktif"] is False
+    assert [x["aktif"] for x in nonaktif["versi"]] == [False, True, True]  # status tercatat per versi
+    sama = admin.put(f"/api/panduan/{pd['id']}", data={"judul": "PMK Standar Biaya", "aktif": "false"}).json()
+    assert sama["terkini"]["nomor"] == 3  # simpan tanpa perubahan tidak membuat versi
+    # Database: versi terkini hanya di `panduan`; `panduan_histori` hanya riwayat (v1, v2).
+    with SessionLokal() as db:
+        pid = uuid.UUID(pd["id"])
+        pdb = db.get(Panduan, pid)
+        assert pdb.created_by and pdb.created_by == pdb.updated_by  # admin yang sama mengunggah & mengedit
+        # Riwayat urut updated_date = versi 1, 2; terkini = versi 3 (nomor versi tidak disimpan).
+        assert [v.panduan for v in pdb.versi] == ["pmk", "PMK Standar Biaya"] and pdb.daftar_versi()[0][0] == 3
+        assert {v.created_by for v in pdb.versi} == {pdb.created_by}  # riwayat menyalin pengunggah pertama
+    assert pengusul.get(f"/api/review/{rv['id']}").json()["acuan"]["panduan"][0]["nomor"] == 2  # catatan review tidak berubah (D5)
+    assert pengusul.get(f"/api/file/{pd['terkini']['file_id']}").status_code == 200  # PDF panduan terbuka untuk semua pengguna
+    assert admin.get("/api/panduan").json()[0]["aktif"] is False  # tetap tampil di daftar
+    _, u2 = _usulan_diajukan(klien)
+    jalankan_antrean()
+    rv2 = pengusul.get(f"/api/review/{pengusul.get(f'/api/usulan/{u2['id']}').json()['review_id']}").json()
+    assert rv2["acuan"]["panduan"] == []  # Nonaktif → tidak dipakai review
+    # Hapus = permanen: panduan, versi, file & ekstraksinya hilang; review lama tetap terbuka tanpa rujukan panduan.
+    assert admin.delete(f"/api/panduan/{pd['id']}").status_code == 200
+    assert admin.get("/api/panduan").json() == []
+    assert admin.get(f"/api/file/{pd['terkini']['file_id']}").status_code == 404
+    rv_lama = pengusul.get(f"/api/review/{rv['id']}").json()
+    assert rv_lama["acuan"]["panduan"] == [] and not [r for i in rv_lama["item"] for r in i["rujukan"] if r["peran"] == "dasar_panduan"]
+    assert admin.get("/api/panduan/versi").status_code in (404, 405, 422)  # versi daftar panduan sudah dihapus
+
+
+def test_panduan_tidak_macet_bila_worker_mati_berulang(klien):
+    """Worker mati 3× saat memproses panduan → file GAGAL (bukan "Diproses" selamanya) dan dapat diproses ulang."""
+    import io
+    from datetime import datetime, timedelta, timezone
+
+    from app.model import File, Job
+    from app.pekerja.utama import lepas_job_macet
+    admin = klien("admin", "GantiSegera!2026")
+    pd = admin.post("/api/panduan", files={"file": ("p.pdf", io.BytesIO(buat_pdf(["Pasal 1 uji macet"])), "application/pdf")},
+                    data={"judul": "p"}).json()
+    fid = uuid.UUID(pd["terkini"]["file_id"])
+    with SessionLokal() as db:  # keadaan setelah worker mati pada percobaan ke-3
+        db.execute(update(Job).where(Job.ref_id == fid).values(
+            status="DIPROSES", percobaan=3, dikunci_at=datetime.now(timezone.utc) - timedelta(hours=1)))
+        db.execute(update(File).where(File.id == fid).values(status_ekstraksi="DIPROSES"))
+        db.commit()
+    lepas_job_macet()
+    assert admin.get("/api/panduan").json()[0]["terkini"]["status_proses"] == "GAGAL"
+    assert admin.post(f"/api/panduan/{pd['id']}/proses-ulang").json()["terkini"]["status_proses"] == "BELUM"
 
 
 def test_tidak_ada_koneksi_keluar_selama_review(klien, monkeypatch):

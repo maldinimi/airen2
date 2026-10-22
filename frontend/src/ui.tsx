@@ -7,9 +7,10 @@ import type { KategoriRingkas, StatusRevisi } from "./types";
 
 export const cx = (...k: (string | false | null | undefined)[]) => k.filter(Boolean).join(" ");
 
-type Varian = "utama" | "sekunder" | "bahaya" | "hantu" | "ubah";
+type Varian = "utama" | "lembut" | "sekunder" | "bahaya" | "hantu" | "ubah";
 const gayaTombol: Record<Varian, string> = {
   utama: "bg-utama-600 text-white hover:bg-utama-700 shadow-sm",
+  lembut: "bg-utama-100 text-utama-700 hover:brightness-95 shadow-sm",
   sekunder: "bg-white text-slate-700 border border-slate-300 hover:bg-slate-50 shadow-sm",
   bahaya: "bg-red-600 text-white hover:bg-red-700 shadow-sm",
   hantu: "text-slate-600 hover:bg-slate-100",
@@ -143,6 +144,39 @@ export function Dialog({ buka, ubahBuka, judul, children, lebar = "max-w-lg", ik
         </D.Content>
       </D.Portal>
     </D.Root>
+  );
+}
+
+/** Daftar label–nilai berbingkai (ringkasan isian, detail data). */
+export function Ringkasan({ baris }: { baris: [string, ReactNode][] }) {
+  return (
+    <dl className="divide-y divide-slate-100 rounded-lg border border-slate-200 text-sm">
+      {baris.map(([k, v]) => (
+        <div key={k} className="grid grid-cols-3 gap-2 px-3 py-2"><dt className="text-slate-500">{k}</dt><dd className="col-span-2 break-words">{v}</dd></div>
+      ))}
+    </dl>
+  );
+}
+
+/** Pop-up konfirmasi: ringkasan + pertanyaan. Bawaan = "Periksa kembali" sebelum menyimpan; `bahaya` = tindakan yang
+ *  tidak dapat dibatalkan (ikon peringatan, tombol merah). Tombol batal menutup tanpa melakukan apa pun. */
+export function Konfirmasi({ buka, baris, batal, ya, memuat, galat, bahaya, judul = "Periksa kembali",
+  pesan = "Apakah Anda yakin data di atas sudah benar dan ingin menyimpannya?", teksYa = "Ya, simpan", teksBatal = "Periksa kembali" }:
+  { buka: boolean; baris: [string, ReactNode][]; batal: () => void; ya: () => void; memuat?: boolean; galat?: string | null;
+    bahaya?: boolean; judul?: string; pesan?: ReactNode; teksYa?: string; teksBatal?: string }) {
+  return (
+    <Dialog buka={buka} ubahBuka={(b) => !b && !memuat && batal()} judul={judul}
+      ikon={bahaya && <span className="flex size-12 items-center justify-center rounded-full bg-red-100"><AlertTriangle className="size-6 text-red-600" aria-hidden /></span>}>
+      <div className="space-y-4">
+        <Ringkasan baris={baris} />
+        <p className="text-sm text-slate-700">{pesan}</p>
+        {galat && <Peringatan>{galat}</Peringatan>}
+        <div className="flex justify-end gap-2">
+          <Tombol varian="hantu" disabled={memuat} onClick={batal}>{teksBatal}</Tombol>
+          <Tombol varian={bahaya ? "bahaya" : "utama"} memuat={memuat} onClick={ya}>{teksYa}</Tombol>
+        </div>
+      </div>
+    </Dialog>
   );
 }
 

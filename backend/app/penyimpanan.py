@@ -1,4 +1,4 @@
-"""Penyimpanan file PDF: nama file = SHA-256 isi, tidak pernah ditimpa (D6).
+"""Penyimpanan file PDF: nama file = SHA-256 isi, tidak pernah ditimpa (rujukan review lama tetap dapat dibuka; hapus panduan permanen, PRD D6).
 
 File identik otomatis tidak terduplikasi; baris `file` yang sama dipakai ulang.
 """
