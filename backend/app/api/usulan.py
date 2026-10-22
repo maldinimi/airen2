@@ -14,7 +14,8 @@ from app.audit import catat
 from app.db import sesi_db
 from app.galat import Galat
 from app.layanan_review import ajukan_review, info_proses, nilai_final_review, review_terbaru, ringkasan_checklist
-from app.model import ChecklistItem, KategoriItem, Pengguna, Review, Revisi, Satker, Usulan
+from app.checklist import isi_review
+from app.model import KategoriItem, Pengguna, Review, Revisi, Satker, Usulan
 from app.penyimpanan import simpan_unggahan
 
 router = APIRouter(prefix="/api/usulan", tags=["usulan"])
@@ -243,7 +244,7 @@ def arsipkan(usulan_id: uuid.UUID, data: Arsip, request: Request, db: Session = 
 def riwayat(usulan_id: uuid.UUID, db: Session = Depends(sesi_db), p: Pengguna = Depends(pengguna_saat_ini)) -> dict:
     """Riwayat (A7): semua revisi & review + tabel perbandingan checklist antar-revisi.
 
-    Baris perbandingan dikunci oleh `kode` item; item yang isinya berbeda antar versi checklist ditandai.
+    Baris perbandingan dikunci oleh id item (tetap walau kode diganti); item yang isinya berbeda antar review ditandai.
     Pengusul melihat nilai AI sebelum final, nilai final setelahnya.
     """
     u = _ambil(db, usulan_id, p)
@@ -267,10 +268,11 @@ def riwayat(usulan_id: uuid.UUID, db: Session = Depends(sesi_db), p: Pengguna = 
             if rv.status == "SELESAI":
                 nf, _ = nilai_final_review(db, rv, sebagai_reviewer or rv.difinalkan_at is not None)
                 kolom.append({"revisi_nomor": r.nomor, "review_id": str(rv.id), "final": rv.difinalkan_at is not None})
-                for ci in db.scalars(select(ChecklistItem).where(ChecklistItem.versi_id == rv.checklist_versi_id)):
-                    b = baris.setdefault(ci.kode, {"kode": ci.kode, "judul": ci.judul, "isi": set(), "nilai": {}})
-                    b["isi"].add((ci.judul, ci.kriteria, ci.berlaku_untuk))
-                    b["nilai"][str(rv.id)] = nf.item.get(str(ci.id))
+                for ci in isi_review(db, rv):
+                    b = baris.setdefault(ci.item_id, {"kode": ci.kode, "judul": ci.judul, "isi": set(), "nilai": {}})
+                    b.update(kode=ci.kode, judul=ci.judul)  # tampilkan isi dari review terbaru
+                    b["isi"].add((ci.kode, ci.judul, ci.kriteria, ci.berlaku_untuk))
+                    b["nilai"][str(rv.id)] = nf.item.get(str(ci.item_id))
         revisi_data.append({
             "id": str(r.id), "nomor": r.nomor, "status": r.status, "dibuat_at": r.created_at.isoformat(),
             "dibuat_oleh": db.get(Pengguna, r.dibuat_oleh).nama,

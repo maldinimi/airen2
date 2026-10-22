@@ -14,7 +14,8 @@ from app import status as st
 from app.akses import boleh_kelola_usulan, boleh_lihat_semua, pastikan
 from app.audit import catat
 from app.galat import Galat
-from app.model import (CatatanReviewer, ChecklistItem, ChecklistVersi, Elemen, HasilItem, HasilKategori, Job,
+from app.checklist import isi_review
+from app.model import (CatatanReviewer, ChecklistItem, Elemen, HasilItem, HasilKategori, Job,
                        KategoriItem, KategoriVersi, NodeAI, Override, Pengguna, Rekomendasi, Review,
                        ReviewPanduan, Revisi, Rujukan, Usulan)
 from app.nilai_final import NilaiFinal, hitung_nilai_final
@@ -39,8 +40,7 @@ def ajukan_review(db: Session, request: Request | None, revisi: Revisi, p: Pengg
         raise Galat(409, "Usulan diarsipkan.")
     if revisi.status not in st.BOLEH_AJUKAN:
         raise Galat(409, "Revisi ini sudah diajukan. Review AI hanya dijalankan sekali per revisi.")
-    versi = db.scalar(select(ChecklistVersi).where(ChecklistVersi.aktif))
-    if versi is None or not versi.item:
+    if db.scalar(select(ChecklistItem.id).where(ChecklistItem.aktif).limit(1)) is None:
         raise Galat(400, "Checklist belum diatur oleh Admin. Review belum dapat diajukan.")
     if db.scalar(select(KategoriVersi.id).where(KategoriVersi.aktif)) is None:
         raise Galat(400, "Kategori belum diatur oleh Admin.")
@@ -103,9 +103,7 @@ def ringkasan_checklist(db: Session, review: Review | None, p: Pengguna) -> dict
     if review is None or review.status != "SELESAI":
         return None
     nf, _ = nilai_final_review(db, review, lihat_sebagai_reviewer(p) or review.difinalkan_at is not None)
-    item = db.scalars(select(ChecklistItem).where(ChecklistItem.versi_id == review.checklist_versi_id)
-                      .order_by(ChecklistItem.urutan)).all()
-    rincian = [{"kode": i.kode, "judul": i.judul, "terpenuhi": nf.item.get(str(i.id), False)} for i in item]
+    rincian = [{"kode": i.kode, "judul": i.judul, "terpenuhi": nf.item.get(str(i.item_id), False)} for i in isi_review(db, review)]
     return {"terpenuhi": sum(r["terpenuhi"] for r in rincian), "total": len(rincian), "item": rincian,
             "label": nf.label, "final": review.difinalkan_at is not None}
 
@@ -189,11 +187,11 @@ def detail_review(db: Session, review: Review, p: Pengguna) -> dict:
         if o.dibatalkan_at is None:
             aktif_per_target[(o.target, str(o.checklist_item_id) if o.checklist_item_id else None)] = o
 
-    cv = db.get(ChecklistVersi, review.checklist_versi_id)
+    isi = isi_review(db, review)  # isi checklist saat review dimulai, bukan isi terbaru (PRD B4)
     kv = db.get(KategoriVersi, review.kategori_versi_id)
     panduan = db.scalars(select(ReviewPanduan).where(ReviewPanduan.review_id == review.id).order_by(ReviewPanduan.judul)).all()
     data["acuan"] = {
-        "checklist_versi": {"id": str(cv.id), "nomor": cv.nomor},
+        "checklist": {"jumlah_item": len(isi)},
         "kategori_versi": {"id": str(kv.id), "nomor": kv.nomor},
         "panduan": [{"judul": pv.judul, "nomor": pv.nomor, "file_id": str(pv.file_id), "nama_file": pv.nama_file} for pv in panduan],
     }
@@ -204,14 +202,15 @@ def detail_review(db: Session, review: Review, p: Pengguna) -> dict:
     rujukan = _rujukan(db, review, revisi, [h.id for h in hasil.values()] + [r.id for r in rek] + ([kat.id] if kat else []))
 
     item = []
-    for ci in cv.item:
-        h = hasil.get(ci.id)
+    for ci in isi:
+        h = hasil.get(ci.item_id)
         if h is None:
             continue
-        o = aktif_per_target.get(("ITEM", str(ci.id)))
+        iid = str(ci.item_id)
+        o = aktif_per_target.get(("ITEM", iid))
         item.append({
-            "id": str(ci.id), "kode": ci.kode, "judul": ci.judul, "kriteria": ci.kriteria, "berlaku_untuk": ci.berlaku_untuk,
-            "ai_terpenuhi": h.terpenuhi, "terpenuhi": nf.item.get(str(ci.id), h.terpenuhi), "diubah": str(ci.id) in nf.item_diubah,
+            "id": iid, "kode": ci.kode, "judul": ci.judul, "kriteria": ci.kriteria, "berlaku_untuk": ci.berlaku_untuk,
+            "ai_terpenuhi": h.terpenuhi, "terpenuhi": nf.item.get(iid, h.terpenuhi), "diubah": iid in nf.item_diubah,
             "override": _override_dict(db, o) if o else None, "ditemukan": h.ditemukan, "alasan": h.alasan,
             "yang_kurang": h.yang_kurang, "rujukan": rujukan.get(str(h.id), []),
         })
@@ -225,7 +224,7 @@ def detail_review(db: Session, review: Review, p: Pengguna) -> dict:
                         "alasan": kat.alasan if kat else None, "rujukan": rujukan.get(str(kat.id), []) if kat else [],
                         "override": _override_dict(db, o) if (o := aktif_per_target.get(("KATEGORI", None))) else None,
                         "pilihan": [_kategori_ringkas(k) for k in kv.item]}
-    kode_item = {ci.id: ci.kode for ci in cv.item}
+    kode_item = {ci.item_id: ci.kode for ci in isi}
     data["rekomendasi"] = {d: [{"id": str(r.id), "teks": r.teks, "tidak_diperlukan": r.tidak_diperlukan,
                                 "item_kode": kode_item.get(r.checklist_item_id), "rujukan": rujukan.get(str(r.id), [])}
                                for r in rek if r.dokumen == d] for d in ("TOR", "RAB")}

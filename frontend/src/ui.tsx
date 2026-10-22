@@ -1,6 +1,6 @@
 /** Komponen UI bersama (gaya shadcn/ui di atas Radix + Tailwind). */
 import * as D from "@radix-ui/react-dialog";
-import { AlertTriangle, Loader2, X } from "lucide-react";
+import { AlertTriangle, CircleCheck, Loader2, X } from "lucide-react";
 import { type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode, type SelectHTMLAttributes,
   type TextareaHTMLAttributes, forwardRef } from "react";
 import type { KategoriRingkas, StatusRevisi } from "./types";
@@ -44,17 +44,6 @@ export function Kolom({ label, wajib, petunjuk, children }: { label: string; waj
   );
 }
 
-/** Saklar Aktif/Nonaktif (role="switch" agar terbaca pembaca layar). */
-export function Saklar({ nyala, ubah, label, disabled }: { nyala: boolean; ubah: (v: boolean) => void; label: string; disabled?: boolean }) {
-  return (
-    <button type="button" role="switch" aria-checked={nyala} aria-label={label} disabled={disabled} onClick={() => ubah(!nyala)}
-      className={cx("relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-utama-500 disabled:opacity-50",
-        nyala ? "bg-emerald-500" : "bg-slate-300")}>
-      <span className={cx("inline-block size-4 rounded-full bg-white shadow transition-transform", nyala ? "translate-x-4" : "translate-x-0.5")} />
-    </button>
-  );
-}
-
 export const Kartu = ({ className, children }: { className?: string; children: ReactNode }) =>
   <div className={cx("rounded-xl border border-slate-200 bg-white shadow-sm", className)}>{children}</div>;
 
@@ -65,7 +54,7 @@ export function Judul({ judul, sub, aksi }: { judul: ReactNode; sub?: ReactNode;
         <h1 className="text-xl font-semibold text-slate-900 sm:text-2xl">{judul}</h1>
         {sub && <p className="mt-1 text-sm text-slate-500">{sub}</p>}
       </div>
-      {aksi && <div className="flex flex-wrap gap-2">{aksi}</div>}
+      {aksi && <div className="ml-auto flex flex-wrap justify-end gap-2">{aksi}</div>}
     </div>
   );
 }
@@ -118,17 +107,19 @@ export const TandaUbah = ({ title }: { title?: string }) =>
 export const Memuat = ({ teks = "Memuat…" }: { teks?: string }) =>
   <div className="flex items-center justify-center gap-2 py-16 text-sm text-slate-500"><Loader2 className="size-5 animate-spin" />{teks}</div>;
 
-export function Peringatan({ jenis = "error", children }: { jenis?: "error" | "info" | "warn"; children: ReactNode }) {
-  const g = { error: "bg-red-50 text-red-800 border-red-200", info: "bg-utama-50 text-utama-900 border-utama-100", warn: "bg-amber-50 text-amber-900 border-amber-200" }[jenis];
+export function Peringatan({ jenis = "error", children }: { jenis?: "error" | "info" | "warn" | "sukses"; children: ReactNode }) {
+  const g = { error: "bg-red-50 text-red-800 border-red-200", info: "bg-utama-50 text-utama-900 border-utama-100",
+    warn: "bg-amber-50 text-amber-900 border-amber-200", sukses: "bg-emerald-50 text-emerald-800 border-emerald-200" }[jenis];
+  const Ikon = jenis === "sukses" ? CircleCheck : AlertTriangle;
   return <div role={jenis === "error" ? "alert" : "status"} className={cx("flex gap-2 rounded-lg border px-3 py-2.5 text-sm", g)}>
-    <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden /><div>{children}</div></div>;
+    <Ikon className="mt-0.5 size-4 shrink-0" aria-hidden /><div>{children}</div></div>;
 }
 
 export function Kosong({ children }: { children: ReactNode }) {
   return <div className="rounded-xl border border-dashed border-slate-300 bg-white py-12 text-center text-sm text-slate-500">{children}</div>;
 }
 
-/** `ikon` diisi → ikon di atas tengah, judul di tengah, tombol tutup di pojok kanan atas. */
+/** `ikon` (opsional): judul ditampilkan di tengah dengan ikon di atasnya (dipakai dialog konfirmasi hapus). */
 export function Dialog({ buka, ubahBuka, judul, children, lebar = "max-w-lg", ikon }:
   { buka: boolean; ubahBuka: (b: boolean) => void; judul: string; children: ReactNode; lebar?: string; ikon?: ReactNode }) {
   return (
@@ -136,11 +127,18 @@ export function Dialog({ buka, ubahBuka, judul, children, lebar = "max-w-lg", ik
       <D.Portal>
         <D.Overlay className="fixed inset-0 z-40 bg-slate-900/40" />
         <D.Content className={cx("fixed left-1/2 top-1/2 z-50 max-h-[90vh] w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-xl bg-white p-5 shadow-xl", lebar)}>
-          {ikon && <div className="mb-3 flex justify-center">{ikon}</div>}
-          <div className={cx("mb-4 flex items-start gap-4", ikon ? "justify-center text-center" : "justify-between")}>
-            <D.Title className="text-lg font-semibold text-slate-900">{judul}</D.Title>
-            <D.Close className={cx("rounded p-1 text-slate-500 hover:bg-slate-100", !!ikon && "absolute right-4 top-4")} aria-label="Tutup"><X className="size-5" /></D.Close>
-          </div>
+          {ikon ? (
+            <div className="relative mb-4 pt-2 text-center">
+              <D.Close className="absolute -top-1 right-0 rounded p-1 text-slate-500 hover:bg-slate-100" aria-label="Tutup"><X className="size-5" /></D.Close>
+              <div className="mx-auto mb-3 w-fit">{ikon}</div>
+              <D.Title className="text-lg font-semibold text-slate-900">{judul}</D.Title>
+            </div>
+          ) : (
+            <div className="mb-4 flex items-start justify-between gap-4">
+              <D.Title className="text-lg font-semibold text-slate-900">{judul}</D.Title>
+              <D.Close className="rounded p-1 text-slate-500 hover:bg-slate-100" aria-label="Tutup"><X className="size-5" /></D.Close>
+            </div>
+          )}
           <D.Description className="sr-only">{judul}</D.Description>
           {children}
         </D.Content>
@@ -218,5 +216,20 @@ export function Progres({ persen, tahap }: { persen: number; tahap: string }) {
         <div className="h-full rounded-full bg-utama-600 transition-all" style={{ width: `${persen}%` }} />
       </div>
     </div>
+  );
+}
+
+/** Saklar on/off (role=switch) dengan label status di sampingnya; lebar label tetap agar tata letak tidak bergeser. */
+export function Saklar({ aktif, label, ubah }: { aktif: boolean; label: string; ubah: (aktif: boolean) => void }) {
+  const isi = <>
+    <span className={cx("relative inline-flex h-5 w-9 shrink-0 rounded-full transition-colors", aktif ? "bg-emerald-500" : "bg-slate-300")}>
+      <span className={cx("absolute top-0.5 size-4 rounded-full bg-white shadow transition-transform", aktif ? "translate-x-4.5" : "translate-x-0.5")} />
+    </span>
+    <span className={cx("w-14 text-left text-xs font-medium", aktif ? "text-emerald-700" : "text-slate-500")}>{aktif ? "Aktif" : "Nonaktif"}</span>
+  </>;
+  return (
+    <button type="button" role="switch" aria-checked={aktif} aria-label={label} onClick={() => ubah(!aktif)}
+      title={aktif ? "Klik untuk menonaktifkan" : "Klik untuk mengaktifkan"}
+      className="inline-flex items-center gap-2 rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-utama-100">{isi}</button>
   );
 }

@@ -58,7 +58,7 @@ Hak akses selalu dicek di backend:
 Detail review berisi:
 
 - **status**: `status, final, tampilan (reviewer|pengusul), boleh_override, proses, model_info`;
-- **acuan**: `acuan{checklist_versi, kategori_versi, panduan[{judul, nomor, file_id, nama_file}]}`;
+- **acuan**: `acuan{checklist{jumlah_item}, kategori_versi, panduan[{judul, nomor, file_id, nama_file}]}`;
 - **hasil**:
   - `label{ai, hitung, final, diubah, tidak_konsisten, terpenuhi, total, override}`;
   - `kategori{ai, final, alasan, rujukan[], pilihan[], override}`;
@@ -72,9 +72,12 @@ Setiap `rujukan` berisi `{peran (bukti_dokumen|dasar_panduan), dokumen (TOR|RAB|
 
 | Metode | Path | Role | Keterangan |
 | --- | --- | --- | --- |
-| GET | `/checklist` | login | `{aktif: Versi, versi: RingkasVersi[]}` |
-| GET | `/checklist/versi/{id}` | login | Isi lengkap satu versi |
-| POST | `/checklist/versi` | Admin | `{catatan?, item: [{kode, judul, kriteria, berlaku_untuk: TOR\|RAB\|KEDUANYA}]}` → versi baru |
+| GET | `/checklist` | login | Isi terbaru `{item: [{id, urutan, kode, judul, kriteria, berlaku_untuk, aktif, diubah_oleh, diubah_at}]}` |
+| POST | `/checklist/item` | Admin | Tambah item `{kode, judul, kriteria, berlaku_untuk: TOR\|RAB\|TOR & RAB, aktif?}` (disimpan ke kolom `checklist`). `kode` wajib, maks. 50 karakter, dijadikan kapital, unik → 400 bila bentrok; `judul` maks. 500 karakter |
+| PUT | `/checklist/item/{id}` | Admin | Ubah item (isian sama, kode boleh diganti). Isi baru dicatat ke `checklist_histori` (terhubung lewat `checklist_id`). 400 bila tidak ada item aktif tersisa; 404 item tidak ada |
+| DELETE | `/checklist/item/{id}` | Admin | Hapus item beserta riwayatnya secara permanen (ikut hilang dari tampilan review lama) |
+| PUT | `/checklist/urutan` | Admin | Atur urutan `{id: [semua id item sesuai urutan baru]}` → `no_urut` 1..n (tidak membuat riwayat). 400 bila daftar tidak memuat tepat semua item |
+| GET | `/checklist/item/{id}/riwayat` | login | Semua versi item dari `checklist_histori`, terbaru dulu (baris pertama = isi saat ini; format sama dengan item `/checklist`) |
 | GET | `/kategori`, `/kategori/versi/{id}` | login | Sama seperti checklist |
 | POST | `/kategori/versi` | Admin | `{catatan?, item: [{kode, nama, definisi, diteruskan}]}` |
 

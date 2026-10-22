@@ -68,10 +68,7 @@ function Isi({ p }: { p?: Panduan }) {
           <Kolom label="Deskripsi"><AreaTeks value={deskripsi} onChange={(e) => setDeskripsi(e.target.value)} /></Kolom>
           <div className="space-y-1.5">
             <span className="text-sm font-medium text-slate-700">Status</span>
-            <div className="flex items-center gap-2 text-sm">
-              <Saklar nyala={aktif} ubah={setAktif} label="Status panduan" />
-              <span className={aktif ? "text-emerald-700" : "text-red-600"}>{aktif ? "Aktif" : "Nonaktif"}</span>
-            </div>
+            <div><Saklar aktif={aktif} ubah={setAktif} label="Status panduan" /></div>
             <span className="block text-xs text-slate-500">Hanya panduan Aktif yang dipakai review berikutnya.</span>
           </div>
           {/* Nama Acuan diisi otomatis dari nama file bila masih kosong. */}

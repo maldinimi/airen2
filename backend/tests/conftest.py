@@ -31,11 +31,8 @@ from app import model  # noqa: E402,F401
 from app.db import Base, SessionLokal, engine  # noqa: E402
 
 with engine.begin() as _c:
-    # Skema database UJI dibuat ulang penuh: tabel yang sudah dihapus dari model (mis. migrasi 0006) ikut hilang,
-    # sedangkan drop_all hanya mengenal tabel yang masih ada di model.
-    _c.execute(text("DROP SCHEMA public CASCADE"))
-    _c.execute(text("CREATE SCHEMA public"))
-    _c.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+    # Skema dibuat ulang dari nol (bukan drop_all): sisa tabel/constraint dari model versi lama ikut terhapus.
+    _c.execute(text("DROP SCHEMA public CASCADE; CREATE SCHEMA public; CREATE EXTENSION IF NOT EXISTS vector"))
 Base.metadata.create_all(engine)
 
 

@@ -3,7 +3,7 @@ finalkan → revisi → riwayat; plus invarian rujukan, konsistensi (fingerprint
 import socket
 import uuid
 
-from sqlalchemy import select, update
+from sqlalchemy import select, text, update
 
 from app.db import SessionLokal
 from app.model import Elemen, Panduan, Review, Rujukan
@@ -111,7 +111,7 @@ def test_hak_akses(klien):
     assert unggah(reviewer, tor=TOR, rab=RAB, tahun_anggaran=2027, kode_ro="X", nama_ro="Y").status_code == 403
     for c in (pengusul, reviewer):
         assert c.get("/api/pengguna").status_code == 403
-        assert c.post("/api/checklist/versi", json={"item": []}).status_code == 403
+        assert c.post("/api/checklist/item", json={"kode": "Z1", "judul": "a", "kriteria": "b", "berlaku_untuk": "TOR"}).status_code == 403
         assert c.get("/api/audit").status_code == 403
         assert c.put("/api/panduan/00000000-0000-0000-0000-000000000000", data={"judul": "x", "aktif": "false"}).status_code == 403
     anonim = klien()
@@ -136,21 +136,104 @@ def test_versioning_tidak_mengubah_review_lama(klien):
     rid = pengusul.get(f"/api/usulan/{u['id']}").json()["review_id"]
     sebelum = pengusul.get(f"/api/review/{rid}").json()
     admin = klien("admin", "GantiSegera!2026")
-    ck = admin.get("/api/checklist").json()["aktif"]
-    baru = [{**i, "judul": i["judul"] + " (diubah)"} for i in ck["item"][1:]]  # hapus item pertama, ubah sisanya
-    v2 = admin.post("/api/checklist/versi", json={"catatan": "uji", "item": baru}).json()
-    assert v2["nomor"] == ck["nomor"] + 1
+    ck = admin.get("/api/checklist").json()["item"]
+    for i in ck:  # ubah semua item: review lama tetap menampilkan isi saat review dimulai
+        assert admin.put(f"/api/checklist/item/{i['id']}", json={**i, "judul": i["judul"] + " (diubah)"}).status_code == 200
+    # Item yang ditambah SETELAH review dimulai tidak ikut ke review lama
+    assert admin.post("/api/checklist/item", json={"kode": "Z99", "judul": "Item baru", "kriteria": "K", "berlaku_untuk": "TOR"}).status_code == 200
     kat = admin.get("/api/kategori").json()["aktif"]
     admin.post("/api/kategori/versi", json={"item": [{**k, "definisi": k["definisi"] + " X"} for k in kat["item"]]})
     sesudah = pengusul.get(f"/api/review/{rid}").json()
     assert [(i["kode"], i["judul"], i["kriteria"]) for i in sesudah["item"]] == [(i["kode"], i["judul"], i["kriteria"]) for i in sebelum["item"]]
-    assert sesudah["acuan"]["checklist_versi"]["nomor"] == ck["nomor"]
-    lama = admin.get(f"/api/checklist/versi/{ck['id']}").json()
-    assert len(lama["item"]) == len(ck["item"]) and not lama["aktif"]
+    assert sesudah["acuan"]["checklist"] == sebelum["acuan"]["checklist"]
     # Seed kategori persis PRD C1
     k1 = admin.get(f"/api/kategori/versi/{kat['id']}").json()["item"]
     assert [k["kode"] for k in k1] == ["K1", "K2", "K3", "K4"] and k1[3]["diteruskan"] is False
     assert k1[1]["definisi"].startswith("RO prioritas yang ditetapkan secara resmi oleh Menteri")
+
+
+def test_checklist_crud_riwayat_dan_status(klien):
+    from app.model import ChecklistItem
+    admin = klien("admin", "GantiSegera!2026")
+    ck = admin.get("/api/checklist").json()["item"]
+    per_kode = {i["kode"]: i for i in ck}
+    url = lambda kode: f"/api/checklist/item/{per_kode[kode]['id']}"  # noqa: E731
+    isi = lambda i, **ubah: {**{k: i[k] for k in ("kode", "judul", "kriteria", "berlaku_untuk", "aktif")}, **ubah}  # noqa: E731
+    # Ubah & nonaktifkan: hanya item itu yang dicap; checklist_item tetap satu baris per item
+    c02 = admin.put(url("C02"), json=isi(per_kode["C02"], judul="Judul diubah")).json()
+    assert c02["judul"] == "Judul diubah" and c02["diubah_oleh"] == "Administrator"
+    assert admin.put(url("C03"), json=isi(per_kode["C03"], aktif=False)).json()["aktif"] is False
+    terkini = admin.get("/api/checklist").json()["item"]
+    assert len(terkini) == len(ck) and terkini[0]["diubah_at"] == ck[0]["diubah_at"]
+    # Tambah: kode manual dinormalisasi; kode kosong/ganda ditolak
+    baru = {"judul": "Item baru", "kriteria": "Kriteria baru", "berlaku_untuk": "TOR"}
+    assert admin.post("/api/checklist/item", json={**baru, "kode": " c09 "}).json()["kode"] == "C09"
+    # no_urut mengikuti urutan kode: item baru langsung berada di tempatnya, bukan di akhir
+    c00 = admin.post("/api/checklist/item", json={**baru, "kode": "C00"}).json()
+    assert [i["kode"] for i in admin.get("/api/checklist").json()["item"]][:2] == ["C00", "C01"] and c00["urutan"] == 1
+    assert admin.delete(f"/api/checklist/item/{c00['id']}").status_code == 200
+    assert admin.post("/api/checklist/item", json={**baru, "kode": "C01"}).status_code == 400
+    assert admin.post("/api/checklist/item", json={**baru, "kode": ""}).status_code == 400
+    # Item nonaktif tidak dinilai dan tidak dihitung
+    pengusul, u = _usulan_diajukan(klien)
+    jalankan_antrean()
+    rv = pengusul.get(f"/api/review/{pengusul.get(f'/api/usulan/{u['id']}').json()['review_id']}").json()
+    aktif = [i for i in admin.get("/api/checklist").json()["item"] if i["aktif"]]
+    assert "C03" not in [i["kode"] for i in rv["item"]] and rv["label"]["total"] == len(aktif)
+    # checklist_histori memuat semua versi item (terbaru dulu), termasuk isi saat ini
+    riwayat = admin.get(f"{url('C02')}/riwayat").json()
+    assert [r["judul"] for r in riwayat] == ["Judul diubah", per_kode["C02"]["judul"]]
+    assert [r["judul"] for r in admin.get(f"{url('C01')}/riwayat").json()] == [per_kode["C01"]["judul"]]
+    assert admin.get("/api/checklist/item/00000000-0000-0000-0000-000000000000/riwayat").status_code == 404
+    # Hapus: permanen dari checklist_item & checklist_histori, ikut hilang dari review lama (keputusan pemilik produk)
+    assert admin.delete(url("C05")).status_code == 200
+    with SessionLokal() as db:
+        assert db.get(ChecklistItem, uuid.UUID(per_kode["C05"]["id"])) is None
+        assert not db.scalars(text("SELECT 1 FROM checklist_histori WHERE checklist_id = :i"), {"i": per_kode["C05"]["id"]}).all()  # CASCADE
+    assert "C05" not in [i["kode"] for i in pengusul.get(f"/api/review/{rv['id']}").json()["item"]]
+    # Ganti kode: riwayat tetap tersambung lewat checklist_id dan kode lama tetap tercatat; review lama tetap kode saat itu
+    assert admin.put(url("C04"), json=isi(per_kode["C04"], kode="C01")).status_code == 400
+    assert admin.put(url("C04"), json=isi(per_kode["C04"], kode="x04")).json()["kode"] == "X04"
+    assert [r["kode"] for r in admin.get(f"{url('C04')}/riwayat").json()] == ["X04", "C04"]
+    lama = {i["kode"]: i["judul"] for i in pengusul.get(f"/api/review/{rv['id']}").json()["item"]}
+    assert lama["C04"] == per_kode["C04"]["judul"]
+    # Atur urutan bebas (mis. dibalik); daftar yang tidak memuat semua item ditolak
+    ids = [i["id"] for i in admin.get("/api/checklist").json()["item"]]
+    assert [i["id"] for i in admin.put("/api/checklist/urutan", json={"id": ids[::-1]}).json()["item"]] == ids[::-1]
+    assert admin.put("/api/checklist/urutan", json={"id": ids[1:]}).status_code == 400
+    # Item baru tetap ditaruh tepat setelah kode sebelumnya walau urutan sudah diatur bebas
+    admin.post("/api/checklist/item", json={**baru, "kode": "C10"})
+    kode = [i["kode"] for i in admin.get("/api/checklist").json()["item"]]
+    assert kode.index("C10") == kode.index("C09") + 1
+    # Urutan fisik tabel (yang ditampilkan pgAdmin "All Rows", tanpa ORDER BY) = no_urut, setelah tambah/ubah/hapus/atur
+    with SessionLokal() as db:
+        fisik = list(db.scalars(text("SELECT kode FROM checklist_item")))
+        waktu = list(db.scalars(text("SELECT update_date FROM checklist_histori")))
+    assert fisik == kode
+    assert waktu == sorted(waktu, reverse=True)  # checklist_histori: terbaru paling atas
+    # Minimal satu item aktif
+    aktif = [i for i in admin.get("/api/checklist").json()["item"] if i["aktif"]]
+    for i in aktif[:-1]:
+        assert admin.put(f"/api/checklist/item/{i['id']}", json=isi(i, aktif=False)).status_code == 200
+    assert admin.put(f"/api/checklist/item/{aktif[-1]['id']}", json=isi(aktif[-1], aktif=False)).status_code == 400
+
+
+def test_simpan_checklist_tidak_menunggu_pembaca_lama(klien):
+    """Transaksi lain yang sedang membaca checklist (mis. worker menunggu jawaban AI) tidak membuat simpan Admin
+    tertahan: CLUSTER (urutan fisik) dilewati bila kunci tabel tidak didapat dalam 1 detik."""
+    import time
+
+    from app.db import engine
+    admin = klien("admin", "GantiSegera!2026")
+    i = admin.get("/api/checklist").json()["item"][0]
+    with engine.connect() as c:
+        c.execute(text("SELECT 1 FROM checklist_item LIMIT 1"))  # transaksi terbuka memegang kunci baca
+        c.execute(text("SELECT 1 FROM checklist_histori LIMIT 1"))
+        mulai = time.monotonic()
+        r = admin.put(f"/api/checklist/item/{i['id']}", json={**i, "judul": i["judul"] + " (diubah)"})
+        assert r.status_code == 200 and time.monotonic() - mulai < 10
+        c.rollback()
+    assert admin.get(f"/api/checklist/item/{i['id']}/riwayat").json()[0]["judul"].endswith("(diubah)")
 
 
 def test_panduan_berversi_dan_dipakai_review(klien):

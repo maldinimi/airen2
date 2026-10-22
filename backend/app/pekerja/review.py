@@ -19,7 +19,8 @@ from app import status as st
 from app.db import SessionLokal
 from app.konfigurasi import konfigurasi
 from app.log import log, set_konteks, tahap
-from app.model import (ChecklistItem, ChecklistVersi, Elemen, File, HasilItem, HasilKategori, KategoriVersi, Panduan,
+from app.checklist import IsiItem, isi_review, sidik_checklist
+from app.model import (ChecklistItem, Elemen, File, HasilItem, HasilKategori, KategoriVersi, Panduan,
                        Rekomendasi, Review, ReviewPanduan, Revisi, Rujukan, Usulan)
 from app.nilai_final import hitung_label
 from app.pekerja import prompt as pr
@@ -69,16 +70,16 @@ def _seluruh_atau_cari(db: Session, file_id, kueri: str, k: int) -> list[Elemen]
 
 
 # ---------------------------------------------------------------- Screening 1: per item
-def nilai_item(item_id, ktx: Konteks, llm) -> dict:
-    """Nilai satu item checklist (dijalankan di thread). Kembalikan dict hasil + rujukan sah."""
+def nilai_item(item: IsiItem, ktx: Konteks, llm) -> dict:
+    """Nilai satu item checklist (dijalankan di thread) memakai isinya saat review dikunci.
+    Kembalikan dict hasil + rujukan sah."""
     k = konfigurasi()
     with SessionLokal() as db:
-        item = db.get(ChecklistItem, item_id)
         kueri = f"{item.judul}. {item.kriteria}"
         dok: list[Elemen] = []
-        if item.berlaku_untuk in ("TOR", "KEDUANYA"):
+        if item.berlaku_untuk in ("TOR", "TOR & RAB"):
             dok += cari(db, [ktx.tor_id], kueri, k.kandidat_dokumen)
-        if item.berlaku_untuk in ("RAB", "KEDUANYA"):
+        if item.berlaku_untuk in ("RAB", "TOR & RAB"):
             dok += _seluruh_atau_cari(db, ktx.rab_id, kueri, k.kandidat_dokumen)
         ringkas = " ".join(e.teks for e in dok)[:600]
         pdn = cari(db, list(ktx.panduan), f"{kueri} {ringkas}", k.kandidat_panduan)
@@ -116,7 +117,7 @@ def nilai_item(item_id, ktx: Konteks, llm) -> dict:
             terpenuhi = False
             alasan = f"Bukti tidak dapat diverifikasi. {alasan}".strip()
             yang_kurang = yang_kurang or "Bukti pemenuhan tidak dapat diverifikasi pada dokumen."
-        return {"item_id": item.id, "kode": item.kode, "terpenuhi": terpenuhi, "ditemukan": ditemukan, "alasan": alasan,
+        return {"item_id": item.item_id, "kode": item.kode, "terpenuhi": terpenuhi, "ditemukan": ditemukan, "alasan": alasan,
                 "yang_kurang": None if terpenuhi else yang_kurang, "rujukan": bukti + dasar}
 
 
@@ -155,9 +156,10 @@ def _progres(db: Session, review: Review, tahap_nama: str, persen: int) -> None:
 # ---------------------------------------------------------------- orkestrasi
 def kunci_acuan(db: Session, review: Review) -> None:
     """Kunci versi checklist, kategori, panduan saat review mulai diproses (desain §4.7)."""
-    review.checklist_versi_id = db.scalar(select(ChecklistVersi.id).where(ChecklistVersi.aktif))
+    # Checklist review = isi pada review.mulai_at (diisi pemanggil), disusun ulang oleh app/checklist.py.
+    ada_item = db.scalar(select(ChecklistItem.id).where(ChecklistItem.aktif).limit(1)) is not None
     review.kategori_versi_id = db.scalar(select(KategoriVersi.id).where(KategoriVersi.aktif))
-    if review.checklist_versi_id is None or review.kategori_versi_id is None:
+    if not ada_item or review.kategori_versi_id is None:
         raise GalatPengguna("Checklist atau kategori aktif belum diatur oleh Admin.")
     # Per panduan berstatus Aktif: versi terbaru (terkini, lalu riwayat) yang filenya sudah SIAP.
     # Disalin ke review_panduan agar catatan tetap benar walau panduan diedit kemudian (D5).
@@ -197,7 +199,8 @@ def jalankan_review(review_id, llm) -> None:
 def _jalankan(db: Session, review: Review, revisi: Revisi, llm) -> None:
     if review.status == "ANTRE":
         kunci_acuan(db, review)
-        review.status, review.mulai_at = "DIPROSES", datetime.now(timezone.utc)
+        # Jam DATABASE, bukan jam worker: dibandingkan dengan update_date checklist (app/checklist.py).
+        review.status, review.mulai_at = "DIPROSES", db.scalar(select(func.now()))
     if revisi.status != st.DIPROSES_AI:
         st.pindah_status(revisi, st.DIPROSES_AI)
     _progres(db, review, "Ekstraksi TOR", 5)
@@ -207,7 +210,7 @@ def _jalankan(db: Session, review: Review, revisi: Revisi, llm) -> None:
 
     pv = db.scalars(select(ReviewPanduan).where(ReviewPanduan.review_id == review.id)).all()
     tor, rab = db.get(File, revisi.tor_file_id), db.get(File, revisi.rab_file_id)
-    review.fingerprint = fingerprint(tor.sha256, rab.sha256, review.checklist_versi_id, review.kategori_versi_id,
+    review.fingerprint = fingerprint(tor.sha256, rab.sha256, sidik_checklist(isi_review(db, review)), review.kategori_versi_id,
                                      [f"{v.panduan_id}:{v.nomor}" for v in pv], review.model_info)
     db.commit()
     asal = db.scalar(select(Review).where(Review.fingerprint == review.fingerprint, Review.status == "SELESAI",
@@ -237,9 +240,9 @@ def _jalankan(db: Session, review: Review, revisi: Revisi, llm) -> None:
 
 
 def screening_1(db: Session, review: Review, ktx: Konteks, llm) -> None:
-    item = db.scalars(select(ChecklistItem).where(ChecklistItem.versi_id == review.checklist_versi_id).order_by(ChecklistItem.urutan)).all()
+    item = isi_review(db, review)
     sudah = set(db.scalars(select(HasilItem.checklist_item_id).where(HasilItem.review_id == review.id)))
-    sisa = [i.id for i in item if i.id not in sudah]
+    sisa = [i for i in item if i.item_id not in sudah]
     selesai = len(sudah)
     _progres(db, review, f"Menilai item {selesai}/{len(item)}", 20)
     with ThreadPoolExecutor(max_workers=konfigurasi().item_paralel) as pool:
@@ -270,13 +273,13 @@ def keselarasan_dan_rekomendasi(db: Session, review: Review, ktx: Konteks, llm) 
     temuan = [(t, verifikasi(t.get("bukti", []), peta, "bukti_dokumen")[0]) for t in out.get("temuan", [])]
 
     _progres(db, review, "Rekomendasi", 86)
-    item = {i.id: i for i in db.scalars(select(ChecklistItem).where(ChecklistItem.versi_id == review.checklist_versi_id))}
+    item = {i.item_id: i for i in isi_review(db, review)}
     gagal = [(item[h.checklist_item_id], h) for h in db.scalars(select(HasilItem).where(HasilItem.review_id == review.id, ~HasilItem.terpenuhi))]
     nama_jenis = {"RAB_TANPA_DASAR_TOR": "Komponen RAB tanpa dasar di TOR", "TOR_TANPA_ANGGARAN": "Kegiatan TOR tanpa anggaran",
                   "TIDAK_SELARAS": "RAB tidak selaras dengan TOR"}
     for dokumen in ("TOR", "RAB"):
         urutan = 0
-        relevan = [(i, h) for i, h in gagal if i.berlaku_untuk in (dokumen, "KEDUANYA")]
+        relevan = [(i, h) for i, h in gagal if i.berlaku_untuk in (dokumen, "TOR & RAB")]
         if relevan:
             masalah = "\n".join(f"- [{i.kode}] {i.judul}: {h.yang_kurang or h.alasan}" for i, h in sorted(relevan, key=lambda x: x[0].urutan))
             pdn = cari(db, list(ktx.panduan), masalah, k.kandidat_panduan)
@@ -286,7 +289,7 @@ def keselarasan_dan_rekomendasi(db: Session, review: Review, ktx: Konteks, llm) 
                              konteks={"kode_item": kode, "alias_panduan": alias_pdn}).get("rekomendasi", [])
             if not hasil:  # LLM kosong padahal ada masalah → rekomendasi minimal dari kekurangan item
                 hasil = [{"teks": f"Perbaiki {i.judul}: {h.yang_kurang or h.alasan}", "kode_item": i.kode, "dasar_panduan": []} for i, h in relevan]
-            per_kode = {i.kode: i.id for i, _ in relevan}
+            per_kode = {i.kode: i.item_id for i, _ in relevan}
             for r in hasil:
                 if not (r.get("teks") or "").strip():
                     continue
