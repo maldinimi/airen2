@@ -95,7 +95,6 @@ export function LencanaKategori({ k }: { k: KategoriRingkas | null | undefined }
   return (
     <span className="inline-flex flex-wrap items-center gap-1">
       <Lencana className="bg-utama-50 text-utama-700 ring-utama-100" title={k.nama}>{k.kode}</Lencana>
-      {!k.diteruskan && <Lencana className="bg-red-600 text-white ring-red-600">Tidak diteruskan</Lencana>}
     </span>
   );
 }

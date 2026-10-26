@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.keamanan import hash_password
 from app.konfigurasi import konfigurasi
-from app.model import (ChecklistHistory, ChecklistItem, KategoriItem, KategoriVersi, Pengguna, PenggunaRole,
+from app.model import (ChecklistHistory, ChecklistItem, Kategori, Pengguna, PenggunaRole,
                        Satker)
 
 logger = logging.getLogger(__name__)
@@ -21,17 +21,16 @@ KATEGORI_AWAL = [
      "RO yang bersifat wajib, mengikat, ditetapkan melalui kebijakan penganggaran nasional, dan harus tetap berjalan "
      "secara berkelanjutan. Penilaian terhadap RO pada kategori ini tidak ditujukan untuk menilai perlu atau tidaknya "
      "RO, melainkan untuk memvalidasi kesesuaian ruang lingkup, kejelasan kebutuhan dasar, dan keterkaitan komponen "
-     "dengan RO yang diusulkan.", True),
+     "dengan RO yang diusulkan."),
     ("K2", "RO Prioritas Strategis",
      "RO prioritas yang ditetapkan secara resmi oleh Menteri, dan/atau penguatan layanan esensial. Penilaian RO "
-     "terhadap kategori ini dilaksanakan secara penuh sesuai parameter penilaian substansi.", True),
+     "terhadap kategori ini dilaksanakan secara penuh sesuai parameter penilaian substansi."),
     ("K3", "RO Strategis/Diskresioner",
      "RO yang memiliki keterkaitan dengan prioritas pembangunan nasional dan pencapaian sasaran kementerian, serta "
-     "mendukung tugas dan fungsi Satker, namun tidak memenuhi kriteria Kategori 1 maupun Kategori 2.", True),
+     "mendukung tugas dan fungsi Satker, namun tidak memenuhi kriteria Kategori 1 maupun Kategori 2."),
     ("K4", "RO Non-Strategis",
      "RO yang tidak memenuhi kriteria Kategori 1, Kategori 2, maupun Kategori 3, serta tidak memiliki keterkaitan "
-     "dengan tugas dan fungsi Satker pengusul, maupun pencapaian sasaran strategis kementerian. RO pada kategori ini "
-     "tidak diteruskan ke tahap berikutnya.", False),
+     "dengan tugas dan fungsi Satker pengusul, maupun pencapaian sasaran strategis kementerian."),
 ]
 
 CHECKLIST_CONTOH = [
@@ -49,13 +48,10 @@ CHECKLIST_CONTOH = [
 def jalankan_seed(db: Session) -> None:
     """Isi data awal bila belum ada. Aman dipanggil berulang (idempoten)."""
     k = konfigurasi()
-    if db.scalar(select(KategoriVersi.id).limit(1)) is None:
-        versi = KategoriVersi(nomor=1, aktif=True, catatan="Seed awal sesuai PRD C1")
-        db.add(versi)
-        db.flush()
-        for i, (kode, nama, definisi, diteruskan) in enumerate(KATEGORI_AWAL, 1):
-            db.add(KategoriItem(versi_id=versi.id, urutan=i, kode=kode, nama=nama, definisi=definisi, diteruskan=diteruskan))
-        logger.info("seed kategori v1 dibuat")
+    if db.scalar(select(Kategori.id).limit(1)) is None:
+        for kode, nama, definisi in KATEGORI_AWAL:
+            db.add(Kategori(kode=kode, kategori=nama, deskripsi=definisi))
+        logger.info("seed kategori dibuat")
 
     if db.scalar(select(Pengguna.id).limit(1)) is None:
         admin = Pengguna(username=k.admin_username, nama="Administrator", password_hash=hash_password(k.admin_password_awal))

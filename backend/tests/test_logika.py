@@ -5,9 +5,11 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
 import pytest
+from alembic.script import ScriptDirectory
 
 from app import status as st
 from app.galat import Galat
+from app.migrasi import konfigurasi_alembic
 from app.nilai_final import LOLOS, TERPENUHI, TIDAK_LOLOS, TIDAK_TERPENUHI, hitung_label, hitung_nilai_final
 from app.pekerja.rujukan import cocokkan_kutipan, nomor_kalimat, verifikasi
 from app.pekerja.sidik import fingerprint
@@ -147,3 +149,10 @@ def test_fingerprint_stabil_dan_peka_perubahan():
     assert dasar != fingerprint("a", "c", 1, 2, [p1, p2], m)
     assert dasar != fingerprint("a", "b", 1, 2, [p1], m)
     assert dasar != fingerprint("a", "b", 1, 2, [p1, p2], {**m, "model": "y"})
+
+
+# ------------------------------------------------------------------ migrasi
+def test_rantai_migrasi_utuh():
+    """Semua file migrasi dapat dimuat dan hanya ada satu head. Tes lain membuat skema dengan create_all, sehingga
+    induk migrasi yang hilang hanya ketahuan di sini, bukan saat `make up` gagal."""
+    assert len(ScriptDirectory.from_config(konfigurasi_alembic()).get_heads()) == 1

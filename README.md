@@ -3,9 +3,10 @@
 Aplikasi web untuk mereview dokumen TOR & RAB usulan anggaran dengan AI lokal:
 
 - **Screening 1**: menilai pemenuhan setiap item checklist, dengan bukti (halaman, lokasi, kutipan) dari TOR/RAB dan Panduan. Label LOLOS/TIDAK LOLOS **dihitung oleh kode**.
-- **Screening 2**: merekomendasikan kategori K1–K4 berdasarkan definisi kategori yang aktif.
+- **Screening 2**: merekomendasikan kategori K1–K4 berdasarkan definisi kategori Aktif terbaru saat review dimulai.
 - **Reviewer** memverifikasi, meng-override (dengan alasan), lalu memfinalkan. Pengusul mengunggah revisi hingga LOLOS.
 - **Panduan** (PDF acuan AI): Admin mengunggah satu PDF per form dengan Nama Acuan (maks. 500 karakter), Deskripsi, dan Status Aktif/Nonaktif; PDF dapat **dipratinjau** sebelum diunggah dan tombol **Reset** mengosongkan form. Hanya panduan **Aktif** yang sudah **Siap** dipakai review. Setiap edit (nama, deskripsi, status) tercatat di **Panduan Histori**. **Hapus bersifat permanen** setelah konfirmasi: panduan, histori, file PDF beserta hasil pemrosesannya, dan rujukannya di hasil review lama ikut terhapus dari database (PDF yang sama yang masih dipakai panduan lain atau TOR/RAB tetap disimpan; jejaknya tetap ada di audit log). Untuk sekadar berhenti memakai panduan, ubah statusnya menjadi Nonaktif.
+- **Kategori** (acuan Screening 2): Admin mengelola kategori satu per satu dalam tabel Kode, Kategori, Status, Deskripsi. **Tambah** dan **Edit** di halaman form (Kode unik maks. 20 karakter, Kategori maks. 255 karakter, Deskripsi; Edit juga mengatur Status Aktif/Nonaktif) dengan pop-up periksa kembali. Isi sebelum tiap edit tercatat di **Kategori Histori** (halaman Detail). **Hapus bersifat permanen** beserta historinya; minimal satu kategori Aktif harus ada. Hanya kategori Aktif yang dipakai review berikutnya. Setiap review menyimpan salinan kategori yang dipakai, sehingga hasil review lama tidak berubah dan definisinya dapat dilihat di hasil review ("Lihat kategori yang dipakai").
 
 Seluruh pemrosesan berjalan **offline** di kontainer. Satu-satunya pengecualian adalah terowongan terenkripsi ke node GPU sewaan. Acuan kebutuhan ada di [prd.md](prd.md) dan acuan teknis di [desain.md](desain.md).
 
@@ -30,7 +31,7 @@ Buka **http://localhost:8080**. Akun awal:
 
 Mode dev & tiruan juga membuat checklist contoh. PDF contoh untuk dicoba tersedia di folder [contoh/](contoh/).
 
-`make setup` adalah satu-satunya langkah yang membutuhkan internet (build image + unduh model). Setelah itu aplikasi berjalan tanpa internet. Saat `make up`, migrasi database dan seed (4 kategori sesuai PRD C1 + admin) berjalan otomatis, termasuk untuk database lama yang sudah berjalan.
+`make setup` adalah satu-satunya langkah yang membutuhkan internet (build image + unduh model). Setelah itu aplikasi berjalan tanpa internet. Saat `make up`, migrasi database dan seed (4 kategori sesuai PRD C1 + admin) berjalan otomatis. Database yang dibuat sebelum 22 Oktober 2026 tidak dapat di-upgrade dan harus dibuat ulang (lihat `docs/asumsi.md`).
 
 > Karena hapus panduan bersifat permanen, jalankan `make backup` secara berkala di production.
 
@@ -43,11 +44,12 @@ Mode dev & tiruan juga membuat checklist contoh. PDF contoh untuk dicoba tersedi
 
    Migrasi skema berjalan otomatis setiap `make up`, sebelum `api` dan `worker` menyala.
 
-Catatan untuk pembaruan menu Panduan (migrasi `0003`–`0009`):
+Catatan untuk pembaruan menu Panduan & Kategori (Oktober 2026):
 
-- Database yang sudah dimigrasi **tidak cocok dengan kode lama**. Untuk kembali ke versi sebelumnya, pulihkan backup (`make restore FILE=backup/<waktu>`) sebelum menjalankan kode lama.
-- Review pertama untuk TOR & RAB yang identik dengan review sebelum pembaruan diproses ulang oleh AI sekali (tidak disalin dari hasil lama), karena kunci pencocokan panduan berubah. Setelah itu kembali normal.
-- Migrasi `0007`–`0009` mengganti nama kolom & tabel panduan (`panduan_versi` → `panduan_histori`, `judul`/`judul_terkini` → `panduan`, `created_at` → `created_date`, `diubah_oleh`/`diubah_at` → `updated_by`/`updated_date`, tambah `created_by`, hapus `nomor` & `dihapus_at`; lihat [desain.md](desain.md) §7 no. 17–19). Query atau laporan SQL buatan sendiri yang memakai nama lama perlu disesuaikan. Nama field API tidak berubah.
+- Skema database kini dibuat langsung dari model; migrasi lama (`0002`–`0013`) dihapus. Database yang dibuat **sebelum 22 Oktober 2026 tidak dapat di-upgrade**. Buat ulang dengan `docker compose down -v` (hanya menghapus volume database `pgdata`; file di `./data` tetap) lalu `make up`. Data usulan dan review di database lama ikut hilang, dan backup lama tidak dapat dipulihkan ke kode ini.
+- Database yang dibuat **sejak 22 Oktober 2026** (kategori masih berupa versi daftar) dinaikkan **otomatis** saat `make up` oleh revisi `0002_kategori_per_kategori`: kategori dari versi aktif terakhir (semuanya Aktif), salinan kategori tiap review, dan id yang sama sehingga hasil review lama tetap cocok. Riwayat versi daftar lama tidak dipindah ke Kategori Histori.
+- Nama tabel & kolom berubah: panduan (`panduan_versi` → `panduan_histori`, `judul` → `panduan`, dll.; [desain.md](desain.md) §7 no. 17–19) dan kategori (`kategori_versi`/`kategori_item` → `kategori` + `kategori_histori` + `review_kategori`, `nama` → `kategori`, `definisi` → `deskripsi`; §7 no. 23–25). Query atau laporan SQL buatan sendiri yang memakai nama lama perlu disesuaikan.
+- API panduan tidak berubah. API kategori berubah: `GET /api/kategori` mengembalikan daftar kategori terbaru, endpoint versi kategori diganti tambah/ubah/hapus per kategori dan `/api/kategori/{id}/riwayat` (lihat [docs/api.md](docs/api.md)).
 
 ### Mengakses database (dev & tiruan)
 
@@ -58,6 +60,11 @@ Catatan untuk pembaruan menu Panduan (migrasi `0003`–`0009`):
   - `panduan_histori` = riwayat saja (Panduan Histori): salinan utuh baris `panduan` sebelum tiap perubahan, ditambah `panduan_id`; tidak pernah diubah.
   - Nomor versi tidak disimpan: histori ke-n menurut `updated_date` = versi n, versi terkini = jumlah histori + 1.
   - `review_panduan` = salinan panduan + nomor versi (`nomor`) yang dipakai tiap review.
+- **Tabel kategori:**
+  - `kategori` = data terkini: `id`, `created_by`/`created_date` (pembuat & waktu dibuat), `updated_by`/`updated_date` (penginput & waktu versi terkini), `aktif` (Nonaktif = tidak dipakai review berikutnya), `kode`, `kategori` (nama), `deskripsi` (definisi yang dipakai AI).
+  - `kategori_histori` = riwayat saja (Kategori Histori): salinan utuh baris kategori sebelum tiap perubahan (`created_by`/`created_date` = pembuat & waktu kategori dibuat, `updated_by`/`updated_date` = penginput & waktu versi itu), ditambah `kategori_id`; ikut terhapus bila kategorinya dihapus.
+  - `review_kategori` = salinan kategori Aktif (`kode`, `nama`, `definisi`) yang dipakai tiap review; tidak berubah walau kategori diedit atau dihapus.
+  - Field API tetap memakai `nama` dan `definisi`.
 
 ### Tanpa `make` (mis. Windows PowerShell)
 
@@ -100,7 +107,7 @@ Jalankan `make test`. Cakupannya:
 - transisi status;
 - verifikasi rujukan (E3) dan invarian kutipan;
 - fingerprint/konsistensi hasil;
-- versioning checklist/kategori/panduan, status Aktif/Nonaktif panduan, dan hapus panduan permanen;
+- versioning checklist/kategori/panduan, status Aktif/Nonaktif panduan dan kategori, hapus panduan permanen, serta CRUD, riwayat, dan hapus permanen kategori tanpa mengubah review lama;
 - hak akses role + Satker, CSRF, dan validasi unggahan;
 - alur ujung ke ujung (buat → ajukan → AI → override → finalkan → revisi → riwayat);
 - **tidak ada koneksi keluar** selama review.

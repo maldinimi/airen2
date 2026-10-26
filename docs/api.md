@@ -40,7 +40,7 @@ Hak akses selalu dicek di backend:
 
 - identitas: `id, satker, tahun_anggaran, kode_ro, nama_ro`;
 - revisi terbaru: `revisi_id, revisi_nomor, status`, dokumen `tor{file_id,nama}`, `rab{…}`;
-- hasil: `kategori_final{kode,nama,diteruskan}`, `checklist{terpenuhi,total,item[],final}`;
+- hasil: `kategori_final{kode,nama}`, `checklist{terpenuhi,total,item[],final}`;
 - proses: `proses{status, progres, posisi_antrean, menunggu_kapasitas, error_pesan, trace_id}`;
 - status lain: `updated_at, diarsipkan, pernah_direview, review_id, boleh_kelola`.
 
@@ -50,7 +50,7 @@ Hak akses selalu dicek di backend:
 | --- | --- | --- | --- |
 | GET | `/review/{id}` | login + Satker | Detail review; Pengusul tidak melihat override/catatan sebelum final |
 | GET | `/revisi/{id}/review` | login + Satker | Review terbaru suatu revisi |
-| POST | `/review/{id}/override` | Reviewer | `{target: ITEM\|LABEL\|KATEGORI, checklist_item_id?, nilai, alasan}`. Nilai: `TERPENUHI/TIDAK_TERPENUHI`, `LOLOS/TIDAK_LOLOS`, atau id `kategori_item` |
+| POST | `/review/{id}/override` | Reviewer | `{target: ITEM\|LABEL\|KATEGORI, checklist_item_id?, nilai, alasan}`. Nilai: `TERPENUHI/TIDAK_TERPENUHI`, `LOLOS/TIDAK_LOLOS`, atau id kategori dari `kategori.pilihan` review tersebut |
 | POST | `/override/{id}/batal` | Reviewer | Batalkan override (sebelum final) |
 | PUT | `/review/{id}/catatan` | Reviewer | `{dokumen: TOR\|RAB\|UMUM, teks}`; teks kosong = hapus |
 | POST | `/review/{id}/finalkan` | Reviewer | Kunci hasil, salin nilai final, ubah status revisi |
@@ -58,10 +58,10 @@ Hak akses selalu dicek di backend:
 Detail review berisi:
 
 - **status**: `status, final, tampilan (reviewer|pengusul), boleh_override, proses, model_info`;
-- **acuan**: `acuan{checklist{jumlah_item}, kategori_versi, panduan[{judul, nomor, file_id, nama_file}]}`;
+- **acuan**: `acuan{checklist{jumlah_item}, kategori{jumlah}, panduan[{judul, nomor, file_id, nama_file}]}`;
 - **hasil**:
   - `label{ai, hitung, final, diubah, tidak_konsisten, terpenuhi, total, override}`;
-  - `kategori{ai, final, alasan, rujukan[], pilihan[], override}`;
+  - `kategori{ai, final, alasan, rujukan[], pilihan[], override}`; `ai`, `final`, dan `pilihan[]` berbentuk `{id, kode, nama, definisi}` dari salinan kategori Aktif saat review dimulai (C3);
   - `item[]{kode, judul, kriteria, ai_terpenuhi, terpenuhi, diubah, override, ditemukan, alasan, yang_kurang, rujukan[]}`;
   - `rekomendasi{TOR[], RAB[]}`;
 - **catatan reviewer**: `catatan[]`, `riwayat_override[]`.
@@ -78,8 +78,11 @@ Setiap `rujukan` berisi `{peran (bukti_dokumen|dasar_panduan), dokumen (TOR|RAB|
 | DELETE | `/checklist/item/{id}` | Admin | Hapus item beserta riwayatnya secara permanen (ikut hilang dari tampilan review lama) |
 | PUT | `/checklist/urutan` | Admin | Atur urutan `{id: [semua id item sesuai urutan baru]}` → `no_urut` 1..n (tidak membuat riwayat). 400 bila daftar tidak memuat tepat semua item |
 | GET | `/checklist/item/{id}/riwayat` | login | Semua versi item dari `checklist_histori`, terbaru dulu (baris pertama = isi saat ini; format sama dengan item `/checklist`) |
-| GET | `/kategori`, `/kategori/versi/{id}` | login | Sama seperti checklist |
-| POST | `/kategori/versi` | Admin | `{catatan?, item: [{kode, nama, definisi, diteruskan}]}` |
+| GET | `/kategori` | Admin | Isi terbaru `{item: [{id, kode, nama, definisi, aktif, diubah_oleh, diubah_at}]}`, urut kode alami (K2 < K10) |
+| POST | `/kategori` | Admin | Tambah `{kode, nama, definisi, aktif?}` (bawaan Aktif). `kode` wajib, maks. 20 karakter, dijadikan kapital, unik → 400 bila bentrok; `nama` maks. 255 karakter |
+| PUT | `/kategori/{id}` | Admin | Ubah kategori (isian sama, kode boleh diganti). Isi **sebelum** diubah disalin ke `kategori_histori`; tanpa perubahan = tidak menambah riwayat. 400 bila menonaktifkan kategori Aktif terakhir; 404 kategori tidak ada |
+| DELETE | `/kategori/{id}` | Admin | Hapus kategori beserta riwayatnya secara permanen; review lama tidak berubah (salinan di `review_kategori`). 400 bila tidak ada kategori Aktif tersisa |
+| GET | `/kategori/{id}/riwayat` | Admin | Versi sebelum tiap perubahan dari `kategori_histori`, terbaru dulu (isi saat ini tidak termasuk; kosong bila belum pernah diubah) |
 
 ## Panduan (Modul D)
 

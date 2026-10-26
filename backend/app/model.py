@@ -1,8 +1,9 @@
 """Model database (desain.md §3).
 
 Prinsip:
-- Snapshot tidak berubah: versi checklist/kategori/panduan tidak pernah di-UPDATE/DELETE;
-  perubahan = baris versi baru. Review menunjuk ke versi sehingga tampilan review lama tetap.
+- Snapshot tidak berubah: baris riwayat checklist/kategori/panduan tidak pernah di-UPDATE; perubahan = baris versi
+  baru. Review menunjuk ke versi atau menyimpan salinannya (review_kategori, review_panduan) sehingga tampilan
+  review lama tetap.
 - Hasil AI dan override dipisah; nilai final dihitung (app/nilai_final.py), tidak ditimpa.
 """
 import uuid
@@ -207,26 +208,38 @@ class ChecklistHistory(Base):
     aktif: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true", nullable=False)
 
 
-class KategoriVersi(Base):
-    __tablename__ = "kategori_versi"
+class Kategori(Base):
+    """Isi TERBARU satu kategori (satu baris per kategori). Versi sebelum tiap perubahan ada di `kategori_histori`;
+    review memakai salinan di `review_kategori`, sehingga kategori boleh diubah/dihapus permanen (C4).
+    Nama & urutan kolom ditetapkan pemilik produk (desain.md §7 no. 24)."""
+    __tablename__ = "kategori"
     id: Mapped[uuid.UUID] = _id()
-    created_at: Mapped[datetime] = _dibuat()
-    nomor: Mapped[int] = mapped_column(Integer, unique=True)
-    aktif: Mapped[bool] = mapped_column(Boolean, default=True)
-    dibuat_oleh: Mapped[uuid.UUID | None] = _fk("pengguna", nullable=True, index=False)
-    catatan: Mapped[str | None] = mapped_column(Text)
-    item: Mapped[list["KategoriItem"]] = relationship(order_by="KategoriItem.urutan", lazy="selectin")
+    created_by: Mapped[uuid.UUID | None] = _fk("pengguna", nullable=True, index=False)
+    created_date: Mapped[datetime] = _dibuat()
+    updated_by: Mapped[uuid.UUID | None] = _fk("pengguna", nullable=True, index=False)  # penginput versi terkini
+    updated_date: Mapped[datetime] = _dibuat()
+    # Nonaktif = tetap tampil, tetapi tidak dipakai review berikutnya (sama dengan panduan).
+    aktif: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
+    kode: Mapped[str] = mapped_column(String(20), unique=True)
+    kategori: Mapped[str] = mapped_column(String(255))
+    deskripsi: Mapped[str] = mapped_column(Text)  # definisi yang dipakai AI (C2)
 
 
-class KategoriItem(Base):
-    __tablename__ = "kategori_item"
+class KategoriHistori(Base):
+    """Riwayat kategori: salinan utuh baris `kategori` SEBELUM tiap perubahan (versi terkini hanya di `kategori`), seperti
+    `panduan_histori`. Tidak diubah. `created_by`/`created_date` tetap milik pembuat kategori; `updated_by`/`updated_date` =
+    penginput & waktu versi ini. `kategori_id` → kategori asalnya (ikut terhapus bila kategori dihapus)."""
+    __tablename__ = "kategori_histori"
     id: Mapped[uuid.UUID] = _id()
-    versi_id: Mapped[uuid.UUID] = _fk("kategori_versi")
-    urutan: Mapped[int] = mapped_column(Integer)
+    created_by: Mapped[uuid.UUID | None] = _fk("pengguna", nullable=True, index=False)
+    created_date: Mapped[datetime] = _dibuat()
+    updated_by: Mapped[uuid.UUID | None] = _fk("pengguna", nullable=True, index=False)
+    updated_date: Mapped[datetime] = _dibuat()
+    kategori_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("kategori.id", ondelete="CASCADE"), index=True)
+    kategori: Mapped[str] = mapped_column(String(255))
+    aktif: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")  # status saat versi itu
     kode: Mapped[str] = mapped_column(String(20))
-    nama: Mapped[str] = mapped_column(String(255))
-    definisi: Mapped[str] = mapped_column(Text)
-    diteruskan: Mapped[bool] = mapped_column(Boolean, default=True)  # False = "tidak diteruskan" (K4), tidak di-hardcode
+    deskripsi: Mapped[str] = mapped_column(Text)
 
 
 class Panduan(Base):
@@ -284,7 +297,6 @@ class Review(Base):
     revisi_id: Mapped[uuid.UUID] = _fk("revisi")
     trace_id: Mapped[str] = mapped_column(String(32), index=True)
     status: Mapped[str] = mapped_column(String(20), default="ANTRE")  # ANTRE|DIPROSES|SELESAI|GAGAL
-    kategori_versi_id: Mapped[uuid.UUID | None] = _fk("kategori_versi", nullable=True, index=False)
     fingerprint: Mapped[str | None] = mapped_column(String(64), index=True)
     disalin_dari_id: Mapped[uuid.UUID | None] = _fk("review", nullable=True, index=False)
     model_info: Mapped[dict | None] = mapped_column(JSONB)
@@ -295,7 +307,7 @@ class Review(Base):
     error_pesan: Mapped[str | None] = mapped_column(Text)
     label_ai: Mapped[str | None] = mapped_column(String(20))  # dihitung KODE dari hasil_item (PRD §7.1)
     label_final: Mapped[str | None] = mapped_column(String(20))  # snapshot saat Finalkan
-    kategori_final_id: Mapped[uuid.UUID | None] = _fk("kategori_item", nullable=True, index=False)
+    kategori_final_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))  # id kategori di review_kategori, tanpa FK
     difinalkan_oleh: Mapped[uuid.UUID | None] = _fk("pengguna", nullable=True, index=False)
     difinalkan_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
@@ -310,6 +322,18 @@ class ReviewPanduan(Base):
     judul: Mapped[str] = mapped_column(String(500))
     file_id: Mapped[uuid.UUID] = _fk("file", index=False)
     nama_file: Mapped[str] = mapped_column(String(255))
+
+
+class ReviewKategori(Base):
+    """Salinan daftar kategori yang dipakai review (C3/C4), dibuat saat acuan dikunci. `kategori_id` tanpa FK: kategori
+    boleh diubah/dihapus permanen tanpa mengubah review lama. hasil_kategori, kategori_final_id, dan override KATEGORI
+    menunjuk `kategori_id` ini."""
+    __tablename__ = "review_kategori"
+    review_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("review.id"), primary_key=True)
+    kategori_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
+    kode: Mapped[str] = mapped_column(String(20))
+    nama: Mapped[str] = mapped_column(String(255))
+    definisi: Mapped[str] = mapped_column(Text)
 
 
 class HasilItem(Base):
@@ -329,7 +353,7 @@ class HasilKategori(Base):
     __tablename__ = "hasil_kategori"
     id: Mapped[uuid.UUID] = _id()
     review_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("review.id"), unique=True)
-    kategori_item_id: Mapped[uuid.UUID] = _fk("kategori_item", index=False)
+    kategori_item_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True))  # id kategori di review_kategori, tanpa FK
     alasan: Mapped[str] = mapped_column(Text)
 
 

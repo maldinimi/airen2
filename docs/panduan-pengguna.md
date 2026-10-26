@@ -13,8 +13,6 @@ Masuk dengan username dan password dari Admin. Menu yang tampil menyesuaikan rol
 | Hijau | Lolos |
 | Merah | Tidak lolos |
 
-Label **"Tidak diteruskan"** menandai kategori K4.
-
 ## Pengusul
 
 Anda hanya melihat usulan milik Satker Anda.
@@ -55,8 +53,13 @@ Reviewer tidak dapat menjalankan ulang review AI.
 
 Lihat [panduan-admin.md](panduan-admin.md) untuk administrasi teknis. Fitur di aplikasi:
 
-- **Checklist / Kategori**: tambah, ubah, hapus, dan urutkan item pada draf, lalu klik **Simpan sebagai versi baru** (sertakan catatan perubahan). Tab **Daftar versi** menampilkan isi setiap versi. Review yang sedang berjalan atau sudah selesai tidak terpengaruh.
-  - Kategori dengan centang "Diteruskan" dihapus akan ditandai "Tidak diteruskan".
+- **Checklist**: tabel item dengan tombol **Tambah Item** dan **Atur Urutan**, serta ikon Detail, Edit, dan Hapus per item. Setiap perubahan tercatat di riwayat item.
+- **Kategori**: tabel berisi Kode, Kategori, Status (Aktif/Nonaktif), Deskripsi, dan Aksi (ikon mata = Detail, pensil = Edit, tempat sampah = Hapus).
+  - **Tambah Kategori** (kanan atas) dan **Edit** membuka halaman form: Kode, Kategori, dan Deskripsi. Form **Edit** juga memuat saklar **Status** (kategori baru selalu Aktif). Sebelum disimpan tampil pop-up untuk memeriksa kembali isian.
+  - **Detail** menampilkan data terkini serta tabel **Kategori Histori**: isi kategori sebelum tiap perubahan, tanggal input, dan akun yang menginput.
+  - **Hapus** bersifat permanen (kategori beserta riwayatnya). Hasil review lama tetap menampilkan kategori yang dipakai saat itu. Minimal satu kategori Aktif harus ada.
+  - Perubahan dipakai AI mulai review berikutnya; review yang sedang berjalan atau sudah selesai tidak terpengaruh.
+  - Hanya kategori **Aktif** yang dipakai AI pada review berikutnya. Kategori **Nonaktif** tetap tampil dan dapat diaktifkan kembali lewat Edit tanpa dihapus.
 - **Panduan**: ditampilkan sebagai tabel (No, Nama Acuan, Deskripsi, Status, Diinput Oleh, Tanggal Input, Aksi; keduanya menunjukkan input/perubahan terakhir). Klik **Nama Acuan** untuk membuka PDF-nya. Klik judul kolom **Status** lalu pilih urutan: **Default** (urut nama), **Aktif** (Aktif di atas), atau **Nonaktif** (Nonaktif di atas).
   - Kolom **Aksi** berisi ikon (arahkan kursor untuk melihat namanya): **Lihat detail** (ikon mata, semua pengguna) membuka halaman berisi data lengkap panduan dan **Panduan Histori**-nya; **Edit** (ikon pensil) dan **Hapus** (ikon tempat sampah) khusus Admin.
   - **Unggah Panduan** membuka halaman form: Nama Acuan, Deskripsi, Status, dan file PDF. Setelah file dipilih, klik **Pratinjau** pada baris file untuk membuka PDF di jendela pop-up (bisa diperbesar dan dipindah halaman) agar file dapat diperiksa sebelum diunggah; file yang rusak langsung ditandai. Tombol **Reset** mengosongkan semua isian (termasuk PDF) dan mengembalikan Status ke Aktif. **Edit** membuka halaman form untuk mengubah Nama Acuan, Deskripsi, dan Status; file tidak dapat diganti (unggah panduan baru bila perlu).
