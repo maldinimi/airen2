@@ -6,7 +6,7 @@ import uuid
 from sqlalchemy import func, select, text, update
 
 from app.db import SessionLokal
-from app.model import Elemen, KategoriHistori, Panduan, Review, Rujukan
+from app.model import Elemen, Kategori, KategoriHistori, Panduan, Review, Rujukan
 from tests.conftest import RAB_CONTOH, TOR_CONTOH, buat_pdf, jalankan_antrean, unggah
 
 TOR = buat_pdf(TOR_CONTOH)
@@ -233,6 +233,24 @@ def test_kategori_crud_riwayat_dan_hapus_permanen(klien):
     sisa = admin.get("/api/kategori").json()["item"]
     assert len(sisa) == 1 and admin.delete(f"/api/kategori/{sisa[0]['id']}").status_code == 400
     assert admin.put(f"/api/kategori/{sisa[0]['id']}", json={**sisa[0], "aktif": False}).status_code == 400
+
+
+def test_kategori_atur_urutan(klien):
+    admin = klien("admin", "GantiSegera!2026")
+    kat = admin.get("/api/kategori").json()["item"]
+    assert [k["kode"] for k in kat] == ["K1", "K2", "K3", "K4"]
+    baru = [kat[3]["id"], kat[0]["id"], kat[1]["id"], kat[2]["id"]]
+    r = admin.put("/api/kategori/urutan", json={"id": baru})
+    assert r.status_code == 200 and [k["id"] for k in r.json()["item"]] == baru
+    assert admin.put("/api/kategori/urutan", json={"id": baru[:3]}).status_code == 400  # daftar tidak lengkap
+    assert klien("reviewer").put("/api/kategori/urutan", json={"id": baru}).status_code == 403
+    assert admin.get(f"/api/kategori/{kat[0]['id']}/riwayat").json() == []  # atur urutan tidak membuat riwayat
+    # Kategori baru ditaruh setelah kode sebelumnya walau urutan sudah diatur bebas; hapus merapikan nomor urut
+    admin.post("/api/kategori", json={"kode": "K5", "nama": "RO Baru", "definisi": "Definisi baru"})
+    assert [k["kode"] for k in admin.get("/api/kategori").json()["item"]] == ["K4", "K5", "K1", "K2", "K3"]
+    assert admin.delete(f"/api/kategori/{kat[0]['id']}").status_code == 200
+    with SessionLokal() as db:
+        assert db.scalars(select(Kategori.no_urut).order_by(Kategori.no_urut)).all() == [1, 2, 3, 4]
 
 
 def test_checklist_crud_riwayat_dan_status(klien):

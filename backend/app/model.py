@@ -223,6 +223,8 @@ class Kategori(Base):
     kode: Mapped[str] = mapped_column(String(20), unique=True)
     kategori: Mapped[str] = mapped_column(String(255))
     deskripsi: Mapped[str] = mapped_column(Text)  # definisi yang dipakai AI (C2)
+    # Kolom terakhir agar database lama (ditambah migrasi 0003) dan baru berurutan kolom sama; dipakai CLUSTER (urut_ulang).
+    no_urut: Mapped[int] = mapped_column(Integer, index=True)
 
 
 class KategoriHistori(Base):

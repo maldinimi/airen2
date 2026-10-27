@@ -1,22 +1,18 @@
 /** Panduan (Modul D): semua pengguna dapat membaca; Admin mengunggah, mengubah (versi baru), mengaktifkan/menonaktifkan, menghapus. */
-import * as Pop from "@radix-ui/react-popover";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowDown, ArrowLeft, ArrowUp, ArrowUpDown, Check, Eye, FileText, Loader2, Pencil, RotateCcw, Trash2, Upload } from "lucide-react";
+import { ArrowLeft, Eye, FileText, Loader2, Pencil, RotateCcw, Trash2, Upload } from "lucide-react";
 import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { api } from "../api";
 import { useAuth } from "../auth";
 import { waktu } from "../format";
 import type { Panduan, VersiPanduan } from "../types";
-import { cx, Judul, Kartu, Konfirmasi, Kosong, Lencana, Memuat, Ringkasan, Tombol } from "../ui";
+import { Judul, Kartu, KepalaStatus, Konfirmasi, Kosong, Lencana, Memuat, Ringkasan, Tombol, type UrutStatus, urutkanStatus } from "../ui";
 
 const STATUS: Record<VersiPanduan["status_proses"], [string, string]> = {
   BELUM: ["Antre", "bg-blue-50 text-blue-700 ring-blue-200"], DIPROSES: ["Diproses", "bg-blue-50 text-blue-700 ring-blue-200"],
   SIAP: ["Siap", "bg-emerald-50 text-emerald-700 ring-emerald-300"], GAGAL: ["Gagal", "bg-red-100 text-red-900 ring-red-300"],
 };
-
-type Urut = "" | "aktif" | "tidak";
-const OPSI_URUT: Record<Urut, string> = { "": "Default", aktif: "Aktif", tidak: "Nonaktif" };
 
 // Dipakai daftar & detail: muat ulang tiap 5 detik selama ada file yang masih Antre/Diproses.
 const kueriPanduan = {
@@ -30,9 +26,8 @@ export default function PanduanPage() {
   const qc = useQueryClient();
   const nav = useNavigate();
   const q = useQuery(kueriPanduan);
-  const [urut, setUrut] = useState<Urut>("");
-  // sort() stabil: dalam satu status, urutan nama dari server tetap.
-  const baris = urut ? [...(q.data ?? [])].sort((a, b) => (+b.aktif - +a.aktif) * (urut === "aktif" ? 1 : -1)) : q.data ?? [];
+  const [urut, setUrut] = useState<UrutStatus>("");
+  const baris = urutkanStatus(q.data ?? [], urut);  // Default = urut nama dari server
   const segarkan = () => qc.invalidateQueries({ queryKey: ["panduan"] });
   const [dihapus, setDihapus] = useState<Panduan | null>(null);
   // Gagal (mis. 409 dipakai review berjalan) → pesan tampil di pop-up konfirmasi.
@@ -47,26 +42,9 @@ export default function PanduanPage() {
         <Kartu className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-slate-50 text-left text-xs text-slate-500"><tr>
-              {["No", "Nama Acuan", "Deskripsi", "Status", "Diinput Oleh", "Tanggal Input", "Aksi"].map((h) => (
-                <th key={h} className="px-3 py-2 text-center" aria-sort={h === "Status" ? ({ "": "none", aktif: "descending", tidak: "ascending" } as const)[urut] : undefined}>
-                  {h !== "Status" ? h : (
-                    <Pop.Root>
-                      <Pop.Trigger className="inline-flex items-center gap-1 hover:text-slate-800" aria-label={`Urutkan status: ${OPSI_URUT[urut]}`}>
-                        Status{urut === "aktif" ? <ArrowDown className="size-3.5" /> : urut === "tidak" ? <ArrowUp className="size-3.5" /> : <ArrowUpDown className="size-3.5" />}
-                      </Pop.Trigger>
-                      <Pop.Portal>
-                        <Pop.Content sideOffset={6} className="z-50 w-44 rounded-xl border border-slate-200 bg-white p-1 text-sm shadow-xl">
-                          {(Object.entries(OPSI_URUT) as [Urut, string][]).map(([k, label]) => (
-                            <Pop.Close key={k} aria-pressed={urut === k} onClick={() => setUrut(k)}
-                              className={cx("flex w-full items-center justify-between rounded-lg px-3 py-1.5 text-left hover:bg-slate-100", urut === k && "font-medium text-utama-700")}>
-                              {label}{urut === k && <Check className="size-4" />}
-                            </Pop.Close>
-                          ))}
-                        </Pop.Content>
-                      </Pop.Portal>
-                    </Pop.Root>
-                  )}
-                </th>))}
+              {["No", "Nama Acuan", "Deskripsi", "Status", "Diinput Oleh", "Tanggal Input", "Aksi"].map((h) => h === "Status"
+                ? <KepalaStatus key={h} urut={urut} ubah={setUrut} className="px-3 py-2 text-center" />
+                : <th key={h} className="px-3 py-2 text-center">{h}</th>)}
             </tr></thead>
             <tbody className="divide-y divide-slate-100">{baris.map((p, i) => {
               const v = p.terkini;

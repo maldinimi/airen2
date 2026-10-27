@@ -1,14 +1,16 @@
-/** Kelola Kategori (Modul C): tabel kategori; tambah/edit/detail di halaman tersendiri, hapus permanen. Isi terbaru ada
+/** Kelola Kategori (Modul C): tabel kategori (urutan diatur Admin lewat Atur Urutan); tambah/edit/detail di halaman tersendiri, hapus permanen. Isi terbaru ada
  *  di tabel kategori, isi sebelum tiap perubahan dicatat backend di kategori_histori. Review menyimpan salinan kategori yang
  *  dipakai, sehingga edit/hapus tidak mengubah review lama (C4). */
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Eye, Pencil, Plus, Trash2 } from "lucide-react";
-import { type FormEvent, useState } from "react";
+import { ArrowLeft, Eye, ListOrdered, Pencil, Plus, Trash2 } from "lucide-react";
+import { type FormEvent, useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { api } from "../../api";
+import AturUrutan from "../../components/AturUrutan";
 import { waktuAngka } from "../../format";
 import type { ItemKategori } from "../../types";
-import { AreaTeks, Input, Judul, Kartu, Kolom, Konfirmasi, Kosong, Lencana, Memuat, Peringatan, Ringkasan, Saklar, Tombol, cx } from "../../ui";
+import { AreaTeks, Input, Judul, Kartu, KepalaStatus, Kolom, Konfirmasi, Kosong, Lencana, Memuat, Peringatan, Ringkasan, Saklar, Tombol,
+  type UrutStatus, cx, urutkanStatus } from "../../ui";
 
 const ENDPOINT = "/api/kategori";
 const DASAR = "/kelola/kategori";
@@ -30,10 +32,18 @@ export default function KelolaKategori() {
   const [memuat, setMemuat] = useState(false);
   const [galat, setGalat] = useState<string | null>(null);
   const jumlahHistori = useQuery({ ...riwayat(hapus?.id ?? ""), enabled: !!hapus });
+  const [atur, setAtur] = useState(false);
+  const [sukses, setSukses] = useState<string | null>(null);
+  const [urut, setUrut] = useState<UrutStatus>("");
+  useEffect(() => { if (!sukses) return; const t = setTimeout(() => setSukses(null), 4000); return () => clearTimeout(t); }, [sukses]);
 
   if (q.isLoading) return <Memuat />;
   if (q.error) return <Peringatan>{(q.error as Error).message}</Peringatan>;
   const item = q.data!.item;
+  const baris = urutkanStatus(item, urut);  // Default = urutan yang diatur Admin (no_urut dari server)
+  if (atur) return <AturUrutan judul="Atur Urutan Kategori" endpoint={ENDPOINT} item={item.map((k) => ({ id: k.id, kode: k.kode, judul: k.nama }))}
+    sub="Seret baris atau gunakan tombol naik/turun, lalu klik Simpan Urutan. Urutan ini dipakai di tabel kategori; kategori baru otomatis ditempatkan setelah kode sebelumnya."
+    tutup={() => setAtur(false)} disimpan={() => { setSukses("Urutan berhasil disimpan."); setAtur(false); }} />;
 
   const yaHapus = async () => {
     setMemuat(true);
@@ -51,15 +61,21 @@ export default function KelolaKategori() {
     <div className="w-full">
       <Judul judul="Kelola Kategori"
         sub="AI memakai daftar kategori terbaru saat review dimulai. Setiap tambah dan perubahan tercatat di Kategori Histori; review lama tetap menampilkan kategori saat itu."
-        aksi={<Tombol onClick={() => nav(`${DASAR}/tambah`)}><Plus className="size-4" />Tambah Kategori</Tombol>} />
+        aksi={<>
+          <Tombol varian="sekunder" onClick={() => setAtur(true)} disabled={item.length < 2}><ListOrdered className="size-4" />Atur Urutan</Tombol>
+          <Tombol onClick={() => nav(`${DASAR}/tambah`)}><Plus className="size-4" />Tambah Kategori</Tombol>
+        </>} />
+      {sukses && <div className="mb-3"><Peringatan jenis="sukses">{sukses}</Peringatan></div>}
       {item.length === 0 ? <Kosong>Belum ada kategori.</Kosong> : (
         <Kartu className="overflow-x-auto">
           <table className="w-full min-w-[54rem] text-sm">
             <thead className="bg-slate-100 text-xs font-semibold text-slate-700">
-              <tr>{["Kode", "Kategori", "Status", "Deskripsi", "Aksi"].map((h) => <th key={h} scope="col" className="whitespace-nowrap px-3 py-2.5 text-center">{h}</th>)}</tr>
+              <tr>{["Kode", "Kategori", "Status", "Deskripsi", "Aksi"].map((h) => h === "Status"
+                ? <KepalaStatus key={h} urut={urut} ubah={setUrut} className="whitespace-nowrap px-3 py-2.5 text-center" />
+                : <th key={h} scope="col" className="whitespace-nowrap px-3 py-2.5 text-center">{h}</th>)}</tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {item.map((k) => (
+              {baris.map((k) => (
                 <tr key={k.id} className="align-middle transition-colors hover:bg-slate-50">
                   <td className="whitespace-nowrap px-3 py-2.5 text-center font-medium text-slate-900">{k.kode}</td>
                   <td className="min-w-[12rem] px-3 py-2.5 text-slate-900">{k.nama}</td>

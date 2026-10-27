@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session
 
 from app.akses import ADMIN, pengguna_saat_ini, wajib_role
 from app.audit import catat
-from app.checklist import kunci_kode, rapikan_fisik, urut_ulang
+from app.checklist import rapikan_fisik, urut_ulang
 from app.db import sesi_db
 from app.galat import Galat
 from app.model import ChecklistHistory, ChecklistItem, Kategori, KategoriHistori, Pengguna
@@ -238,23 +238,39 @@ def _ambil_kategori(db: Session, kategori_id: uuid.UUID, kunci: bool = False) ->
 
 @router.get("/kategori")
 def kategori(db: Session = Depends(sesi_db), _: Pengguna = Depends(wajib_role(ADMIN))) -> dict:
-    """Daftar kategori terbaru, urut kode alami (K1, K2, …, K10). Khusus Admin (C5, C7). Error: 403."""
-    return {"item": [_kategori(db, k) for k in sorted(db.scalars(select(Kategori)), key=lambda k: kunci_kode(k.kode))]}
+    """Daftar kategori terbaru, urut nomor urut yang diatur Admin. Khusus Admin (C5, C7). Error: 403."""
+    return {"item": [_kategori(db, k) for k in db.scalars(select(Kategori).order_by(Kategori.no_urut, Kategori.kode))]}
 
 
 @router.post("/kategori")
 def kategori_tambah(data: ItemKategoriMasuk, request: Request, db: Session = Depends(sesi_db),
                     p: Pengguna = Depends(wajib_role(ADMIN))) -> dict:
-    """Tambah kategori; dipakai AI mulai review berikutnya (C2). Error: 400 isian tidak valid / kode sudah dipakai."""
+    """Tambah kategori (ditaruh setelah kategori berkode sebelumnya); dipakai AI mulai review berikutnya (C2).
+    Error: 400 isian tidak valid / kode sudah dipakai."""
     isi = _isi_kategori(db, data)
     sekarang = _jam_db(db)
-    k = Kategori(**isi, created_by=p.id, created_date=sekarang, updated_by=p.id, updated_date=sekarang)
+    k = Kategori(**isi, no_urut=0, created_by=p.id, created_date=sekarang, updated_by=p.id, updated_date=sekarang)
     with _kode_unik(db):
         db.add(k)
-        db.flush()
+        urut_ulang(db, baru=k, model=Kategori)
     catat(db, request, "KATEGORI_TAMBAH", "kategori", k.id, sesudah=isi)
     db.commit()
     return _kategori(db, k)
+
+
+# Didaftarkan sebelum PUT /kategori/{kategori_id}: bila sesudahnya, "urutan" dicocokkan sebagai id lalu ditolak 422.
+@router.put("/kategori/urutan")
+def kategori_urutan(data: UrutanMasuk, request: Request, db: Session = Depends(sesi_db),
+                    p: Pengguna = Depends(wajib_role(ADMIN))) -> dict:
+    """Atur urutan kategori (`id` = semua id kategori sesuai urutan baru). Hanya `no_urut` yang berubah — tidak membuat
+    Kategori Histori karena isi kategori tidak berubah. Error: 400 daftar tidak memuat tepat semua kategori."""
+    semua = set(db.scalars(select(Kategori.id)))
+    if len(data.id) != len(semua) or set(data.id) != semua:
+        raise Galat(400, "Daftar kategori sudah berubah. Muat ulang halaman lalu atur urutan lagi.")
+    urut_ulang(db, urutan=data.id, model=Kategori)
+    catat(db, request, "KATEGORI_URUTAN", "kategori", None, sesudah={"id": [str(i) for i in data.id]})
+    db.commit()
+    return kategori(db, p)
 
 
 @router.put("/kategori/{kategori_id}")
@@ -289,6 +305,7 @@ def kategori_hapus(kategori_id: uuid.UUID, request: Request, db: Session = Depen
     sebelum = {**{c: getattr(k, c) for c in ("kode", "kategori", "deskripsi", "aktif")},
                "jumlah_histori": db.scalar(select(func.count()).where(KategoriHistori.kategori_id == k.id))}
     db.delete(k)  # riwayatnya ikut terhapus (FK kategori_histori.kategori_id ON DELETE CASCADE)
+    urut_ulang(db, model=Kategori)
     _wajib_ada_kategori_aktif(db)
     catat(db, request, "KATEGORI_HAPUS", "kategori", kategori_id, sebelum=sebelum)
     db.commit()

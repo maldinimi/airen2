@@ -15,7 +15,7 @@ from sqlalchemy import select, text
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
-from app.model import ChecklistHistory, ChecklistItem, Review
+from app.model import ChecklistHistory, ChecklistItem, Kategori, Review
 
 
 @dataclass(frozen=True)
@@ -35,15 +35,16 @@ def kunci_kode(kode: str) -> list:
     return [int(x) if n % 2 else x for n, x in enumerate(re.split(r"(\d+)", kode))]
 
 
-def urut_ulang(db: Session, baru: ChecklistItem | None = None, urutan: list[uuid.UUID] | None = None) -> None:
-    """Rapikan `no_urut` jadi 1..n. Urutan diatur Admin (`urutan` = daftar id); item `baru` ditaruh tepat setelah item
+def urut_ulang(db: Session, baru: ChecklistItem | Kategori | None = None, urutan: list[uuid.UUID] | None = None,
+               model: type[ChecklistItem] | type[Kategori] = ChecklistItem) -> None:
+    """Rapikan `no_urut` tabel `model` (checklist_item atau kategori) jadi 1..n. Urutan diatur Admin (`urutan` = daftar id); item `baru` ditaruh tepat setelah item
     dengan kode sebelumnya (E.02 sesudah E.01) walau urutan lain sudah diatur bebas.
 
     Baris tabel juga disusun ulang di disk menurut no_urut (CLUSTER), karena pgAdmin "View Data → All Rows" menampilkan
     urutan fisik tanpa ORDER BY. Tabel kecil (puluhan baris) sehingga cepat; kunci tabel hanya sampai commit.
     """
     db.flush()
-    item = sorted((i for i in db.scalars(select(ChecklistItem)) if i is not baru), key=lambda i: i.no_urut)
+    item = sorted((i for i in db.scalars(select(model)) if i is not baru), key=lambda i: i.no_urut)
     if urutan is not None:
         posisi = {iid: n for n, iid in enumerate(urutan)}
         item.sort(key=lambda i: posisi[i.id])
@@ -53,7 +54,7 @@ def urut_ulang(db: Session, baru: ChecklistItem | None = None, urutan: list[uuid
         item.insert(letak, baru)
     for n, i in enumerate(item, 1):
         i.no_urut = n
-    rapikan_fisik(db, "checklist_item", "ix_checklist_item_no_urut")
+    rapikan_fisik(db, model.__tablename__, f"ix_{model.__tablename__}_no_urut")
 
 
 def rapikan_fisik(db: Session, tabel: str, indeks: str) -> None:

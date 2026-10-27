@@ -54,7 +54,8 @@ Reviewer tidak dapat menjalankan ulang review AI.
 Lihat [panduan-admin.md](panduan-admin.md) untuk administrasi teknis. Fitur di aplikasi:
 
 - **Checklist**: tabel item dengan tombol **Tambah Item** dan **Atur Urutan**, serta ikon Detail, Edit, dan Hapus per item. Setiap perubahan tercatat di riwayat item.
-- **Kategori**: tabel berisi Kode, Kategori, Status (Aktif/Nonaktif), Deskripsi, dan Aksi (ikon mata = Detail, pensil = Edit, tempat sampah = Hapus).
+- **Kategori**: tabel berisi Kode, Kategori, Status (Aktif/Nonaktif), Deskripsi, dan Aksi (ikon mata = Detail, pensil = Edit, tempat sampah = Hapus). Klik judul kolom **Status** lalu pilih urutan: **Default** (urutan hasil Atur Urutan), **Aktif** (Aktif di atas), atau **Nonaktif** (Nonaktif di atas).
+  - **Atur Urutan** (kanan atas): seret baris atau pakai tombol naik/turun, lalu klik **Simpan Urutan**. Kategori baru otomatis ditempatkan setelah kode sebelumnya.
   - **Tambah Kategori** (kanan atas) dan **Edit** membuka halaman form: Kode, Kategori, dan Deskripsi. Form **Edit** juga memuat saklar **Status** (kategori baru selalu Aktif). Sebelum disimpan tampil pop-up untuk memeriksa kembali isian.
   - **Detail** menampilkan data terkini serta tabel **Kategori Histori**: isi kategori sebelum tiap perubahan, tanggal input, dan akun yang menginput.
   - **Hapus** bersifat permanen (kategori beserta riwayatnya). Hasil review lama tetap menampilkan kategori yang dipakai saat itu. Minimal satu kategori Aktif harus ada.

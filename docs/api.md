@@ -78,8 +78,9 @@ Setiap `rujukan` berisi `{peran (bukti_dokumen|dasar_panduan), dokumen (TOR|RAB|
 | DELETE | `/checklist/item/{id}` | Admin | Hapus item beserta riwayatnya secara permanen (ikut hilang dari tampilan review lama) |
 | PUT | `/checklist/urutan` | Admin | Atur urutan `{id: [semua id item sesuai urutan baru]}` → `no_urut` 1..n (tidak membuat riwayat). 400 bila daftar tidak memuat tepat semua item |
 | GET | `/checklist/item/{id}/riwayat` | login | Semua versi item dari `checklist_histori`, terbaru dulu (baris pertama = isi saat ini; format sama dengan item `/checklist`) |
-| GET | `/kategori` | Admin | Isi terbaru `{item: [{id, kode, nama, definisi, aktif, diubah_oleh, diubah_at}]}`, urut kode alami (K2 < K10) |
-| POST | `/kategori` | Admin | Tambah `{kode, nama, definisi, aktif?}` (bawaan Aktif). `kode` wajib, maks. 20 karakter, dijadikan kapital, unik → 400 bila bentrok; `nama` maks. 255 karakter |
+| GET | `/kategori` | Admin | Isi terbaru `{item: [{id, kode, nama, definisi, aktif, diubah_oleh, diubah_at}]}`, urut `no_urut` yang diatur Admin |
+| POST | `/kategori` | Admin | Tambah `{kode, nama, definisi, aktif?}` (bawaan Aktif), ditaruh setelah kategori berkode sebelumnya. `kode` wajib, maks. 20 karakter, dijadikan kapital, unik → 400 bila bentrok; `nama` maks. 255 karakter |
+| PUT | `/kategori/urutan` | Admin | Atur urutan `{id: [semua id kategori sesuai urutan baru]}` → `no_urut` 1..n (tidak membuat riwayat). 400 bila daftar tidak memuat tepat semua kategori |
 | PUT | `/kategori/{id}` | Admin | Ubah kategori (isian sama, kode boleh diganti). Isi **sebelum** diubah disalin ke `kategori_histori`; tanpa perubahan = tidak menambah riwayat. 400 bila menonaktifkan kategori Aktif terakhir; 404 kategori tidak ada |
 | DELETE | `/kategori/{id}` | Admin | Hapus kategori beserta riwayatnya secara permanen; review lama tidak berubah (salinan di `review_kategori`). 400 bila tidak ada kategori Aktif tersisa |
 | GET | `/kategori/{id}/riwayat` | Admin | Versi sebelum tiap perubahan dari `kategori_histori`, terbaru dulu (isi saat ini tidak termasuk; kosong bila belum pernah diubah) |

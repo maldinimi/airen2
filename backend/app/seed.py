@@ -49,8 +49,8 @@ def jalankan_seed(db: Session) -> None:
     """Isi data awal bila belum ada. Aman dipanggil berulang (idempoten)."""
     k = konfigurasi()
     if db.scalar(select(Kategori.id).limit(1)) is None:
-        for kode, nama, definisi in KATEGORI_AWAL:
-            db.add(Kategori(kode=kode, kategori=nama, deskripsi=definisi))
+        for n, (kode, nama, definisi) in enumerate(KATEGORI_AWAL, 1):
+            db.add(Kategori(kode=kode, kategori=nama, deskripsi=definisi, no_urut=n))
         logger.info("seed kategori dibuat")
 
     if db.scalar(select(Pengguna.id).limit(1)) is None:
