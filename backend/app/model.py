@@ -10,7 +10,7 @@ import uuid
 from datetime import datetime
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import (BigInteger, Boolean, Computed, DateTime, ForeignKey, Index, Integer, String, Text,
+from sqlalchemy import (BigInteger, Boolean, CheckConstraint, Computed, DateTime, ForeignKey, Index, Integer, String, Text,
                         UniqueConstraint, func, text)
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB, TSVECTOR, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -34,26 +34,63 @@ def _fk(tabel: str, nullable: bool = False, index: bool = True) -> Mapped:
 
 # ---------------------------------------------------------------- pengguna & akses
 class Satker(Base):
+    """Satuan Kerja = UKE II (Eselon II) beserta Unit Kerja induknya = UKE I (Eselon I), mengikuti dokumen
+    "Data Satker dan Unit Kerja" (app/data_satker.py). Kolom = yang tampil di menu Satker."""
     __tablename__ = "satker"
+    # Satker dikenali dari pasangan (unit_kerja, nama): nama sama boleh di Unit Kerja berbeda; kode UKE II unik bila diisi.
+    # Semua isian opsional; kosong disimpan '' (bukan NULL) agar halaman lain yang menampilkan nama Satker tidak
+    # menampilkan "null", dan agar keunikan tetap berlaku untuk isian kosong.
+    # Format kode seperti dokumen: UKE I = NN (01), UKE II = NN.NN (01.04) dan diawali kode UKE I-nya.
+    __table_args__ = (UniqueConstraint("unit_kerja", "nama", name="uq_satker_unit_kerja_nama"),
+                      Index("ux_satker_kode_uke2", "kode_uke2", unique=True, postgresql_where=text("kode_uke2 <> ''")),
+                      CheckConstraint("kode_uke1 = '' OR kode_uke1 ~ '^[0-9]{2}$'", name="ck_satker_kode_uke1_format"),
+                      CheckConstraint("kode_uke2 = '' OR kode_uke2 ~ '^[0-9]{2}\\.[0-9]{2}$'", name="ck_satker_kode_uke2_format"),
+                      CheckConstraint("kode_uke1 = '' OR kode_uke2 = '' OR left(kode_uke2, 2) = kode_uke1",
+                                      name="ck_satker_kode_uke2_induk"))
     id: Mapped[uuid.UUID] = _id()
-    created_at: Mapped[datetime] = _dibuat()
-    kode: Mapped[str] = mapped_column(String(50), unique=True)
-    nama: Mapped[str] = mapped_column(String(255))
-    aktif: Mapped[bool] = mapped_column(Boolean, default=True)
+    # pengguna.satker_id → satker dan satker.*_by → pengguna saling merujuk: FK ini dibuat setelah kedua tabel ada.
+    created_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("pengguna.id", use_alter=True, name="satker_created_by_fkey"))
+    create_date: Mapped[datetime] = _dibuat()
+    update_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("pengguna.id", use_alter=True, name="satker_update_by_fkey"))
+    update_date: Mapped[datetime] = _dibuat()
+    kode_uke1: Mapped[str] = mapped_column(String(10), server_default="")  # Kode UKE I, mis. 01
+    unit_kerja: Mapped[str] = mapped_column(String(255), server_default="")  # UKE I / Unit Kerja (Eselon I)
+    kode_uke2: Mapped[str] = mapped_column(String(10), server_default="")  # Kode UKE II, mis. 01.04
+    nama: Mapped[str] = mapped_column(String(255), server_default="")  # UKE II / Satuan Kerja (Eselon II)
+    aktif: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")  # Nonaktif: tak bisa dipilih pengguna
+
+    @property
+    def kode(self) -> str:
+        """Kode Satker = Kode UKE II (kolom kode lama sudah dihapus); dipakai profil login & daftar usulan."""
+        return self.kode_uke2
 
 
 class Pengguna(Base):
     __tablename__ = "pengguna"
-    id: Mapped[uuid.UUID] = _id()
-    created_at: Mapped[datetime] = _dibuat()
-    username: Mapped[str] = mapped_column(String(100), unique=True)
-    nama: Mapped[str] = mapped_column(String(255))
-    password_hash: Mapped[str] = mapped_column(String(255))
+    # Username unik tanpa membedakan huruf besar/kecil (aturan yang sama dipakai API & login) — juga indeks untuk login.
+    __table_args__ = (CheckConstraint("btrim(username) <> ''", name="ck_pengguna_username_isi"),
+                      Index("ux_pengguna_username_lower", func.lower(text("username")), unique=True))
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4,
+                                          server_default=func.gen_random_uuid())
+    # Jejak seperti checklist_item: NULL = dibuat sistem (seed). update_* diisi saat data akun diubah, bukan saat login.
+    created_by: Mapped[uuid.UUID | None] = _fk("pengguna", nullable=True, index=False)
+    create_date: Mapped[datetime] = _dibuat()
+    update_by: Mapped[uuid.UUID | None] = _fk("pengguna", nullable=True, index=False)
+    update_date: Mapped[datetime] = _dibuat()
+    username: Mapped[str] = mapped_column(String(100))  # unik lewat ux_pengguna_username_lower
+    password_hash: Mapped[str] = mapped_column("password", String(255))
     satker_id: Mapped[uuid.UUID | None] = _fk("satker", nullable=True)
-    aktif: Mapped[bool] = mapped_column(Boolean, default=True)
+    aktif: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     roles: Mapped[list["PenggunaRole"]] = relationship(cascade="all, delete-orphan", lazy="selectin")
-    satker: Mapped[Satker | None] = relationship(lazy="joined")
+    satker: Mapped[Satker | None] = relationship(lazy="joined", foreign_keys=[satker_id])
+
+    @property
+    def nama(self) -> str:
+        """Nama tampilan (header, "Dibuat Oleh", riwayat) = username; tabel pengguna tidak lagi punya kolom nama."""
+        return self.username
 
     @property
     def daftar_role(self) -> set[str]:
@@ -62,6 +99,7 @@ class Pengguna(Base):
 
 class PenggunaRole(Base):
     __tablename__ = "pengguna_role"
+    __table_args__ = (CheckConstraint("role IN ('PENGUSUL', 'REVIEWER', 'ADMIN')", name="ck_pengguna_role_role"),)
     pengguna_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("pengguna.id", ondelete="CASCADE"), primary_key=True)
     role: Mapped[str] = mapped_column(String(20), primary_key=True)  # PENGUSUL | REVIEWER | ADMIN
 

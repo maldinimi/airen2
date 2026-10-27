@@ -102,10 +102,13 @@ Setiap `rujukan` berisi `{peran (bukti_dokumen|dasar_panduan), dokumen (TOR|RAB|
 | GET | `/file/{file_id}` | login + hak | PDF inline. Panduan: semua pengguna. TOR/RAB: sesuai hak usulan. 404 bila tidak berhak |
 | GET | `/internal/file/{sha}` | token node | `Authorization: Bearer <token node>`; untuk node AI jarak jauh |
 | GET | `/dashboard` | login | `per_status, per_kategori, per_satker, perlu_tindakan[]`, + `antrean` untuk Admin |
-| GET/POST | `/pengguna` | Admin | `{username, nama, roles[], satker_id?, aktif, password}` |
+| GET/POST | `/pengguna` | Admin | `{username, roles[], satker_id?, aktif, password}` (tanpa nama; nama tampilan = username) |
 | PUT | `/pengguna/{id}` | Admin | Ubah; `password` diisi = reset (sesi dicabut) |
-| GET | `/satker` | login | Daftar Satker |
-| POST/PUT | `/satker`, `/satker/{id}` | Admin | `{kode, nama, aktif}` |
+| DELETE | `/pengguna/{id}` | Admin | Hapus permanen. 400 untuk akun sendiri; 409 bila sudah punya riwayat (usulan, review, audit log, …) — nonaktifkan saja |
+| GET | `/satker` | Admin | Daftar Satker (+ jejak dibuat/diubah) |
+| GET | `/satker/referensi` | Admin | Daftar resmi UKE I/UKE II dari dokumen "Data Satker dan Unit Kerja" `{kode_uke1, unit_kerja, kode_uke2, nama}[]` — sumber pilihan form Satker |
+| POST/PUT | `/satker`, `/satker/{id}` | Admin | `{kode_uke1?, unit_kerja? (UKE I / Eselon I), kode_uke2?, nama? (UKE II / Eselon II), aktif}` — semua opsional, kosong disimpan `""`. `kode_uke1` = `NN`, `kode_uke2` = `NN.NN` diawali `kode_uke1` (400 bila salah); `aktif=false` = nonaktifkan (tidak bisa dipilih pengguna). 409 bila `kode_uke2`/`kode_uke1` sudah dipakai, atau Unit Kerja sudah ada. Respons + `dibuat_oleh, dibuat_at, diubah_oleh, diubah_at`. 400 isian terlalu panjang; 409 Satuan Kerja sama dalam satu Unit Kerja |
+| DELETE | `/satker/{id}` | Admin | Hapus permanen. 409 bila masih dipakai pengguna atau usulan |
 | GET/POST | `/node-ai` | Admin | POST `{nama}` → `{token}` (sekali tampil) |
 | POST | `/node-ai/{id}/cabut` | Admin | Cabut akses node |
 | GET | `/audit` | Admin | Filter `pengguna_id, aksi, entitas, dari, sampai, halaman` |

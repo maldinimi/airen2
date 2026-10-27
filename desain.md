@@ -139,8 +139,8 @@ Prinsip:
 
 | Tabel | Kolom penting | Kegunaan |
 | --- | --- | --- |
-| `satker` | `kode`, `nama`, `aktif` | Daftar Satker (dikelola Admin). |
-| `pengguna` | `username`, `nama`, `password_hash`, `satker_id`, `aktif`, `last_login_at` | Akun. `satker_id` membatasi data Pengusul. |
+| `satker` | `kode_uke1`, `unit_kerja` (UKE I / Unit Kerja, Eselon I), `kode_uke2`, `nama` (UKE II / Satuan Kerja, Eselon II) (semua opsional), `aktif`, `created_by`, `create_date`, `update_by`, `update_date` | Daftar Satker (dikelola Admin di menu Satker). Unik per (`unit_kerja`, `nama`) dan per `kode_uke2` bila diisi. Data awal 56 Satker dari dokumen "Data Satker dan Unit Kerja" (`app/data_satker.py`). |
+| `pengguna` | `username`, `password`, `satker_id`, `aktif`, `last_login_at`, `created_by`, `create_date`, `update_by`, `update_date` | Akun. `satker_id` membatasi data Pengusul. |
 | `pengguna_role` | `pengguna_id`, `role` (`PENGUSUL`/`REVIEWER`/`ADMIN`) | Satu pengguna dapat banyak role (§4). |
 | `sesi` | `pengguna_id`, `token_hash`, `expires_at` | Sesi login; token disimpan dalam bentuk hash. |
 

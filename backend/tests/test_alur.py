@@ -262,7 +262,7 @@ def test_checklist_crud_riwayat_dan_status(klien):
     isi = lambda i, **ubah: {**{k: i[k] for k in ("kode", "judul", "kriteria", "berlaku_untuk", "aktif")}, **ubah}  # noqa: E731
     # Ubah & nonaktifkan: hanya item itu yang dicap; checklist_item tetap satu baris per item
     c02 = admin.put(url("C02"), json=isi(per_kode["C02"], judul="Judul diubah")).json()
-    assert c02["judul"] == "Judul diubah" and c02["diubah_oleh"] == "Administrator"
+    assert c02["judul"] == "Judul diubah" and c02["diubah_oleh"] == "admin"
     assert admin.put(url("C03"), json=isi(per_kode["C03"], aktif=False)).json()["aktif"] is False
     terkini = admin.get("/api/checklist").json()["item"]
     assert len(terkini) == len(ck) and terkini[0]["diubah_at"] == ck[0]["diubah_at"]
