@@ -14,7 +14,7 @@ from app.audit import catat
 from app.db import sesi_db
 from app.galat import Galat
 from app.layanan_review import detail_review, nilai_final_review, review_terbaru
-from app.model import CatatanReviewer, HasilItem, KategoriItem, Override, Pengguna, Review, Revisi, Usulan
+from app.model import CatatanReviewer, HasilItem, Override, Pengguna, Review, ReviewKategori, Revisi, Usulan
 from app.nilai_final import LOLOS, TERPENUHI, TIDAK_LOLOS, TIDAK_TERPENUHI
 
 router = APIRouter(prefix="/api", tags=["review"])
@@ -86,9 +86,9 @@ def override(review_id: uuid.UUID, data: OverrideMasuk, request: Request, db: Se
             raise Galat(400, "Nilai label tidak valid.")
         sebelum = nf.label
     else:
-        k = db.get(KategoriItem, uuid.UUID(data.nilai)) if _uuid_valid(data.nilai) else None
-        if k is None or k.versi_id != review.kategori_versi_id:
-            raise Galat(400, "Kategori tidak valid untuk versi kategori review ini.")
+        k = db.get(ReviewKategori, (review.id, uuid.UUID(data.nilai))) if _uuid_valid(data.nilai) else None
+        if k is None:
+            raise Galat(400, "Kategori tidak termasuk daftar kategori review ini.")
         sebelum = nf.kategori_id or ""
     if sebelum == data.nilai:
         raise Galat(400, "Nilai baru sama dengan nilai saat ini.")

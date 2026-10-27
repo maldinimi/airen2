@@ -14,10 +14,10 @@ from app import status as st
 from app.akses import boleh_kelola_usulan, boleh_lihat_semua, pastikan
 from app.audit import catat
 from app.galat import Galat
-from app.checklist import isi_review
+from app.checklist import isi_review, kunci_kode
 from app.model import (CatatanReviewer, ChecklistItem, Elemen, HasilItem, HasilKategori, Job,
-                       KategoriItem, KategoriVersi, NodeAI, Override, Pengguna, Rekomendasi, Review,
-                       ReviewPanduan, Revisi, Rujukan, Usulan)
+                       Kategori, NodeAI, Override, Pengguna, Rekomendasi, Review,
+                       ReviewKategori, ReviewPanduan, Revisi, Rujukan, Usulan)
 from app.nilai_final import NilaiFinal, hitung_nilai_final
 from app.pekerja.rujukan import nomor_kalimat
 
@@ -42,8 +42,8 @@ def ajukan_review(db: Session, request: Request | None, revisi: Revisi, p: Pengg
         raise Galat(409, "Revisi ini sudah diajukan. Review AI hanya dijalankan sekali per revisi.")
     if db.scalar(select(ChecklistItem.id).where(ChecklistItem.aktif).limit(1)) is None:
         raise Galat(400, "Checklist belum diatur oleh Admin. Review belum dapat diajukan.")
-    if db.scalar(select(KategoriVersi.id).where(KategoriVersi.aktif)) is None:
-        raise Galat(400, "Kategori belum diatur oleh Admin.")
+    if db.scalar(select(Kategori.id).where(Kategori.aktif).limit(1)) is None:
+        raise Galat(400, "Belum ada kategori Aktif. Review belum dapat diajukan.")
     st.pindah_status(revisi, st.ANTRE)
     trace_id = uuid.uuid4().hex
     review = Review(revisi_id=revisi.id, trace_id=trace_id, status="ANTRE", diajukan_oleh=p.id,
@@ -108,8 +108,9 @@ def ringkasan_checklist(db: Session, review: Review | None, p: Pengguna) -> dict
             "label": nf.label, "final": review.difinalkan_at is not None}
 
 
-def _kategori_ringkas(k: KategoriItem | None) -> dict | None:
-    return {"id": str(k.id), "kode": k.kode, "nama": k.nama, "diteruskan": k.diteruskan} if k else None
+def _kategori_ringkas(k: ReviewKategori | None) -> dict | None:
+    # Definisi dikirim agar pengguna melihat persis isi kategori yang dipakai review ini (C3).
+    return {"id": str(k.kategori_id), "kode": k.kode, "nama": k.nama, "definisi": k.definisi} if k else None
 
 
 def _nama(db: Session, pengguna_id) -> str | None:
@@ -188,11 +189,12 @@ def detail_review(db: Session, review: Review, p: Pengguna) -> dict:
             aktif_per_target[(o.target, str(o.checklist_item_id) if o.checklist_item_id else None)] = o
 
     isi = isi_review(db, review)  # isi checklist saat review dimulai, bukan isi terbaru (PRD B4)
-    kv = db.get(KategoriVersi, review.kategori_versi_id)
+    # Salinan kategori saat review dimulai (C3/C4), bukan isi terbaru.
+    kv = sorted(db.scalars(select(ReviewKategori).where(ReviewKategori.review_id == review.id)), key=lambda k: kunci_kode(k.kode))
     panduan = db.scalars(select(ReviewPanduan).where(ReviewPanduan.review_id == review.id).order_by(ReviewPanduan.judul)).all()
     data["acuan"] = {
         "checklist": {"jumlah_item": len(isi)},
-        "kategori_versi": {"id": str(kv.id), "nomor": kv.nomor},
+        "kategori": {"jumlah": len(kv)},
         "panduan": [{"judul": pv.judul, "nomor": pv.nomor, "file_id": str(pv.file_id), "nama_file": pv.nama_file} for pv in panduan],
     }
 
@@ -218,12 +220,13 @@ def detail_review(db: Session, review: Review, p: Pengguna) -> dict:
     data["label"] = {"ai": review.label_ai, "hitung": nf.label_hitung, "final": nf.label, "diubah": nf.label_diubah,
                      "tidak_konsisten": nf.label_tidak_konsisten, "terpenuhi": nf.jumlah_terpenuhi, "total": len(item),
                      "override": _override_dict(db, o) if (o := aktif_per_target.get(("LABEL", None))) else None}
-    kat_ai = db.get(KategoriItem, kat.kategori_item_id) if kat else None
-    kat_final = db.get(KategoriItem, uuid.UUID(nf.kategori_id)) if nf.kategori_id else None
+    per_id = {k.kategori_id: k for k in kv}
+    kat_ai = per_id.get(kat.kategori_item_id) if kat else None
+    kat_final = per_id.get(uuid.UUID(nf.kategori_id)) if nf.kategori_id else None
     data["kategori"] = {"ai": _kategori_ringkas(kat_ai), "final": _kategori_ringkas(kat_final), "diubah": nf.kategori_diubah,
                         "alasan": kat.alasan if kat else None, "rujukan": rujukan.get(str(kat.id), []) if kat else [],
                         "override": _override_dict(db, o) if (o := aktif_per_target.get(("KATEGORI", None))) else None,
-                        "pilihan": [_kategori_ringkas(k) for k in kv.item]}
+                        "pilihan": [_kategori_ringkas(k) for k in kv]}
     kode_item = {ci.item_id: ci.kode for ci in isi}
     data["rekomendasi"] = {d: [{"id": str(r.id), "teks": r.teks, "tidak_diperlukan": r.tidak_diperlukan,
                                 "item_kode": kode_item.get(r.checklist_item_id), "rujukan": rujukan.get(str(r.id), [])}

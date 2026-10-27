@@ -20,7 +20,7 @@ export default function Audit() {
       <Kartu className="mb-4 grid gap-3 p-3 sm:grid-cols-4">
         <Kolom label="Aksi"><Pilih value={f.aksi} onChange={(e) => ubah("aksi", e.target.value)}><option value="">Semua</option>{q.data?.aksi.map((a) => <option key={a}>{a}</option>)}</Pilih></Kolom>
         <Kolom label="Entitas"><Pilih value={f.entitas} onChange={(e) => ubah("entitas", e.target.value)}><option value="">Semua</option>
-          {["usulan", "revisi", "review", "checklist_item", "checklist_versi", "kategori_versi", "panduan", "pengguna", "satker", "node_ai"].map((x) => <option key={x}>{x}</option>)}</Pilih></Kolom>
+          {["usulan", "revisi", "review", "checklist_item", "checklist_versi", "kategori", "panduan", "pengguna", "satker", "node_ai"].map((x) => <option key={x}>{x}</option>)}</Pilih></Kolom>
         <Kolom label="Dari tanggal"><Input type="date" value={f.dari} onChange={(e) => ubah("dari", e.target.value)} /></Kolom>
         <Kolom label="Sampai tanggal"><Input type="date" value={f.sampai} onChange={(e) => ubah("sampai", e.target.value)} /></Kolom>
       </Kartu>

@@ -14,8 +14,8 @@ from app.audit import catat
 from app.db import sesi_db
 from app.galat import Galat
 from app.layanan_review import ajukan_review, info_proses, nilai_final_review, review_terbaru, ringkasan_checklist
-from app.checklist import isi_review
-from app.model import KategoriItem, Pengguna, Review, Revisi, Satker, Usulan
+from app.checklist import isi_review, kunci_kode
+from app.model import Kategori, Pengguna, Review, ReviewKategori, Revisi, Satker, Usulan
 from app.penyimpanan import simpan_unggahan
 
 router = APIRouter(prefix="/api/usulan", tags=["usulan"])
@@ -41,8 +41,8 @@ def baris_usulan(db: Session, u: Usulan, p: Pengguna) -> dict:
     rv = review_terbaru(db, r.id)
     kategori = None
     if rv is not None and rv.status == "SELESAI" and rv.difinalkan_at:
-        k = db.get(KategoriItem, rv.kategori_final_id) if rv.kategori_final_id else None
-        kategori = {"kode": k.kode, "nama": k.nama, "diteruskan": k.diteruskan} if k else None
+        k = db.get(ReviewKategori, (rv.id, rv.kategori_final_id)) if rv.kategori_final_id else None  # kategori saat review (C4)
+        kategori = {"kode": k.kode, "nama": k.nama} if k else None
     pernah_direview = db.scalar(select(exists().where(Review.revisi_id.in_([x.id for x in u.revisi])))) or False
     return {
         "id": str(u.id), "satker": {"id": str(u.satker.id), "kode": u.satker.kode, "nama": u.satker.nama},
@@ -74,7 +74,8 @@ def daftar(db: Session = Depends(sesi_db), p: Pengguna = Depends(pengguna_saat_i
         kueri = kueri.where(Revisi.status == status)
     if kategori:
         kueri = kueri.where(exists().where(Review.revisi_id == Revisi.id, Review.difinalkan_at.is_not(None),
-                                           Review.kategori_final_id == KategoriItem.id, KategoriItem.kode == kategori))
+                                           ReviewKategori.review_id == Review.id, ReviewKategori.kategori_id == Review.kategori_final_id,
+                                           ReviewKategori.kode == kategori))
     if q:
         pola = f"%{q.strip()}%"
         kueri = kueri.where(or_(Usulan.kode_ro.ilike(pola), Usulan.nama_ro.ilike(pola)))
@@ -255,12 +256,12 @@ def riwayat(usulan_id: uuid.UUID, db: Session = Depends(sesi_db), p: Pengguna = 
         reviews = db.scalars(select(Review).where(Review.revisi_id == r.id).order_by(Review.created_at)).all()
         daftar_review = []
         for rv in reviews:
-            kat = db.get(KategoriItem, rv.kategori_final_id) if rv.kategori_final_id else None
+            kat = db.get(ReviewKategori, (rv.id, rv.kategori_final_id)) if rv.kategori_final_id else None
             daftar_review.append({
                 "id": str(rv.id), "status": rv.status, "trace_id": rv.trace_id, "error_pesan": rv.error_pesan,
                 "dibuat_at": rv.created_at.isoformat(), "selesai_at": rv.selesai_at.isoformat() if rv.selesai_at else None,
                 "label_ai": rv.label_ai, "label_final": rv.label_final,
-                "kategori_final": {"kode": kat.kode, "nama": kat.nama, "diteruskan": kat.diteruskan} if kat else None,
+                "kategori_final": {"kode": kat.kode, "nama": kat.nama} if kat else None,
                 "difinalkan_oleh": db.get(Pengguna, rv.difinalkan_oleh).nama if rv.difinalkan_oleh else None,
                 "difinalkan_at": rv.difinalkan_at.isoformat() if rv.difinalkan_at else None,
                 "diajukan_oleh": db.get(Pengguna, rv.diajukan_oleh).nama,
@@ -292,6 +293,6 @@ def opsi_filter(db: Session = Depends(sesi_db), p: Pengguna = Depends(pengguna_s
     if not boleh_lihat_semua(p):
         kueri_satker = kueri_satker.where(Satker.id == p.satker_id)
     tahun = db.scalars(select(Usulan.tahun_anggaran).distinct().order_by(Usulan.tahun_anggaran.desc())).all()
-    kode = db.scalars(select(KategoriItem.kode).distinct().order_by(KategoriItem.kode)).all()
+    kode = sorted(set(db.scalars(select(Kategori.kode))) | set(db.scalars(select(ReviewKategori.kode).distinct())), key=kunci_kode)
     return {"satker": [{"id": str(s.id), "kode": s.kode, "nama": s.nama} for s in db.scalars(kueri_satker)],
             "tahun": tahun, "kategori": kode, "status": [{"kode": k, "nama": v} for k, v in st.NAMA_STATUS.items()]}

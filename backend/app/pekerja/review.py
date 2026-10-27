@@ -19,9 +19,9 @@ from app import status as st
 from app.db import SessionLokal
 from app.konfigurasi import konfigurasi
 from app.log import log, set_konteks, tahap
-from app.checklist import IsiItem, isi_review, sidik_checklist
-from app.model import (ChecklistItem, Elemen, File, HasilItem, HasilKategori, KategoriVersi, Panduan,
-                       Rekomendasi, Review, ReviewPanduan, Revisi, Rujukan, Usulan)
+from app.checklist import IsiItem, isi_review, kunci_kode, sidik_checklist
+from app.model import (ChecklistItem, Elemen, File, HasilItem, HasilKategori, Kategori, Panduan,
+                       Rekomendasi, Review, ReviewKategori, ReviewPanduan, Revisi, Rujukan, Usulan)
 from app.nilai_final import hitung_label
 from app.pekerja import prompt as pr
 from app.pekerja.llm import info_model
@@ -158,9 +158,12 @@ def kunci_acuan(db: Session, review: Review) -> None:
     """Kunci versi checklist, kategori, panduan saat review mulai diproses (desain §4.7)."""
     # Checklist review = isi pada review.mulai_at (diisi pemanggil), disusun ulang oleh app/checklist.py.
     ada_item = db.scalar(select(ChecklistItem.id).where(ChecklistItem.aktif).limit(1)) is not None
-    review.kategori_versi_id = db.scalar(select(KategoriVersi.id).where(KategoriVersi.aktif))
-    if not ada_item or review.kategori_versi_id is None:
+    kategori = db.scalars(select(Kategori).where(Kategori.aktif)).all()
+    if not ada_item or not kategori:
         raise GalatPengguna("Checklist atau kategori aktif belum diatur oleh Admin.")
+    # Salinan kategori (C3/C4): review tetap menampilkan definisi saat itu walau kategori diubah/dihapus permanen.
+    for k in kategori:
+        db.add(ReviewKategori(review_id=review.id, kategori_id=k.id, kode=k.kode, nama=k.kategori, definisi=k.deskripsi))
     # Per panduan berstatus Aktif: versi terbaru (terkini, lalu riwayat) yang filenya sudah SIAP.
     # Disalin ke review_panduan agar catatan tetap benar walau panduan diedit kemudian (D5).
     for pd in db.scalars(select(Panduan).where(Panduan.aktif)):
@@ -210,7 +213,10 @@ def _jalankan(db: Session, review: Review, revisi: Revisi, llm) -> None:
 
     pv = db.scalars(select(ReviewPanduan).where(ReviewPanduan.review_id == review.id)).all()
     tor, rab = db.get(File, revisi.tor_file_id), db.get(File, revisi.rab_file_id)
-    review.fingerprint = fingerprint(tor.sha256, rab.sha256, sidik_checklist(isi_review(db, review)), review.kategori_versi_id,
+    # Id kategori ikut di-hash: hasil yang disalin menunjuk id kategori yang sama di review_kategori review ini.
+    kat = [(str(k.kategori_id), k.kode, k.nama, k.definisi) for k in db.scalars(
+        select(ReviewKategori).where(ReviewKategori.review_id == review.id).order_by(ReviewKategori.kategori_id))]
+    review.fingerprint = fingerprint(tor.sha256, rab.sha256, sidik_checklist(isi_review(db, review)), kat,
                                      [f"{v.panduan_id}:{v.nomor}" for v in pv], review.model_info)
     db.commit()
     asal = db.scalar(select(Review).where(Review.fingerprint == review.fingerprint, Review.status == "SELESAI",
@@ -314,27 +320,27 @@ def keselarasan_dan_rekomendasi(db: Session, review: Review, ktx: Konteks, llm) 
 
 
 def screening_2(db: Session, review: Review, revisi: Revisi, ktx: Konteks, llm) -> None:
-    """Rekomendasi kategori dari definisi versi kategori yang dikunci untuk review ini (C2). Kode dibatasi enum."""
+    """Rekomendasi kategori dari salinan kategori yang dikunci untuk review ini (C2). Kode dibatasi enum."""
     k = konfigurasi()
     db.execute(delete(Rujukan).where(Rujukan.review_id == review.id, Rujukan.pemilik_jenis == "hasil_kategori"))
     db.execute(delete(HasilKategori).where(HasilKategori.review_id == review.id))
     usulan = db.get(Usulan, revisi.usulan_id)
-    kv = db.get(KategoriVersi, review.kategori_versi_id)
-    definisi = "\n".join(f"- {i.kode} ({i.nama}): {i.definisi}" for i in kv.item)
+    kv = sorted(db.scalars(select(ReviewKategori).where(ReviewKategori.review_id == review.id)), key=lambda k: kunci_kode(k.kode))
+    definisi = "\n".join(f"- {i.kode} ({i.nama}): {i.definisi}" for i in kv)
     kueri = (f"{usulan.nama_ro} dasar hukum penetapan Menteri prioritas nasional sasaran strategis kementerian "
              f"tugas dan fungsi satker layanan esensial kebijakan penganggaran wajib")
     dok = cari(db, [ktx.tor_id], kueri, k.kandidat_dokumen)
     pdn = cari(db, list(ktx.panduan), kueri, k.kandidat_panduan)
     teks_dok, peta_dok, alias_dok = format_konteks(dok, "E", ktx)
     teks_pdn, peta_pdn, alias_pdn = format_konteks(pdn, "P", ktx)
-    kode = [i.kode for i in kv.item]
+    kode = [i.kode for i in kv]
     teks_dok = f"RO: {usulan.kode_ro} — {usulan.nama_ro}; Satker: {usulan.satker.nama}\n\n{teks_dok}"
     out = llm.json("kategori", pr.prompt_kategori(definisi, teks_dok, teks_pdn), pr.skema_kategori(kode, list(peta_dok), list(peta_pdn)),
                    konteks={"kode": kode, "alias_dok": alias_dok, "alias_panduan": alias_pdn})
-    pilih = next((i for i in kv.item if i.kode == out.get("kode")), None)
+    pilih = next((i for i in kv if i.kode == out.get("kode")), None)
     if pilih is None:
         raise GalatPengguna("AI tidak menghasilkan kategori yang valid.")
-    hk = HasilKategori(review_id=review.id, kategori_item_id=pilih.id, alasan=(out.get("alasan") or "").strip())
+    hk = HasilKategori(review_id=review.id, kategori_item_id=pilih.kategori_id, alasan=(out.get("alasan") or "").strip())
     db.add(hk)
     db.flush()
     simpan_rujukan(db, review.id, "hasil_kategori", hk.id,

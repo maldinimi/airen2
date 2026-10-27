@@ -4,7 +4,7 @@ import Layout from "./components/Layout";
 import Akun from "./pages/Akun";
 import Audit from "./pages/admin/Audit";
 import KelolaChecklist from "./pages/admin/Checklist";
-import KelolaKategori from "./pages/admin/Kategori";
+import KelolaKategori, { KategoriDetail, KategoriForm } from "./pages/admin/Kategori";
 import NodeAI from "./pages/admin/NodeAI";
 import KelolaPengguna from "./pages/admin/Pengguna";
 import KelolaSatker from "./pages/admin/Satker";
@@ -49,6 +49,9 @@ export default function App() {
           <Route path="akun" element={<Akun />} />
           <Route path="kelola/checklist" element={<Wajib role={["ADMIN"]}><KelolaChecklist /></Wajib>} />
           <Route path="kelola/kategori" element={<Wajib role={["ADMIN"]}><KelolaKategori /></Wajib>} />
+          <Route path="kelola/kategori/tambah" element={<Wajib role={["ADMIN"]}><KategoriForm mode="tambah" /></Wajib>} />
+          <Route path="kelola/kategori/:id" element={<Wajib role={["ADMIN"]}><KategoriDetail /></Wajib>} />
+          <Route path="kelola/kategori/:id/ubah" element={<Wajib role={["ADMIN"]}><KategoriForm mode="ubah" /></Wajib>} />
           <Route path="kelola/pengguna" element={<Wajib role={["ADMIN"]}><KelolaPengguna /></Wajib>} />
           <Route path="kelola/satker" element={<Wajib role={["ADMIN"]}><KelolaSatker /></Wajib>} />
           <Route path="kelola/node-ai" element={<Wajib role={["ADMIN"]}><NodeAI /></Wajib>} />

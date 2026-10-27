@@ -1,6 +1,7 @@
 /** Komponen UI bersama (gaya shadcn/ui di atas Radix + Tailwind). */
 import * as D from "@radix-ui/react-dialog";
-import { AlertTriangle, CircleCheck, Loader2, X } from "lucide-react";
+import * as Pop from "@radix-ui/react-popover";
+import { AlertTriangle, ArrowDown, ArrowUp, ArrowUpDown, Check, CircleCheck, Loader2, X } from "lucide-react";
 import { type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode, type SelectHTMLAttributes,
   type TextareaHTMLAttributes, forwardRef } from "react";
 import type { KategoriRingkas, StatusRevisi } from "./types";
@@ -95,8 +96,39 @@ export function LencanaKategori({ k }: { k: KategoriRingkas | null | undefined }
   return (
     <span className="inline-flex flex-wrap items-center gap-1">
       <Lencana className="bg-utama-50 text-utama-700 ring-utama-100" title={k.nama}>{k.kode}</Lencana>
-      {!k.diteruskan && <Lencana className="bg-red-600 text-white ring-red-600">Tidak diteruskan</Lencana>}
     </span>
+  );
+}
+
+/** Urutan kolom Status (Panduan, Kategori): Default = urutan dari server; Aktif/Nonaktif = status itu di atas. */
+export type UrutStatus = "" | "aktif" | "tidak";
+const OPSI_URUT_STATUS: Record<UrutStatus, string> = { "": "Default", aktif: "Aktif", tidak: "Nonaktif" };
+
+// sort() stabil: dalam satu status, urutan dari server tetap.
+export const urutkanStatus = <T extends { aktif: boolean }>(data: T[], urut: UrutStatus): T[] =>
+  urut ? [...data].sort((a, b) => (+b.aktif - +a.aktif) * (urut === "aktif" ? 1 : -1)) : data;
+
+/** Sel judul kolom Status dengan menu urut Default/Aktif/Nonaktif. */
+export function KepalaStatus({ urut, ubah, className }: { urut: UrutStatus; ubah: (u: UrutStatus) => void; className?: string }) {
+  const Ikon = urut === "aktif" ? ArrowDown : urut === "tidak" ? ArrowUp : ArrowUpDown;
+  return (
+    <th scope="col" className={className} aria-sort={({ "": "none", aktif: "descending", tidak: "ascending" } as const)[urut]}>
+      <Pop.Root>
+        <Pop.Trigger className="inline-flex items-center gap-1 hover:text-slate-800" aria-label={`Urutkan status: ${OPSI_URUT_STATUS[urut]}`}>
+          Status<Ikon className="size-3.5" />
+        </Pop.Trigger>
+        <Pop.Portal>
+          <Pop.Content sideOffset={6} className="z-50 w-44 rounded-xl border border-slate-200 bg-white p-1 text-sm shadow-xl">
+            {(Object.entries(OPSI_URUT_STATUS) as [UrutStatus, string][]).map(([k, label]) => (
+              <Pop.Close key={k} aria-pressed={urut === k} onClick={() => ubah(k)}
+                className={cx("flex w-full items-center justify-between rounded-lg px-3 py-1.5 text-left hover:bg-slate-100", urut === k && "font-medium text-utama-700")}>
+                {label}{urut === k && <Check className="size-4" />}
+              </Pop.Close>
+            ))}
+          </Pop.Content>
+        </Pop.Portal>
+      </Pop.Root>
+    </th>
   );
 }
 

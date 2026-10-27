@@ -1,10 +1,14 @@
 # PRD — Asisten AI Offline untuk Review Dokumen TOR & RAB
 
-**Status:** Disetujui | **Pemilik:** Maldini | **Versi:** 2.1 | **Tanggal:** 2026-10-21 (v1: 2026-10-12, v2: 2026-10-20)
+**Status:** Disetujui | **Pemilik:** Maldini | **Versi:** 2.3 | **Tanggal:** 2026-10-26 (v1: 2026-10-12, v2: 2026-10-20, v2.1: 2026-10-21, v2.2: 2026-10-26)
 
 **Perubahan v2 (2026-10-20):** Modul D — Panduan direvisi berdasarkan keputusan pemilik produk: unggah satu file per form dengan Nama Acuan, Deskripsi, dan Status; status Aktif/Nonaktif; edit tanpa ganti file; hapus permanen; daftar berupa tabel; halaman detail dengan riwayat versi; data terkini disimpan terpisah dari riwayat versi; catatan panduan pada review tidak berubah walaupun panduan diedit (D2, D4–D9, §7.3, §9).
 
 **Perubahan v2.1 (2026-10-21):** Modul D — riwayat versi pada detail panduan disebut **Panduan Histori**; form unggah dilengkapi **pratinjau PDF** sebelum diunggah dan tombol **Reset**; Nama Acuan maksimal 500 karakter; konfirmasi hapus menampilkan ringkasan panduan yang akan dihapus; file yang pemrosesannya terhenti ditandai gagal agar dapat diproses ulang; penjelasan data yang ikut terhapus (D2, D4, D6, D9, §9).
+
+**Perubahan v2.2 (2026-10-26):** Modul C — Kategori direvisi berdasarkan keputusan pemilik produk: kategori dikelola satu per satu (tidak lagi sebagai versi seluruh daftar); daftar berupa tabel; tambah, edit, dan detail di halaman tersendiri; riwayat per kategori disebut **Kategori Histori**; hapus permanen; setiap review menyimpan salinan kategori yang dipakai dan menampilkan definisinya (C1, C3, C5–C8, input Screening 1, §7.3, §9).
+
+**Perubahan v2.3 (2026-10-26):** Modul C — kategori memakai **Status Aktif/Nonaktif** seperti panduan: kategori Nonaktif tetap tampil tetapi tidak dipakai review berikutnya; kolom Status di daftar kategori; status diatur saat Edit (kategori baru selalu Aktif); definisi keempat kategori isi awal tidak lagi menetapkan status, karena dipakai atau tidaknya kategori mana pun ditentukan lewat Status (C1, C3, C5–C8, §7.2).
 
 ---
 
@@ -29,6 +33,7 @@
 | **Panduan** | Kumpulan PDF referensi (peraturan, kebijakan, standar biaya, dsb.) yang wajib dirujuk AI. Setiap panduan memiliki **Nama Acuan**, deskripsi, dan status **Aktif/Nonaktif**. |
 | **Panduan Histori** | Riwayat versi sebuah panduan: isi panduan sebelum tiap perubahan (nama, deskripsi, status), beserta tanggal dan penginputnya. |
 | **Kategori** | Klasifikasi prioritas anggaran RO: K1, K2, K3, K4. |
+| **Kategori Histori** | Riwayat sebuah kategori: isi kategori sebelum tiap perubahan (kode, nama, deskripsi, status Aktif/Nonaktif), beserta tanggal dan penginputnya. |
 | **Screening 1** | Penilaian AI terhadap pemenuhan checklist → label LOLOS / TIDAK LOLOS + alasan + rekomendasi. |
 | **Screening 2** | Rekomendasi kategori (K1–K4) oleh AI untuk RO tersebut. |
 | **Override** | Tindakan reviewer mengubah hasil AI. |
@@ -149,20 +154,22 @@ Aturan alur:
 
 ### Modul C — Kategori
 
-- C1. CRUD kategori (tambah, ubah, hapus) melalui form tersendiri. Isi awal (seed) **WAJIB** berisi 4 kategori berikut, dengan teks definisi persis seperti di bawah:
+- C1. CRUD kategori (tambah, ubah, hapus) satu per satu melalui halaman form tersendiri (C7). Isi awal (seed) **WAJIB** berisi 4 kategori berikut, dengan teks definisi persis seperti di bawah:
 
 | Kode | Nama | Definisi |
 | --- | --- | --- |
 | **K1** | RO Wajib | RO yang bersifat wajib, mengikat, ditetapkan melalui kebijakan penganggaran nasional, dan harus tetap berjalan secara berkelanjutan. Penilaian terhadap RO pada kategori ini tidak ditujukan untuk menilai perlu atau tidaknya RO, melainkan untuk memvalidasi kesesuaian ruang lingkup, kejelasan kebutuhan dasar, dan keterkaitan komponen dengan RO yang diusulkan. |
 | **K2** | RO Prioritas Strategis | RO prioritas yang ditetapkan secara resmi oleh Menteri, dan/atau penguatan layanan esensial. Penilaian RO terhadap kategori ini dilaksanakan secara penuh sesuai parameter penilaian substansi. |
 | **K3** | RO Strategis/Diskresioner | RO yang memiliki keterkaitan dengan prioritas pembangunan nasional dan pencapaian sasaran kementerian, serta mendukung tugas dan fungsi Satker, namun tidak memenuhi kriteria Kategori 1 maupun Kategori 2. |
-| **K4** | RO Non-Strategis | RO yang tidak memenuhi kriteria Kategori 1, Kategori 2, maupun Kategori 3, serta tidak memiliki keterkaitan dengan tugas dan fungsi Satker pengusul, maupun pencapaian sasaran strategis kementerian. RO pada kategori ini **tidak diteruskan ke tahap berikutnya**. |
+| **K4** | RO Non-Strategis | RO yang tidak memenuhi kriteria Kategori 1, Kategori 2, maupun Kategori 3, serta tidak memiliki keterkaitan dengan tugas dan fungsi Satker pengusul, maupun pencapaian sasaran strategis kementerian. |
 
 - C2. AI **WAJIB** memakai definisi kategori yang aktif saat review berjalan (bukan definisi yang di-hardcode).
-- C3. **Versioning:** setiap perubahan pada daftar kategori menghasilkan versi baru. Setiap review **WAJIB** mencatat versi kategori yang dipakai, sehingga untuk review mana pun pengguna dapat melihat **persis definisi kategori apa saja** (beserta isinya saat itu) yang digunakan.
+- C3. **Versioning:** setiap review **WAJIB** mencatat daftar kategori yang dipakai (kode, nama, dan definisi kategori berstatus **Aktif**) berupa **salinan** saat review dimulai, sehingga untuk review mana pun pengguna dapat melihat **persis definisi kategori apa saja** (beserta isinya saat itu) yang digunakan. Daftar ini ditampilkan di halaman hasil review dan **tidak berubah** walaupun kategori kemudian diubah atau dihapus.
 - C4. Menghapus atau mengubah kategori tidak boleh mengubah tampilan hasil review lama.
-- C5. Admin dapat melihat daftar versi dan isi setiap versi.
-- C6. Usulan dengan kategori final **K4** ditandai jelas sebagai "tidak diteruskan".
+- C5. **Detail kategori** (halaman tersendiri, Admin) menampilkan Kode, Kategori, Deskripsi, Status, Tanggal Input, dan Diinput Oleh (perubahan terakhir), serta **Kategori Histori**: isi kategori sebelum tiap perubahan (Tanggal Input, Diinput Oleh, Kode, Kategori, Deskripsi, Status), terbaru di atas. Versi terkini hanya ditampilkan di bagian atas detail. Menambah kategori atau menyimpan tanpa perubahan tidak menambah riwayat. Riwayat tidak pernah diubah.
+- C6. Setiap kategori berstatus **Aktif** atau **Nonaktif**, seperti panduan. Hanya kategori Aktif yang dipakai AI pada review berikutnya; kategori Nonaktif tetap tampil di daftar dan dapat diaktifkan kembali tanpa dihapus. Kategori baru selalu Aktif (termasuk keempat kategori isi awal); status diubah lewat Edit. Minimal satu kategori harus berstatus Aktif.
+- C7. **Daftar kategori** berupa tabel: Kode, Kategori, Status (hanya ditampilkan), Deskripsi, dan Aksi berupa ikon — **Detail**, **Edit**, dan **Hapus** — diurutkan menurut kode (K1, K2, …, K10). **Tambah** dan **Edit** di halaman form tersendiri: Kode (wajib, unik, maksimal 20 karakter, otomatis huruf kapital; boleh diganti saat edit), Kategori (wajib, maksimal 255 karakter), dan Deskripsi (wajib; dipakai AI apa adanya, C2); form **Edit** juga memuat **Status** Aktif/Nonaktif (C6). Sebelum disimpan, tampil ringkasan isian untuk **diperiksa kembali dan dikonfirmasi**. Tambah, edit, dan hapus hanya oleh Admin; perubahan dipakai AI mulai review berikutnya.
+- C8. **Hapus bersifat permanen:** kategori beserta seluruh Kategori Histori-nya dihapus dan tidak dapat dikembalikan; jejak siapa dan kapan menghapus beserta isi kategori tetap tercatat di audit log (§7.3). Hasil review lama **tidak berubah** karena memakai salinannya sendiri (C3, C4). Sebelum menghapus, Admin diberi peringatan berisi ringkasan kategori (Kode, Kategori, jumlah versi di Kategori Histori) dan harus mengonfirmasinya. Minimal satu kategori Aktif harus tetap ada, karena Screening 2 membutuhkan kategori.
 
 ### Modul D — Panduan
 
@@ -180,7 +187,7 @@ Aturan alur:
 
 #### Screening 1 — Pemenuhan Checklist
 
-Dijalankan saat Pengusul menekan **"Ajukan Review"**. Input: TOR, RAB, versi checklist aktif, panduan aktif, versi kategori aktif.
+Dijalankan saat Pengusul menekan **"Ajukan Review"**. Input: TOR, RAB, versi checklist aktif, panduan aktif, daftar kategori Aktif terbaru.
 
 Keluaran **WAJIB**:
 
@@ -240,11 +247,10 @@ Aturan:
 - Label AI **WAJIB** konsisten dengan hasil per item. Label tidak boleh LOLOS jika ada item yang tidak terpenuhi.
 
 ### 7.2 Kategori
-- K4 = RO tidak diteruskan ke tahap berikutnya.
 - Rekomendasi kategori AI wajib beralasan dan merujuk definisi kategori.
 
 ### 7.3 Ketertelusuran (Audit)
-- Setiap review menyimpan: revisi dokumen yang direview, versi checklist, daftar panduan + versinya (kecuali panduan yang kemudian dihapus permanen, D6), versi kategori, hasil AI, override, siapa yang menjalankan/memfinalkan, dan waktu.
+- Setiap review menyimpan: revisi dokumen yang direview, versi checklist, daftar panduan + versinya (kecuali panduan yang kemudian dihapus permanen, D6), salinan daftar kategori yang dipakai (C3), hasil AI, override, siapa yang menjalankan/memfinalkan, dan waktu.
 - Perubahan pada Checklist, Kategori, Panduan, pengguna, dan override tercatat di audit log (siapa, kapan, apa).
 
 ---
@@ -309,10 +315,11 @@ Ketentuan:
 | Dashboard | Semua | Ringkasan jumlah usulan per status/kategori/Satker |
 | Daftar Usulan | Semua (Pengusul: Satker sendiri) | Tabel Modul A + filter |
 | Buat Usulan / Unggah Revisi | Pengusul | Form A1 / unggah revisi, tombol "Ajukan Review" |
-| Detail Review | Reviewer, Pengusul (hasil AI segera; hasil final setelah difinalkan) | Hasil Screening 1 & 2, rincian checklist, rekomendasi, override, finalisasi, viewer PDF |
+| Detail Review | Reviewer, Pengusul (hasil AI segera; hasil final setelah difinalkan) | Hasil Screening 1 & 2, rincian checklist, rekomendasi, override, finalisasi, viewer PDF, acuan yang dipakai (panduan dan kategori beserta definisinya, C3) |
 | Riwayat Usulan | Semua | Timeline revisi & review, perbandingan |
 | Kelola Checklist | Admin | CRUD + daftar versi |
-| Kelola Kategori | Admin | CRUD + daftar versi |
+| Kelola Kategori | Admin | Tabel daftar kategori (C7), detail & Kategori Histori (C5), konfirmasi hapus (C8) |
+| Tambah / Edit Kategori | Admin | Form C7 + konfirmasi periksa kembali |
 | Panduan | Semua (kelola: Admin) | Tabel daftar panduan + urut status (D8), detail & Panduan Histori (D9), viewer PDF, status pemrosesan, konfirmasi hapus (D6) |
 | Unggah / Edit Panduan | Admin | Form D2 (unggah: pratinjau PDF & Reset) + konfirmasi periksa kembali |
 | Kelola Pengguna | Admin | Pengguna, role, Satker |

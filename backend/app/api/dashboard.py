@@ -13,7 +13,7 @@ from app.db import sesi_db
 from app.galat import Galat
 from app.keamanan import hash_token
 from app.layanan_review import node_aktif
-from app.model import File, Job, KategoriItem, NodeAI, Panduan, PanduanHistori, Pengguna, Review, Revisi, Usulan
+from app.model import File, Job, NodeAI, Panduan, PanduanHistori, Pengguna, Review, ReviewKategori, Revisi, Usulan
 from app.penyimpanan import path_absolut
 
 router = APIRouter(prefix="/api", tags=["dashboard & file"])
@@ -41,8 +41,9 @@ def dashboard(db: Session = Depends(sesi_db), p: Pengguna = Depends(pengguna_saa
 
     revisi_ids = [r.id for _, r in baris]
     per_kategori = dict(db.execute(
-        select(KategoriItem.kode, func.count()).join(Review, Review.kategori_final_id == KategoriItem.id)
-        .where(Review.revisi_id.in_(revisi_ids), Review.difinalkan_at.is_not(None)).group_by(KategoriItem.kode)).all()) if revisi_ids else {}
+        select(ReviewKategori.kode, func.count())
+        .join(Review, (Review.id == ReviewKategori.review_id) & (Review.kategori_final_id == ReviewKategori.kategori_id))
+        .where(Review.revisi_id.in_(revisi_ids), Review.difinalkan_at.is_not(None)).group_by(ReviewKategori.kode)).all()) if revisi_ids else {}
 
     perlu = []
     roles = p.daftar_role

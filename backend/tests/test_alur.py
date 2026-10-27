@@ -3,10 +3,10 @@ finalkan → revisi → riwayat; plus invarian rujukan, konsistensi (fingerprint
 import socket
 import uuid
 
-from sqlalchemy import select, text, update
+from sqlalchemy import func, select, text, update
 
 from app.db import SessionLokal
-from app.model import Elemen, Panduan, Review, Rujukan
+from app.model import Elemen, Kategori, KategoriHistori, Panduan, Review, Rujukan
 from tests.conftest import RAB_CONTOH, TOR_CONTOH, buat_pdf, jalankan_antrean, unggah
 
 TOR = buat_pdf(TOR_CONTOH)
@@ -72,7 +72,7 @@ def test_alur_lengkap(klien):
     lihat = pengusul.get(f"/api/review/{rv['id']}").json()
     assert lihat["final"] and lihat["catatan"][0]["teks"] == "Perbaiki indikator." and lihat["label"]["ai"] is not None
     baris = pengusul.get(f"/api/usulan/{u['id']}").json()
-    assert baris["status"] == "TIDAK_LOLOS" and baris["kategori_final"]["diteruskan"] is False
+    assert baris["status"] == "TIDAK_LOLOS" and baris["kategori_final"]["kode"] == "K4"
 
     # Tidak boleh dihapus setelah direview; boleh revisi (RAB saja) → ajukan → hasil identik disalin? (TOR sama, RAB beda → tidak)
     assert pengusul.delete(f"/api/usulan/{u['id']}").status_code == 409
@@ -96,6 +96,24 @@ def test_konsistensi_fingerprint_hasil_identik(klien):
     ringkas = lambda d: ([(i["kode"], i["ai_terpenuhi"], [(x["halaman"], x["kutipan"]) for x in i["rujukan"]]) for i in d["item"]],
                          d["label"]["ai"], d["kategori"]["ai"]["kode"])  # noqa: E731
     assert ringkas(a) == ringkas(b)
+
+
+def test_edit_kategori_mencegah_salin_hasil(klien):
+    """Isi kategori ikut fingerprint: dokumen identik disalin dari hasil lama, kecuali definisi kategori sudah diedit."""
+    pengusul, _ = _usulan_diajukan(klien)
+    jalankan_antrean()
+
+    def ajukan_lagi() -> dict:
+        _, u = _usulan_diajukan(klien)
+        jalankan_antrean()
+        return pengusul.get(f"/api/review/{pengusul.get(f'/api/usulan/{u['id']}').json()['review_id']}").json()
+
+    assert ajukan_lagi().get("disalin_dari_revisi") == 1  # kontrol: acuan sama → disalin
+    admin = klien("admin", "GantiSegera!2026")
+    k = admin.get("/api/kategori").json()["item"][0]
+    assert admin.put(f"/api/kategori/{k['id']}", json={**k, "definisi": k["definisi"] + " (diubah)"}).status_code == 200
+    b = ajukan_lagi()
+    assert b["status"] == "SELESAI" and b.get("disalin_dari_revisi") is None
 
 
 def test_hak_akses(klien):
@@ -141,15 +159,98 @@ def test_versioning_tidak_mengubah_review_lama(klien):
         assert admin.put(f"/api/checklist/item/{i['id']}", json={**i, "judul": i["judul"] + " (diubah)"}).status_code == 200
     # Item yang ditambah SETELAH review dimulai tidak ikut ke review lama
     assert admin.post("/api/checklist/item", json={"kode": "Z99", "judul": "Item baru", "kriteria": "K", "berlaku_untuk": "TOR"}).status_code == 200
-    kat = admin.get("/api/kategori").json()["aktif"]
-    admin.post("/api/kategori/versi", json={"item": [{**k, "definisi": k["definisi"] + " X"} for k in kat["item"]]})
+    kat = admin.get("/api/kategori").json()["item"]
+    # Seed kategori persis PRD C1
+    assert [k["kode"] for k in kat] == ["K1", "K2", "K3", "K4"] and all(k["aktif"] for k in kat)
+    assert kat[1]["definisi"].startswith("RO prioritas yang ditetapkan secara resmi oleh Menteri")
+    assert [k["definisi"] for k in sebelum["kategori"]["pilihan"]] == [k["definisi"] for k in kat]  # C3: definisi tampil di review
+    for k in kat:
+        assert admin.put(f"/api/kategori/{k['id']}", json={**k, "nama": k["nama"] + " X", "definisi": k["definisi"] + " X"}).status_code == 200
     sesudah = pengusul.get(f"/api/review/{rid}").json()
     assert [(i["kode"], i["judul"], i["kriteria"]) for i in sesudah["item"]] == [(i["kode"], i["judul"], i["kriteria"]) for i in sebelum["item"]]
-    assert sesudah["acuan"]["checklist"] == sebelum["acuan"]["checklist"]
-    # Seed kategori persis PRD C1
-    k1 = admin.get(f"/api/kategori/versi/{kat['id']}").json()["item"]
-    assert [k["kode"] for k in k1] == ["K1", "K2", "K3", "K4"] and k1[3]["diteruskan"] is False
-    assert k1[1]["definisi"].startswith("RO prioritas yang ditetapkan secara resmi oleh Menteri")
+    assert sesudah["acuan"] == sebelum["acuan"] and sesudah["kategori"] == sebelum["kategori"]
+
+
+def test_dashboard_dan_filter_per_kategori_final(klien):
+    # Setiap review menyalin semua kategori dengan id yang sama, jadi join ke review_kategori wajib memakai review yang sama.
+    pengusul, u = _usulan_diajukan(klien)
+    _usulan_diajukan(klien)  # review kedua (belum final) juga menyalin K4
+    jalankan_antrean()
+    reviewer = klien("reviewer")
+    rid = pengusul.get(f"/api/usulan/{u['id']}").json()["review_id"]
+    kat = reviewer.get(f"/api/review/{rid}").json()["kategori"]
+    if kat["final"]["kode"] != "K4":
+        k4 = next(k for k in kat["pilihan"] if k["kode"] == "K4")
+        reviewer.post(f"/api/review/{rid}/override", json={"target": "KATEGORI", "nilai": k4["id"], "alasan": "Tidak terkait tusi"})
+    assert reviewer.post(f"/api/review/{rid}/finalkan").status_code == 200
+    assert reviewer.get("/api/dashboard").json()["per_kategori"] == {"K4": 1}
+    assert [x["id"] for x in reviewer.get("/api/usulan", params={"kategori": "K4"}).json()["data"]] == [u["id"]]
+    assert reviewer.get("/api/usulan", params={"kategori": "K1"}).json()["data"] == []
+
+
+def test_kategori_crud_riwayat_dan_hapus_permanen(klien):
+    pengusul, u = _usulan_diajukan(klien)
+    jalankan_antrean()
+    rid = pengusul.get(f"/api/usulan/{u['id']}").json()["review_id"]
+    sebelum = pengusul.get(f"/api/review/{rid}").json()["kategori"]
+    admin = klien("admin", "GantiSegera!2026")
+    kat = {k["kode"]: k for k in admin.get("/api/kategori").json()["item"]}
+    baru = {"kode": " k5 ", "nama": "RO Baru", "definisi": "Definisi baru", "aktif": True}
+    k5 = admin.post("/api/kategori", json=baru).json()
+    assert k5["kode"] == "K5" and k5["diubah_oleh"] == "Administrator"
+    assert admin.post("/api/kategori", json={**baru, "kode": "K1"}).status_code == 400  # kode sudah dipakai
+    assert admin.post("/api/kategori", json={**baru, "kode": "K6", "nama": " "}).status_code == 400
+    assert klien("reviewer").post("/api/kategori", json={**baru, "kode": "K7"}).status_code == 403
+    assert pengusul.get("/api/kategori").status_code == 403 and pengusul.get(f"/api/kategori/{k5['id']}/riwayat").status_code == 403
+    # Override kategori hanya ke salinan review (C3): K5 ditambah setelah review dimulai → ditolak
+    assert klien("reviewer").post(f"/api/review/{rid}/override",
+                                  json={"target": "KATEGORI", "nilai": k5["id"], "alasan": "x"}).status_code == 400
+    assert admin.get(f"/api/kategori/{k5['id']}/riwayat").json() == []  # riwayat hanya versi sebelum perubahan
+    # Ubah → isi sebelumnya masuk riwayat (terbaru dulu); simpan tanpa perubahan tidak menambah riwayat
+    url = f"/api/kategori/{kat['K2']['id']}"
+    for _ in range(2):
+        assert admin.put(url, json={**kat["K2"], "nama": "Diubah"}).status_code == 200
+    assert admin.put(url, json={**kat["K2"], "nama": "Diubah lagi"}).json()["nama"] == "Diubah lagi"
+    assert [r["nama"] for r in admin.get(f"{url}/riwayat").json()] == ["Diubah", kat["K2"]["nama"]]
+    # Hapus permanen: kategori & riwayatnya hilang dari database; review lama tetap menampilkan kategori saat itu (C4)
+    assert admin.delete(url).status_code == 200
+    assert admin.get(f"{url}/riwayat").status_code == 404
+    with SessionLokal() as db:
+        assert db.scalar(select(func.count()).where(KategoriHistori.kategori_id == uuid.UUID(kat["K2"]["id"]))) == 0
+    assert pengusul.get(f"/api/review/{rid}").json()["kategori"] == sebelum
+    # Kategori Nonaktif tetap tampil tetapi tidak dipakai review berikutnya (seperti panduan)
+    assert admin.put(f"/api/kategori/{k5['id']}", json={**k5, "aktif": False}).json()["aktif"] is False
+    assert admin.get(f"/api/kategori/{k5['id']}/riwayat").json()[0]["aktif"] is True
+    # Review berikutnya memakai daftar terbaru yang Aktif
+    p2, u2 = _usulan_diajukan(klien)
+    jalankan_antrean()
+    rid2 = p2.get(f"/api/usulan/{u2['id']}").json()["review_id"]
+    r2 = p2.get(f"/api/review/{rid2}").json()
+    assert [k["kode"] for k in r2["kategori"]["pilihan"]] == ["K1", "K3", "K4"]
+    # Minimal satu kategori Aktif harus ada: hapus atau nonaktifkan yang terakhir ditolak
+    for k in admin.get("/api/kategori").json()["item"][1:]:
+        assert admin.delete(f"/api/kategori/{k['id']}").status_code == 200
+    sisa = admin.get("/api/kategori").json()["item"]
+    assert len(sisa) == 1 and admin.delete(f"/api/kategori/{sisa[0]['id']}").status_code == 400
+    assert admin.put(f"/api/kategori/{sisa[0]['id']}", json={**sisa[0], "aktif": False}).status_code == 400
+
+
+def test_kategori_atur_urutan(klien):
+    admin = klien("admin", "GantiSegera!2026")
+    kat = admin.get("/api/kategori").json()["item"]
+    assert [k["kode"] for k in kat] == ["K1", "K2", "K3", "K4"]
+    baru = [kat[3]["id"], kat[0]["id"], kat[1]["id"], kat[2]["id"]]
+    r = admin.put("/api/kategori/urutan", json={"id": baru})
+    assert r.status_code == 200 and [k["id"] for k in r.json()["item"]] == baru
+    assert admin.put("/api/kategori/urutan", json={"id": baru[:3]}).status_code == 400  # daftar tidak lengkap
+    assert klien("reviewer").put("/api/kategori/urutan", json={"id": baru}).status_code == 403
+    assert admin.get(f"/api/kategori/{kat[0]['id']}/riwayat").json() == []  # atur urutan tidak membuat riwayat
+    # Kategori baru ditaruh setelah kode sebelumnya walau urutan sudah diatur bebas; hapus merapikan nomor urut
+    admin.post("/api/kategori", json={"kode": "K5", "nama": "RO Baru", "definisi": "Definisi baru"})
+    assert [k["kode"] for k in admin.get("/api/kategori").json()["item"]] == ["K4", "K5", "K1", "K2", "K3"]
+    assert admin.delete(f"/api/kategori/{kat[0]['id']}").status_code == 200
+    with SessionLokal() as db:
+        assert db.scalars(select(Kategori.no_urut).order_by(Kategori.no_urut)).all() == [1, 2, 3, 4]
 
 
 def test_checklist_crud_riwayat_dan_status(klien):

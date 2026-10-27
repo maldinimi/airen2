@@ -2,7 +2,8 @@
 
 Checklist: CRUD per item; `checklist_item` = isi terbaru, isi sebelum setiap ubah disalin ke `checklist_histori`.
 Isi checklist review disusun ulang dari kedua tabel pada waktu review dimulai (lihat app/checklist.py).
-Kategori: admin menyunting daftar lengkap lalu "Simpan sebagai versi baru" (salinan seluruh item per versi).
+Kategori: CRUD per kategori dengan pola yang sama (`kategori` + `kategori_histori`); review menyimpan salinan
+kategori yang dipakai di `review_kategori` (lihat pekerja/review.py:kunci_acuan).
 """
 import uuid
 from contextlib import contextmanager
@@ -10,7 +11,7 @@ from typing import Literal
 
 from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel
-from sqlalchemy import func, select, update
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -19,7 +20,7 @@ from app.audit import catat
 from app.checklist import rapikan_fisik, urut_ulang
 from app.db import sesi_db
 from app.galat import Galat
-from app.model import ChecklistHistory, ChecklistItem, KategoriItem, KategoriVersi, Pengguna
+from app.model import ChecklistHistory, ChecklistItem, Kategori, KategoriHistori, Pengguna
 
 router = APIRouter(prefix="/api", tags=["checklist & kategori"])
 
@@ -40,34 +41,11 @@ class ItemKategoriMasuk(BaseModel):
     kode: str
     nama: str
     definisi: str
-    diteruskan: bool = True
-
-
-class VersiKategoriMasuk(BaseModel):
-    catatan: str | None = None
-    item: list[ItemKategoriMasuk]
+    aktif: bool = True
 
 
 def _nama(db: Session, pid) -> str | None:
     return db.get(Pengguna, pid).nama if pid else None
-
-
-def _validasi(item: list, wajib: tuple[str, ...]) -> None:
-    if not item:
-        raise Galat(400, "Daftar tidak boleh kosong.")
-    kode = [i.kode.strip().upper() for i in item]
-    if len(set(kode)) != len(kode):
-        raise Galat(400, "Kode tidak boleh ganda.")
-    for i in item:
-        if any(not getattr(i, f).strip() for f in wajib):
-            raise Galat(400, f"Semua kolom ({', '.join(wajib)}) wajib diisi.")
-
-
-def _versi_kategori(db: Session, v: KategoriVersi) -> dict:
-    return {"id": str(v.id), "nomor": v.nomor, "aktif": v.aktif, "catatan": v.catatan, "dibuat_at": v.created_at.isoformat(),
-            "dibuat_oleh": _nama(db, v.dibuat_oleh),
-            "item": [{"id": str(i.id), "urutan": i.urutan, "kode": i.kode, "nama": i.nama, "definisi": i.definisi,
-                      "diteruskan": i.diteruskan} for i in v.item]}
 
 
 def _item(db: Session, i: ChecklistItem | ChecklistHistory) -> dict:
@@ -218,40 +196,127 @@ def checklist_riwayat(item_id: uuid.UUID, db: Session = Depends(sesi_db), _: Pen
     return [_item(db, r) for r in baris]
 
 
+def _kategori(db: Session, k: Kategori | KategoriHistori) -> dict:
+    # Field API tetap (nama/definisi/diubah_*) agar frontend tidak berubah; kolom DB memakai nama baru.
+    return {"id": str(k.id), "kode": k.kode, "nama": k.kategori, "definisi": k.deskripsi, "aktif": k.aktif,
+            "diubah_oleh": _nama(db, k.updated_by), "diubah_at": k.updated_date.isoformat()}
+
+
+def _isi_kategori(db: Session, data: ItemKategoriMasuk, kecuali: uuid.UUID | None = None) -> dict:
+    """Validasi & normalisasi isian kategori (nama kolom DB). Error: 400."""
+    isi = {"aktif": data.aktif, "kode": data.kode.strip().upper(), "kategori": data.nama.strip(),
+           "deskripsi": data.definisi.strip()}
+    if not (isi["kode"] and isi["kategori"] and isi["deskripsi"]):
+        raise Galat(400, "Kode, kategori, dan deskripsi wajib diisi.")
+    for k, maks, nama in (("kode", 20, "Kode"), ("kategori", 255, "Kategori")):
+        if len(isi[k]) > maks:
+            raise Galat(400, f"{nama} maksimal {maks} karakter.")
+    if db.scalar(select(Kategori.id).where(Kategori.kode == isi["kode"], Kategori.id != kecuali)):
+        raise Galat(400, f"Kode {isi['kode']} sudah dipakai, gunakan kode lain.")
+    return isi
+
+
+def _catat_histori_kategori(db: Session, k: Kategori) -> None:
+    """Salin isi kategori SEBELUM diubah ke `kategori_histori` (riwayat saja; versi terkini hanya di `kategori`)."""
+    db.add(KategoriHistori(created_by=k.created_by, created_date=k.created_date, updated_by=k.updated_by, updated_date=k.updated_date,
+                           kategori_id=k.id, kategori=k.kategori, aktif=k.aktif, kode=k.kode, deskripsi=k.deskripsi))
+
+
+def _wajib_ada_kategori_aktif(db: Session) -> None:
+    """Screening 2 membutuhkan minimal satu kategori Aktif (seed hanya mengisi ulang tabel yang kosong). Error: 400."""
+    db.flush()
+    if not db.scalar(select(Kategori.id).where(Kategori.aktif).limit(1)):
+        raise Galat(400, "Minimal satu kategori harus berstatus Aktif.")
+
+
+def _ambil_kategori(db: Session, kategori_id: uuid.UUID, kunci: bool = False) -> Kategori:
+    k = db.get(Kategori, kategori_id, with_for_update=kunci)
+    if k is None:
+        raise Galat(404, "Kategori tidak ditemukan. Muat ulang halaman.")
+    return k
+
+
 @router.get("/kategori")
-def kategori(db: Session = Depends(sesi_db), _: Pengguna = Depends(pengguna_saat_ini)) -> dict:
-    semua = db.scalars(select(KategoriVersi).order_by(KategoriVersi.nomor.desc())).all()
-    aktif = next((v for v in semua if v.aktif), None)
-    return {"aktif": _versi_kategori(db, aktif) if aktif else None,
-            "versi": [{"id": str(v.id), "nomor": v.nomor, "aktif": v.aktif, "catatan": v.catatan, "jumlah_item": len(v.item),
-                       "dibuat_at": v.created_at.isoformat(), "dibuat_oleh": _nama(db, v.dibuat_oleh)} for v in semua]}
+def kategori(db: Session = Depends(sesi_db), _: Pengguna = Depends(wajib_role(ADMIN))) -> dict:
+    """Daftar kategori terbaru, urut nomor urut yang diatur Admin. Khusus Admin (C5, C7). Error: 403."""
+    return {"item": [_kategori(db, k) for k in db.scalars(select(Kategori).order_by(Kategori.no_urut, Kategori.kode))]}
 
 
-@router.get("/kategori/versi/{versi_id}")
-def kategori_versi(versi_id: uuid.UUID, db: Session = Depends(sesi_db), _: Pengguna = Depends(pengguna_saat_ini)) -> dict:
-    v = db.get(KategoriVersi, versi_id)
-    if v is None:
-        raise Galat(404, "Versi kategori tidak ditemukan.")
-    return _versi_kategori(db, v)
-
-
-@router.post("/kategori/versi")
-def kategori_simpan(data: VersiKategoriMasuk, request: Request, db: Session = Depends(sesi_db),
+@router.post("/kategori")
+def kategori_tambah(data: ItemKategoriMasuk, request: Request, db: Session = Depends(sesi_db),
                     p: Pengguna = Depends(wajib_role(ADMIN))) -> dict:
-    """Simpan daftar kategori sebagai versi baru (C1, C3). AI selalu memakai versi aktif (C2)."""
-    _validasi(data.item, ("kode", "nama", "definisi"))
-    db.execute(select(KategoriVersi.id).with_for_update())
-    nomor = (db.scalar(select(func.max(KategoriVersi.nomor))) or 0) + 1
-    db.execute(update(KategoriVersi).where(KategoriVersi.aktif).values(aktif=False))
-    v = KategoriVersi(nomor=nomor, aktif=True, dibuat_oleh=p.id, catatan=(data.catatan or "").strip() or None)
-    db.add(v)
-    db.flush()
-    for urutan, i in enumerate(data.item, 1):
-        db.add(KategoriItem(versi_id=v.id, urutan=urutan, kode=i.kode.strip().upper(), nama=i.nama.strip(),
-                            definisi=i.definisi.strip(), diteruskan=i.diteruskan))
-    db.flush()
-    db.refresh(v)
-    catat(db, request, "KATEGORI_VERSI_BARU", "kategori_versi", v.id,
-          sesudah={"nomor": nomor, "catatan": v.catatan, "item": [i.model_dump() for i in data.item]})
+    """Tambah kategori (ditaruh setelah kategori berkode sebelumnya); dipakai AI mulai review berikutnya (C2).
+    Error: 400 isian tidak valid / kode sudah dipakai."""
+    isi = _isi_kategori(db, data)
+    sekarang = _jam_db(db)
+    k = Kategori(**isi, no_urut=0, created_by=p.id, created_date=sekarang, updated_by=p.id, updated_date=sekarang)
+    with _kode_unik(db):
+        db.add(k)
+        urut_ulang(db, baru=k, model=Kategori)
+    catat(db, request, "KATEGORI_TAMBAH", "kategori", k.id, sesudah=isi)
     db.commit()
-    return _versi_kategori(db, v)
+    return _kategori(db, k)
+
+
+# Didaftarkan sebelum PUT /kategori/{kategori_id}: bila sesudahnya, "urutan" dicocokkan sebagai id lalu ditolak 422.
+@router.put("/kategori/urutan")
+def kategori_urutan(data: UrutanMasuk, request: Request, db: Session = Depends(sesi_db),
+                    p: Pengguna = Depends(wajib_role(ADMIN))) -> dict:
+    """Atur urutan kategori (`id` = semua id kategori sesuai urutan baru). Hanya `no_urut` yang berubah — tidak membuat
+    Kategori Histori karena isi kategori tidak berubah. Error: 400 daftar tidak memuat tepat semua kategori."""
+    semua = set(db.scalars(select(Kategori.id)))
+    if len(data.id) != len(semua) or set(data.id) != semua:
+        raise Galat(400, "Daftar kategori sudah berubah. Muat ulang halaman lalu atur urutan lagi.")
+    urut_ulang(db, urutan=data.id, model=Kategori)
+    catat(db, request, "KATEGORI_URUTAN", "kategori", None, sesudah={"id": [str(i) for i in data.id]})
+    db.commit()
+    return kategori(db, p)
+
+
+@router.put("/kategori/{kategori_id}")
+def kategori_ubah(kategori_id: uuid.UUID, data: ItemKategoriMasuk, request: Request, db: Session = Depends(sesi_db),
+                  p: Pengguna = Depends(wajib_role(ADMIN))) -> dict:
+    """Ubah kategori (termasuk kode). Isi SEBELUM diubah disalin ke `kategori_histori`; review lama memakai salinannya
+    sendiri (`review_kategori`) sehingga tidak berubah (C4). Error: 400 isian tidak valid / kode sudah dipakai; 404."""
+    # Baris dikunci: dua edit bersamaan tidak menyalin versi lama yang sama dua kali.
+    k = _ambil_kategori(db, kategori_id, kunci=True)
+    isi = _isi_kategori(db, data, kecuali=k.id)
+    sebelum = {c: getattr(k, c) for c in isi}
+    if sebelum == isi:
+        return _kategori(db, k)
+    _catat_histori_kategori(db, k)
+    for c, v in isi.items():
+        setattr(k, c, v)
+    k.updated_by, k.updated_date = p.id, _jam_db(db)
+    with _kode_unik(db):
+        db.flush()
+    _wajib_ada_kategori_aktif(db)
+    catat(db, request, "KATEGORI_UBAH", "kategori", k.id, sebelum=sebelum, sesudah=isi)
+    db.commit()
+    return _kategori(db, k)
+
+
+@router.delete("/kategori/{kategori_id}")
+def kategori_hapus(kategori_id: uuid.UUID, request: Request, db: Session = Depends(sesi_db),
+                   _: Pengguna = Depends(wajib_role(ADMIN))) -> dict:
+    """Hapus kategori beserta riwayatnya secara permanen. Review lama tidak berubah (salinan di `review_kategori`).
+    Error: 400 tidak ada kategori Aktif tersisa; 404."""
+    k = _ambil_kategori(db, kategori_id)
+    sebelum = {**{c: getattr(k, c) for c in ("kode", "kategori", "deskripsi", "aktif")},
+               "jumlah_histori": db.scalar(select(func.count()).where(KategoriHistori.kategori_id == k.id))}
+    db.delete(k)  # riwayatnya ikut terhapus (FK kategori_histori.kategori_id ON DELETE CASCADE)
+    urut_ulang(db, model=Kategori)
+    _wajib_ada_kategori_aktif(db)
+    catat(db, request, "KATEGORI_HAPUS", "kategori", kategori_id, sebelum=sebelum)
+    db.commit()
+    return {"ok": True}
+
+
+@router.get("/kategori/{kategori_id}/riwayat")
+def kategori_riwayat(kategori_id: uuid.UUID, db: Session = Depends(sesi_db), _: Pengguna = Depends(wajib_role(ADMIN))) -> list[dict]:
+    """Versi sebelum tiap perubahan dari `kategori_histori`, terbaru dulu (isi saat ini tidak termasuk). Khusus Admin (C5).
+    Error: 403, 404."""
+    k = _ambil_kategori(db, kategori_id)
+    baris = db.scalars(select(KategoriHistori).where(KategoriHistori.kategori_id == k.id)
+                       .order_by(KategoriHistori.updated_date.desc())).all()
+    return [_kategori(db, r) for r in baris]
