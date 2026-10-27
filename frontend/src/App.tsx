@@ -7,6 +7,7 @@ import KelolaChecklist from "./pages/admin/Checklist";
 import KelolaKategori from "./pages/admin/Kategori";
 import NodeAI from "./pages/admin/NodeAI";
 import KelolaPengguna from "./pages/admin/Pengguna";
+import KelolaSatker from "./pages/admin/Satker";
 import Dashboard from "./pages/Dashboard";
 import Login from "./pages/Login";
 import PanduanPage, { PanduanDetail } from "./pages/Panduan";
@@ -49,6 +50,7 @@ export default function App() {
           <Route path="kelola/checklist" element={<Wajib role={["ADMIN"]}><KelolaChecklist /></Wajib>} />
           <Route path="kelola/kategori" element={<Wajib role={["ADMIN"]}><KelolaKategori /></Wajib>} />
           <Route path="kelola/pengguna" element={<Wajib role={["ADMIN"]}><KelolaPengguna /></Wajib>} />
+          <Route path="kelola/satker" element={<Wajib role={["ADMIN"]}><KelolaSatker /></Wajib>} />
           <Route path="kelola/node-ai" element={<Wajib role={["ADMIN"]}><NodeAI /></Wajib>} />
           <Route path="audit" element={<Wajib role={["ADMIN"]}><Audit /></Wajib>} />
           <Route path="*" element={<Navigate to="/" replace />} />

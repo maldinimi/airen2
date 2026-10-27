@@ -1,4 +1,4 @@
-import { BookOpen, FileText, History, KeyRound, LayoutDashboard, ListChecks, LogOut, Menu, Server, Tags, Users, X } from "lucide-react";
+import { BookOpen, Building2, FileText, History, KeyRound, LayoutDashboard, ListChecks, LogOut, Menu, Server, Tags, Users, X } from "lucide-react";
 import { type ReactNode, useState } from "react";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { useAuth } from "../auth";
@@ -15,7 +15,8 @@ const MENU: { grup?: string; item: Menu[] }[] = [
   { grup: "Kelola", item: [
     { ke: "/kelola/checklist", label: "Checklist", ikon: <ListChecks className="size-4" />, role: ["ADMIN"] },
     { ke: "/kelola/kategori", label: "Kategori", ikon: <Tags className="size-4" />, role: ["ADMIN"] },
-    { ke: "/kelola/pengguna", label: "Pengguna & Satker", ikon: <Users className="size-4" />, role: ["ADMIN"] },
+    { ke: "/kelola/pengguna", label: "Pengguna", ikon: <Users className="size-4" />, role: ["ADMIN"] },
+    { ke: "/kelola/satker", label: "Satuan Kerja", ikon: <Building2 className="size-4" />, role: ["ADMIN"] },
     { ke: "/kelola/node-ai", label: "Node AI", ikon: <Server className="size-4" />, role: ["ADMIN"] },
     { ke: "/audit", label: "Audit Log", ikon: <History className="size-4" />, role: ["ADMIN"] },
   ] },

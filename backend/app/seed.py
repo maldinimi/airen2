@@ -1,6 +1,8 @@
 """Data awal: 4 kategori PERSIS sesuai PRD C1 + akun admin awal.
 
-Bila `SEED_CONTOH=true` (mode dev/tiruan), juga dibuat Satker, akun Pengusul/Reviewer, dan
+Daftar Satker awal dari dokumen "Data Satker dan Unit Kerja" (app/data_satker.py) diisi bila tabel satker kosong.
+
+Bila `SEED_CONTOH=true` (mode dev/tiruan), juga dibuat akun Pengusul/Reviewer, dan
 checklist contoh agar alur lengkap dapat langsung dicoba. Seed hanya berjalan bila tabel kosong.
 """
 import logging
@@ -8,6 +10,7 @@ import logging
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.data_satker import SATKER
 from app.keamanan import hash_password
 from app.konfigurasi import konfigurasi
 from app.model import (ChecklistHistory, ChecklistItem, KategoriItem, KategoriVersi, Pengguna, PenggunaRole,
@@ -57,8 +60,13 @@ def jalankan_seed(db: Session) -> None:
             db.add(KategoriItem(versi_id=versi.id, urutan=i, kode=kode, nama=nama, definisi=definisi, diteruskan=diteruskan))
         logger.info("seed kategori v1 dibuat")
 
+    if db.scalar(select(Satker.id).limit(1)) is None:
+        db.add_all(Satker(**s) for s in SATKER)
+        db.flush()
+        logger.info("seed satker dibuat", extra={"ekstra": {"jumlah": len(SATKER)}})
+
     if db.scalar(select(Pengguna.id).limit(1)) is None:
-        admin = Pengguna(username=k.admin_username, nama="Administrator", password_hash=hash_password(k.admin_password_awal))
+        admin = Pengguna(username=k.admin_username, password_hash=hash_password(k.admin_password_awal))
         admin.roles = [PenggunaRole(role="ADMIN")]
         db.add(admin)
         logger.info("akun admin awal dibuat", extra={"ekstra": {"username": k.admin_username}})
@@ -68,17 +76,16 @@ def jalankan_seed(db: Session) -> None:
 
 
 def _seed_contoh(db: Session) -> None:
-    satker = Satker(kode="SATKER-A", nama="Satker Contoh A")
-    satker_b = Satker(kode="SATKER-B", nama="Satker Contoh B")
-    db.add_all([satker, satker_b])
-    db.flush()
+    # Akun contoh memakai Satker asli dari daftar seed (Biro Perencanaan & Pusat Data dan Sarana Informatika).
+    satker = db.scalar(select(Satker).where(Satker.kode_uke2 == "01.04"))
+    satker_b = db.scalar(select(Satker).where(Satker.kode_uke2 == "01.06"))
     sandi = hash_password("Contoh!2026")
-    for username, nama, roles, satker_id in [
-        ("pengusul", "Pengusul Contoh A", ["PENGUSUL"], satker.id),
-        ("pengusul_b", "Pengusul Contoh B", ["PENGUSUL"], satker_b.id),
-        ("reviewer", "Reviewer Contoh", ["REVIEWER"], None),
+    for username, roles, satker_id in [
+        ("pengusul", ["PENGUSUL"], satker.id),
+        ("pengusul_b", ["PENGUSUL"], satker_b.id),
+        ("reviewer", ["REVIEWER"], None),
     ]:
-        p = Pengguna(username=username, nama=nama, password_hash=sandi, satker_id=satker_id)
+        p = Pengguna(username=username, password_hash=sandi, satker_id=satker_id)
         p.roles = [PenggunaRole(role=r) for r in roles]
         db.add(p)
     for i, (kode, judul, kriteria, berlaku) in enumerate(CHECKLIST_CONTOH, 1):
@@ -87,4 +94,4 @@ def _seed_contoh(db: Session) -> None:
         db.add(item)
         db.flush()
         db.add(ChecklistHistory(checklist_id=item.id, **isi))
-    logger.info("seed contoh dibuat (satker, pengusul, reviewer, checklist)")
+    logger.info("seed contoh dibuat (pengusul, reviewer, checklist)")

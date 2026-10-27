@@ -1,109 +1,120 @@
-/** Kelola pengguna (multi-role, Satker, aktif, reset password) dan daftar Satker. */
+/** Kelola pengguna (multi-role, Satker, aktif, reset password). Satker dipilih dari menu Satker. */
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Pencil, Plus } from "lucide-react";
+import { Plus } from "lucide-react";
 import { useState } from "react";
 import { api } from "../../api";
-import { waktu } from "../../format";
-import type { Role, Satker } from "../../types";
-import { Dialog, Input, Judul, Kartu, Kolom, Lencana, Memuat, Peringatan, Pilih, Tab, Tombol } from "../../ui";
+import { Aksi, HalamanDetail, HalamanForm, type Jejak, LencanaAktif, PilihBawah, type Satker, TD, barisJejak, th, usePesanSukses } from "../../components/Kelola";
+import { waktuAngka } from "../../format";
+import type { Role } from "../../types";
+import { Input, Judul, Kartu, Kolom, Konfirmasi, Kosong, Lencana, Memuat, Peringatan, Tombol, cx } from "../../ui";
 
-type P = { id: string; username: string; nama: string; roles: Role[]; aktif: boolean; satker: Satker | null; last_login_at: string | null };
+type P = { id: string; username: string; roles: Role[]; aktif: boolean; satker: Satker | null; last_login_at: string | null } & Jejak;
 const ROLE: Role[] = ["PENGUSUL", "REVIEWER", "ADMIN"];
+const NAMA_ROLE: Record<Role, string> = { PENGUSUL: "Pengusul", REVIEWER: "Reviewer", ADMIN: "Admin" };
 
-export default function KelolaPengguna() {
-  const [tab, setTab] = useState<"pengguna" | "satker">("pengguna");
+const LencanaRole = ({ roles }: { roles: Role[] }) =>
+  <div className="flex flex-wrap justify-center gap-1">{roles.map((r) => <Lencana key={r} className="bg-utama-50 text-utama-700 ring-utama-100">{NAMA_ROLE[r]}</Lencana>)}</div>;
+
+const TANPA_UK = "__tanpa";  // nilai pilihan untuk Satker yang Unit Kerja-nya kosong
+
+/** Dua langkah seperti dokumen sumber: pilih Unit Kerja (UKE I), lalu Satker (UKE II) di bawahnya.
+ *  Satker Nonaktif disembunyikan kecuali yang sedang dipakai. */
+function PilihSatker({ daftar, unitKerja, nilai, ubah }: {
+  daftar: Satker[]; unitKerja: string; nilai: string; ubah: (unitKerja: string, satkerId: string) => void;
+}) {
+  const tampil = daftar.filter((s) => s.aktif !== false || s.id === nilai);
+  // Unit Kerja unik (urut kemunculan) beserta Kode UKE I-nya untuk label "01 — SEKRETARIAT JENDERAL".
+  const unit = [...new Map(tampil.map((s) => [s.unit_kerja ?? "", s.kode_uke1 ?? ""]))];
+  const label = (s: Satker) => `${[s.kode_uke2, s.nama || "(tanpa nama)"].filter(Boolean).join(" — ")}${s.aktif === false ? " (Nonaktif)" : ""}`;
   return (
-    <div>
-      <Judul judul="Pengguna & Satker" sub="Satker tempat Reviewer bernaung mengusulkan dengan akun Pengusul tersendiri." />
-      <Tab aktif={tab} ubah={setTab} pilihan={[{ nilai: "pengguna", label: "Pengguna" }, { nilai: "satker", label: "Satker" }]} />
-      <div className="mt-4">{tab === "pengguna" ? <DaftarPengguna /> : <DaftarSatker />}</div>
+    <div className="grid gap-3 sm:grid-cols-2">
+      <Kolom label="Unit Kerja (Eselon I)">
+        <PilihBawah nilai={unitKerja} ubah={(uk) => ubah(uk, "")} kosong="— pilih Unit Kerja —"
+          opsi={unit.map(([uk, kode]) => ({ nilai: uk || TANPA_UK, label: uk ? [kode, uk].filter(Boolean).join(" — ") : "Tanpa Unit Kerja" }))} />
+      </Kolom>
+      <Kolom label="Satuan Kerja (Eselon II)" petunjuk="Wajib untuk Pengusul (membatasi data yang dapat dilihat).">
+        <PilihBawah nilai={nilai} ubah={(id) => ubah(unitKerja, id)} disabled={!unitKerja}
+          opsi={tampil.filter((s) => s.nama && (s.unit_kerja || TANPA_UK) === unitKerja).map((s) => ({ nilai: s.id, label: label(s) }))} />
+      </Kolom>
     </div>
   );
 }
 
-function DaftarPengguna() {
+export default function KelolaPengguna() {
   const qc = useQueryClient();
   const q = useQuery({ queryKey: ["pengguna"], queryFn: () => api.get<P[]>("/api/pengguna") });
   const satker = useQuery({ queryKey: ["satker"], queryFn: () => api.get<Satker[]>("/api/satker") });
-  const [form, setForm] = useState<{ id?: string; username: string; nama: string; roles: Role[]; satker_id: string; aktif: boolean; password: string } | null>(null);
+  const [sukses, setSukses] = usePesanSukses();
+  const [form, setForm] = useState<{ id?: string; username: string; roles: Role[]; unit_kerja: string; satker_id: string; aktif: boolean; password: string } | null>(null);
   const simpan = useMutation({
-    mutationFn: () => { const b = { ...form!, satker_id: form!.satker_id || null, password: form!.password || null };
+    mutationFn: () => { const { unit_kerja: _, ...isi } = form!; const b = { ...isi, satker_id: form!.satker_id || null, password: form!.password || null };
       return form!.id ? api.put(`/api/pengguna/${form!.id}`, b) : api.post("/api/pengguna", b); },
-    onSuccess: () => { setForm(null); qc.invalidateQueries({ queryKey: ["pengguna"] }); },
+    onSuccess: () => { setSukses(`Pengguna ${form!.username} berhasil disimpan.`); setForm(null); qc.invalidateQueries({ queryKey: ["pengguna"] }); },
   });
-  if (q.isLoading) return <Memuat />;
-  return (
-    <>
-      <Tombol className="mb-3" onClick={() => { simpan.reset(); setForm({ username: "", nama: "", roles: ["PENGUSUL"], satker_id: "", aktif: true, password: "" }); }}><Plus className="size-4" />Tambah pengguna</Tombol>
-      <Kartu className="overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead className="bg-slate-50 text-left text-xs text-slate-500"><tr>{["Username", "Nama", "Role", "Satker", "Status", "Login terakhir", ""].map((h) => <th key={h} className="px-3 py-2">{h}</th>)}</tr></thead>
-          <tbody className="divide-y divide-slate-100">{q.data?.map((p) => (
-            <tr key={p.id}>
-              <td className="px-3 py-2 font-medium">{p.username}</td><td className="px-3 py-2">{p.nama}</td>
-              <td className="px-3 py-2"><div className="flex flex-wrap gap-1">{p.roles.map((r) => <Lencana key={r} className="bg-utama-50 text-utama-700 ring-utama-100">{r}</Lencana>)}</div></td>
-              <td className="px-3 py-2">{p.satker?.nama ?? "—"}</td>
-              <td className="px-3 py-2">{p.aktif ? "Aktif" : <span className="text-red-600">Nonaktif</span>}</td>
-              <td className="whitespace-nowrap px-3 py-2 text-slate-500">{waktu(p.last_login_at)}</td>
-              <td className="px-3 py-2"><Tombol varian="hantu" kecil onClick={() => { simpan.reset(); setForm({ id: p.id, username: p.username, nama: p.nama, roles: p.roles, satker_id: p.satker?.id ?? "", aktif: p.aktif, password: "" }); }}><Pencil className="size-4" />Ubah</Tombol></td>
-            </tr>))}</tbody>
-        </table>
-      </Kartu>
-      {form && (
-        <Dialog buka ubahBuka={(b) => !b && setForm(null)} judul={form.id ? `Ubah ${form.username}` : "Tambah pengguna"}>
-          <form className="space-y-4" onSubmit={(e) => { e.preventDefault(); simpan.mutate(); }}>
-            {simpan.error && <Peringatan>{(simpan.error as Error).message}</Peringatan>}
-            <Kolom label="Username" wajib><Input required disabled={!!form.id} value={form.username} onChange={(e) => setForm({ ...form, username: e.target.value })} /></Kolom>
-            <Kolom label="Nama" wajib><Input required value={form.nama} onChange={(e) => setForm({ ...form, nama: e.target.value })} /></Kolom>
-            <fieldset className="space-y-1"><legend className="text-sm font-medium text-slate-700">Role *</legend>
-              <div className="flex flex-wrap gap-4">{ROLE.map((r) => (
-                <label key={r} className="flex items-center gap-2 text-sm"><input type="checkbox" checked={form.roles.includes(r)}
-                  onChange={(e) => setForm({ ...form, roles: e.target.checked ? [...form.roles, r] : form.roles.filter((x) => x !== r) })} />{r}</label>))}</div>
-            </fieldset>
-            <Kolom label="Satker" petunjuk="Wajib untuk Pengusul (membatasi data yang dapat dilihat).">
-              <Pilih value={form.satker_id} onChange={(e) => setForm({ ...form, satker_id: e.target.value })}>
-                <option value="">— tidak ada —</option>{satker.data?.map((s) => <option key={s.id} value={s.id}>{s.nama}</option>)}
-              </Pilih>
-            </Kolom>
-            <Kolom label={form.id ? "Reset password (kosongkan bila tidak diubah)" : "Password awal"} wajib={!form.id} petunjuk="Minimal 8 karakter, kombinasi huruf dan angka/simbol.">
-              <Input type="password" autoComplete="new-password" required={!form.id} value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} /></Kolom>
-            <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={form.aktif} onChange={(e) => setForm({ ...form, aktif: e.target.checked })} />Akun aktif</label>
-            <div className="flex justify-end gap-2"><Tombol type="button" varian="hantu" onClick={() => setForm(null)}>Batal</Tombol><Tombol type="submit" memuat={simpan.isPending}>Simpan</Tombol></div>
-          </form>
-        </Dialog>
-      )}
-    </>
-  );
-}
+  const buka = (p?: P) => { simpan.reset(); setForm(p
+    ? { id: p.id, username: p.username, roles: p.roles, unit_kerja: p.satker ? p.satker.unit_kerja || TANPA_UK : "", satker_id: p.satker?.id ?? "", aktif: p.aktif, password: "" }
+    : { username: "", roles: ["PENGUSUL"], unit_kerja: "", satker_id: "", aktif: true, password: "" }); };
+  const [lihat, setLihat] = useState<P | null>(null);
+  const [dihapus, setDihapus] = useState<P | null>(null);
+  const hapus = useMutation({
+    mutationFn: (p: P) => api.del(`/api/pengguna/${p.id}`),
+    onSuccess: (_, p) => { setSukses(`Pengguna ${p.username} berhasil dihapus.`); setDihapus(null); qc.invalidateQueries({ queryKey: ["pengguna"] }); },
+  });
 
-function DaftarSatker() {
-  const qc = useQueryClient();
-  const q = useQuery({ queryKey: ["satker"], queryFn: () => api.get<Satker[]>("/api/satker") });
-  const [form, setForm] = useState<{ id?: string; kode: string; nama: string; aktif: boolean } | null>(null);
-  const simpan = useMutation({
-    mutationFn: () => (form!.id ? api.put(`/api/satker/${form!.id}`, form) : api.post("/api/satker", form)),
-    onSuccess: () => { setForm(null); qc.invalidateQueries({ queryKey: ["satker"] }); },
-  });
-  if (q.isLoading) return <Memuat />;
+  if (lihat) return (
+    <HalamanDetail kembali="Pengguna" judul={`Detail Pengguna ${lihat.username}`} sub={lihat.username} tutup={() => setLihat(null)} info={[
+      ["Username", lihat.username],
+      ["Role", <div className="[&>div]:justify-start"><LencanaRole roles={lihat.roles} /></div>],
+      ["Satuan Kerja (Eselon II)", lihat.satker?.nama || "—"], ["Unit Kerja (Eselon I)", lihat.satker?.unit_kerja || "—"],
+      ["Status", <LencanaAktif aktif={lihat.aktif} />], ["Login Terakhir", waktuAngka(lihat.last_login_at)], ...barisJejak(lihat),
+    ]} />
+  );
+
+  if (form) return (
+    <HalamanForm judul={form.id ? `Ubah Pengguna ${form.username}` : "Tambah Pengguna"} sub={form.id ? "Perbarui data akun. Kosongkan password bila tidak ingin mereset." : "Lengkapi data akun baru. Akun Pengusul wajib dihubungkan ke Satuan Kerja."}
+      tutup={() => setForm(null)} kirim={() => simpan.mutate()} reset={form.id ? undefined : () => buka()} galat={simpan.error} sibuk={simpan.isPending}>
+      <Kolom label="Username" wajib><Input required maxLength={100} value={form.username} onChange={(e) => setForm({ ...form, username: e.target.value })} /></Kolom>
+      <fieldset className="space-y-1.5"><legend className="text-sm font-medium text-slate-700">Role<span className="text-red-600"> *</span></legend>
+        <div className="flex flex-wrap gap-4">{ROLE.map((r) => (
+          <label key={r} className="flex items-center gap-2 text-sm"><input type="checkbox" checked={form.roles.includes(r)}
+            onChange={(e) => setForm({ ...form, roles: e.target.checked ? [...form.roles, r] : form.roles.filter((x) => x !== r) })} />{NAMA_ROLE[r]}</label>))}</div>
+      </fieldset>
+      <PilihSatker daftar={satker.data ?? []} unitKerja={form.unit_kerja} nilai={form.satker_id}
+        ubah={(unit_kerja, satker_id) => setForm({ ...form, unit_kerja, satker_id })} />
+      <Kolom label={form.id ? "Reset password (kosongkan bila tidak diubah)" : "Password"} wajib={!form.id} petunjuk="Minimal 8 karakter, kombinasi huruf dan angka/simbol.">
+        <Input type="password" autoComplete="new-password" required={!form.id} value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} /></Kolom>
+    </HalamanForm>
+  );
+
   return (
-    <>
-      <Tombol className="mb-3" onClick={() => { simpan.reset(); setForm({ kode: "", nama: "", aktif: true }); }}><Plus className="size-4" />Tambah Satker</Tombol>
-      <Kartu className="divide-y divide-slate-100">{q.data?.map((s) => (
-        <div key={s.id} className="flex items-center gap-3 px-4 py-3 text-sm">
-          <span className="w-32 font-medium">{s.kode}</span><span className="flex-1">{s.nama}</span>{!s.aktif && <span className="text-red-600">Nonaktif</span>}
-          <Tombol varian="hantu" kecil onClick={() => { simpan.reset(); setForm({ id: s.id, kode: s.kode, nama: s.nama, aktif: s.aktif ?? true }); }}><Pencil className="size-4" />Ubah</Tombol>
-        </div>))}</Kartu>
-      {form && (
-        <Dialog buka ubahBuka={(b) => !b && setForm(null)} judul={form.id ? "Ubah Satker" : "Tambah Satker"}>
-          <form className="space-y-4" onSubmit={(e) => { e.preventDefault(); simpan.mutate(); }}>
-            {simpan.error && <Peringatan>{(simpan.error as Error).message}</Peringatan>}
-            <Kolom label="Kode" wajib><Input required value={form.kode} onChange={(e) => setForm({ ...form, kode: e.target.value })} /></Kolom>
-            <Kolom label="Nama" wajib><Input required value={form.nama} onChange={(e) => setForm({ ...form, nama: e.target.value })} /></Kolom>
-            <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={form.aktif} onChange={(e) => setForm({ ...form, aktif: e.target.checked })} />Aktif</label>
-            <div className="flex justify-end gap-2"><Tombol type="button" varian="hantu" onClick={() => setForm(null)}>Batal</Tombol><Tombol type="submit" memuat={simpan.isPending}>Simpan</Tombol></div>
-          </form>
-        </Dialog>
+    <div className="w-full">
+      <Judul judul="Pengguna" sub="Kelola akun pengguna beserta role dan Satuan Kerja-nya."
+        aksi={<Tombol onClick={() => buka()}><Plus className="size-4" />Tambah Pengguna</Tombol>} />
+      {sukses && <div className="mb-3"><Peringatan jenis="sukses">{sukses}</Peringatan></div>}
+      {q.isLoading ? <Memuat /> : q.error ? <Peringatan>{(q.error as Error).message}</Peringatan> : !q.data?.length ? <Kosong>Belum ada pengguna.</Kosong> : (
+        <Kartu className="overflow-x-auto">
+          <table className="w-full min-w-[48rem] text-sm">
+            <thead className="bg-slate-100 text-xs font-semibold text-slate-700">
+              <tr>{["No", "Username", "Role", "Status", "Login Terakhir", "Aksi"].map(th)}</tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">{q.data.map((p, i) => (
+              <tr key={p.id} className="align-middle transition-colors hover:bg-slate-50">
+                <td className={cx(TD, "text-slate-500")}>{i + 1}</td>
+                <td className={cx(TD, "whitespace-nowrap font-medium text-slate-900")}>{p.username}</td>
+                <td className={TD}><LencanaRole roles={p.roles} /></td>
+                <td className={TD}><LencanaAktif aktif={p.aktif} /></td>
+                <td className={cx(TD, "whitespace-nowrap text-slate-600")}>{waktuAngka(p.last_login_at)}</td>
+                <Aksi nama={p.username} lihat={() => setLihat(p)} ubah={() => buka(p)} hapus={() => { hapus.reset(); setDihapus(p); }} />
+              </tr>))}</tbody>
+          </table>
+        </Kartu>
       )}
-    </>
+      {dihapus && (
+        <Konfirmasi bahaya buka judul="Hapus pengguna secara permanen?" teksYa="Ya, hapus" teksBatal="Batal"
+          baris={[["Username", dihapus.username], ["Status", dihapus.aktif ? "Aktif" : "Nonaktif"]]}
+          pesan="Akun dihapus dan tidak dapat dikembalikan. Akun yang sudah memiliki riwayat aktivitas tidak dapat dihapus."
+          galat={hapus.error?.message} memuat={hapus.isPending} batal={() => setDihapus(null)} ya={() => hapus.mutate(dihapus)} />
+      )}
+    </div>
   );
 }
