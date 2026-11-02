@@ -197,7 +197,7 @@ def test_kategori_crud_riwayat_dan_hapus_permanen(klien):
     kat = {k["kode"]: k for k in admin.get("/api/kategori").json()["item"]}
     baru = {"kode": " k5 ", "nama": "RO Baru", "definisi": "Definisi baru", "aktif": True}
     k5 = admin.post("/api/kategori", json=baru).json()
-    assert k5["kode"] == "K5" and k5["diubah_oleh"] == "Administrator"
+    assert k5["kode"] == "K5" and k5["diubah_oleh"] == "admin"
     assert admin.post("/api/kategori", json={**baru, "kode": "K1"}).status_code == 400  # kode sudah dipakai
     assert admin.post("/api/kategori", json={**baru, "kode": "K6", "nama": " "}).status_code == 400
     assert klien("reviewer").post("/api/kategori", json={**baru, "kode": "K7"}).status_code == 403
