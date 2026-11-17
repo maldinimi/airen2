@@ -12,8 +12,9 @@ export function validasiPdf(f: File): string | null {
 }
 
 /** `lihat` diisi → tombol "Pratinjau" pada baris file terpilih. */
-export default function Unggah({ label, file, ubah, banyak, keterangan, lihat }:
-  { label: string; file: File | File[] | null; ubah: (f: File[] ) => void; banyak?: boolean; keterangan?: string; lihat?: (f: File) => void }) {
+export default function Unggah({ label, file, ubah, banyak, keterangan, lihat, galatLuar }:
+  { label: string; file: File | File[] | null; ubah: (f: File[] ) => void; banyak?: boolean; keterangan?: string; lihat?: (f: File) => void;
+    galatLuar?: string | null }) {
   const input = useRef<HTMLInputElement>(null);
   const [seret, setSeret] = useState(false);
   const [galat, setGalat] = useState<string | null>(null);
@@ -34,7 +35,8 @@ export default function Unggah({ label, file, ubah, banyak, keterangan, lihat }:
       {/* File terpilih tampil di dalam kotak, menggantikan ajakan "Seret PDF". Kotak tetap menerima seret-lepas untuk mengganti file. */}
       <div onDragOver={(e) => { e.preventDefault(); setSeret(true); }} onDragLeave={() => setSeret(false)} onDrop={lepas}
         className={cx("rounded-xl border-2 border-dashed text-sm transition-colors",
-          seret ? "border-utama-500 bg-utama-50" : cx("border-slate-300 bg-white", !daftar.length && "hover:border-utama-500"))}>
+          seret ? "border-utama-500 bg-utama-50" : galatLuar && !daftar.length ? "border-red-500 bg-red-100"
+            : cx("border-slate-300 bg-white", !daftar.length && "hover:border-utama-500"))}>
         {daftar.length ? daftar.map((f) => (
           <div key={f.name + f.size} className="flex items-center gap-2 px-4 py-3">
             <FileText className="size-4 shrink-0 text-utama-600" /><span className="truncate">{f.name}</span>
@@ -54,7 +56,7 @@ export default function Unggah({ label, file, ubah, banyak, keterangan, lihat }:
         <input ref={input} type="file" accept="application/pdf,.pdf" multiple={banyak} hidden
           onChange={(e) => { pilih(e.target.files); e.target.value = ""; }} />
       </div>
-      {galat && <p className="text-xs text-red-600" role="alert">{galat}</p>}
+      {(galat ?? (daftar.length ? null : galatLuar)) && <p className="text-xs font-medium text-red-600" role="alert">{galat ?? galatLuar}</p>}
     </div>
   );
 }

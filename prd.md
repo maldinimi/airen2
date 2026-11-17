@@ -1,6 +1,6 @@
 # PRD — Asisten AI Offline untuk Review Dokumen TOR & RAB
 
-**Status:** Disetujui | **Pemilik:** Maldini | **Versi:** 2.3 | **Tanggal:** 2026-10-26 (v1: 2026-10-12, v2: 2026-10-20, v2.1: 2026-10-21, v2.2: 2026-10-26)
+**Status:** Disetujui | **Pemilik:** Maldini | **Versi:** 2.4 | **Tanggal:** 2026-11-09 (v1: 2026-10-12, v2: 2026-10-20, v2.1: 2026-10-21, v2.2: 2026-10-26, v2.3: 2026-10-26)
 
 **Perubahan v2 (2026-10-20):** Modul D — Panduan direvisi berdasarkan keputusan pemilik produk: unggah satu file per form dengan Nama Acuan, Deskripsi, dan Status; status Aktif/Nonaktif; edit tanpa ganti file; hapus permanen; daftar berupa tabel; halaman detail dengan riwayat versi; data terkini disimpan terpisah dari riwayat versi; catatan panduan pada review tidak berubah walaupun panduan diedit (D2, D4–D9, §7.3, §9).
 
@@ -9,6 +9,8 @@
 **Perubahan v2.2 (2026-10-26):** Modul C — Kategori direvisi berdasarkan keputusan pemilik produk: kategori dikelola satu per satu (tidak lagi sebagai versi seluruh daftar); daftar berupa tabel; tambah, edit, dan detail di halaman tersendiri; riwayat per kategori disebut **Kategori Histori**; hapus permanen; setiap review menyimpan salinan kategori yang dipakai dan menampilkan definisinya (C1, C3, C5–C8, input Screening 1, §7.3, §9).
 
 **Perubahan v2.3 (2026-10-26):** Modul C — kategori memakai **Status Aktif/Nonaktif** seperti panduan: kategori Nonaktif tetap tampil tetapi tidak dipakai review berikutnya; kolom Status di daftar kategori; status diatur saat Edit (kategori baru selalu Aktif); definisi keempat kategori isi awal tidak lagi menetapkan status, karena dipakai atau tidaknya kategori mana pun ditentukan lewat Status (C1, C3, C5–C8, §7.2).
+
+**Perubahan v2.4 (2026-11-09):** Modul A & verifikasi direvisi: usulan diajukan lewat halaman **Pengajuan Baru** berisi **hierarki anggaran RKA-K/L** (Program → Kegiatan → KRO → RO, dipilih dari daftar Renja), **kategori usulan**, dan unggah **TOR dan/atau RAB** (minimal satu), lalu langsung direview AI; halaman Usulan berupa histori usulan; halaman **Detail** usulan dengan **Histori Dokumen** per revisi; halaman **Pemeriksaan** dengan jumlah checklist Lolos/Tidak Lolos (AI dan verifikator), tabel checklist, serta kartu **Keputusan Akhir**; Pengusul baru melihat hasil setelah diverifikasi; edit/revisi hanya mengganti PDF; Satker dapat **menghapus** usulannya sendiri (mis. karena salah input) lalu mengajukan ulang (Glosarium, §4, §5, A1–A8, Screening 1, Override & Finalisasi, §7.3, §9).
 
 ---
 
@@ -26,9 +28,10 @@
 | --- | --- |
 | **TOR** | *Term of Reference* / Kerangka Acuan Kerja. Dokumen naratif yang menjelaskan latar belakang, tujuan, ruang lingkup, dan keluaran suatu kegiatan. Rata-rata ±50 halaman. |
 | **RAB** | Rencana Anggaran Biaya. Rincian biaya kegiatan, umumnya berbentuk tabel. Rata-rata ±10 halaman. |
-| **RO** | Rincian Output. Unit keluaran kegiatan yang diusulkan anggarannya. Satu pasang TOR + RAB = satu RO. |
+| **RO** | Rincian Output. Unit keluaran kegiatan yang diusulkan anggarannya. Satu usulan (TOR dan/atau RAB) = satu RO. |
+| **Hierarki anggaran RKA-K/L** | Jenjang Program → Kegiatan → Klasifikasi Rincian Output (KRO) → Rincian Output (RO), mengikuti Rencana Kerja (Renja) kementerian. Dipilih Pengusul saat Pengajuan Baru. |
 | **Satker** | Satuan Kerja. Unit organisasi yang mengusulkan RO. |
-| **Usulan** | Satu pasang dokumen TOR + RAB untuk satu RO, beserta seluruh riwayat revisi dan review-nya. |
+| **Usulan** | Dokumen TOR dan/atau RAB untuk satu RO, beserta hierarki anggaran, kategori usulan, serta seluruh riwayat revisi dan review-nya. |
 | **Checklist** | Daftar hal yang wajib dipenuhi/dijawab oleh TOR dan RAB. |
 | **Panduan** | Kumpulan PDF referensi (peraturan, kebijakan, standar biaya, dsb.) yang wajib dirujuk AI. Setiap panduan memiliki **Nama Acuan**, deskripsi, dan status **Aktif/Nonaktif**. |
 | **Panduan Histori** | Riwayat versi sebuah panduan: isi panduan sebelum tiap perubahan (nama, deskripsi, status), beserta tanggal dan penginputnya. |
@@ -37,6 +40,8 @@
 | **Screening 1** | Penilaian AI terhadap pemenuhan checklist → label LOLOS / TIDAK LOLOS + alasan + rekomendasi. |
 | **Screening 2** | Rekomendasi kategori (K1–K4) oleh AI untuk RO tersebut. |
 | **Override** | Tindakan reviewer mengubah hasil AI. |
+| **Verifikator** | Sebutan Reviewer (ROCAN) saat menilai ulang setiap item checklist: **Status Verifikator** (Lolos/Tidak Lolos) dan **Catatan Verifikator**. |
+| **Keputusan Akhir** | Putusan verifikator atas usulan (LOLOS/TIDAK LOLOS) beserta catatan akhir; mengunci hasil review. |
 
 ---
 
@@ -82,9 +87,9 @@ Aplikasi **WAJIB** memiliki login dan pembatasan akses per role.
 
 | Role | Tanggung jawab | Akses data |
 | --- | --- | --- |
-| **Pengusul** (penginput TOR & RAB) | Membuat usulan, mengunggah TOR & RAB, **mengajukan review** (yang langsung menjalankan review AI), memantau status, membaca **hasil review AI** (segera setelah selesai) dan **hasil final** dari reviewer, mengunggah revisi. | Hanya usulan milik Satker-nya. |
-| **Reviewer** | Memeriksa hasil review AI, melakukan **override**, memberi catatan, dan **memfinalkan** hasil review. Reviewer **tidak dapat** menjalankan review AI ulang. | Seluruh usulan (dapat difilter per Satker). |
-| **Admin** | Mengelola Checklist, Kategori, Panduan, pengguna & role, serta melihat audit log. | Seluruh data. |
+| **Pengusul** (penginput TOR & RAB) | Membuat **Pengajuan Baru** (hierarki anggaran, kategori, TOR dan/atau RAB) yang langsung menjalankan review AI, memantau status, membaca **hasil review setelah diverifikasi** reviewer, mengunggah revisi, dan **menghapus** usulannya sendiri. | Hanya usulan milik Satker-nya. |
+| **Reviewer** (verifikator/ROCAN) | Memeriksa hasil review AI, mengisi **Status & Catatan Verifikator** per item, melakukan **override**, memberi catatan, dan menetapkan **Keputusan Akhir** (memfinalkan). Reviewer **tidak dapat** menjalankan review AI ulang. | Seluruh usulan (dapat difilter per Satker). |
+| **Admin** | Mengelola Checklist, Kategori, Panduan, pengguna & role, melihat audit log, dan menghapus usulan. | Seluruh data. |
 
 Satu pengguna dapat memiliki lebih dari satu role.
 
@@ -95,35 +100,31 @@ Satker tempat Reviewer bernaung juga dapat mengusulkan TOR & RAB. Untuk itu dise
 ## 5. Alur Kerja Utama
 
 ```
-Pengusul unggah TOR + RAB
+Pengusul: Pengajuan Baru (hierarki anggaran + kategori + TOR dan/atau RAB) → "Kirim"
         │
         ▼
-[DRAF / BELUM DIREVIEW]
-        │ Pengusul klik "Ajukan Review"
-        ▼
-[DIPROSES AI] ──gagal──▶ [GAGAL] (dapat diulang)
+[ANTRE / DIPROSES AI] ──gagal──▶ [GAGAL] (ganti PDF lalu kirim ulang, atau hapus)
         │ selesai (Screening 1 + Screening 2)
         ▼
 [MENUNGGU VERIFIKASI REVIEWER]
-  (reviewer memeriksa & boleh override)
-        │ Reviewer klik "Finalkan"
+  (verifikator menilai tiap item & boleh override; Pengusul melihat "Menunggu verifikasi")
+        │ Reviewer menetapkan Keputusan Akhir
         ├─────────────────────────────┐
         ▼                             ▼
      [LOLOS]                    [TIDAK LOLOS]
                                       │
-                Pengusul unggah revisi TOR dan/atau RAB
-                                      │
-                                      ▼
-                       [DRAF] (revisi ke-n) → "Ajukan Review" lagi
+          Pengusul unggah revisi: PDF TOR dan/atau RAB saja → langsung direview AI (revisi ke-n)
+
+Salah input hierarki/kategori: Satker menghapus usulan lalu membuat Pengajuan Baru.
 ```
 
 Aturan alur:
-- Review AI **dipicu oleh Pengusul** melalui tombol **"Ajukan Review"**, dan langsung berjalan tanpa menunggu reviewer. Reviewer baru bekerja setelah hasil AI tersedia (status MENUNGGU VERIFIKASI REVIEWER).
+- Review AI **dipicu oleh Pengusul** saat mengirim Pengajuan Baru atau revisi, dan langsung berjalan tanpa menunggu reviewer. Reviewer baru bekerja setelah hasil AI tersedia (status MENUNGGU VERIFIKASI REVIEWER).
 - Selama review berjalan atau menunggu verifikasi, Pengusul tidak dapat mengubah dokumen pada revisi tersebut.
 - Status yang dilihat di tabel adalah status **revisi terbaru** dari usulan.
-- Pengusul **dapat langsung melihat hasil review AI** begitu AI selesai, tanpa menunggu finalisasi reviewer. Hasil ini ditandai jelas sebagai **"Hasil AI — belum diverifikasi reviewer"**. Setelah reviewer memfinalkan, Pengusul juga melihat **hasil final** (termasuk override dan catatan reviewer), berdampingan dengan hasil AI.
-- Override yang sedang dikerjakan reviewer (belum difinalkan) tidak ditampilkan kepada Pengusul.
-- Revisi boleh mengganti **TOR saja, RAB saja, atau keduanya**. Dokumen yang tidak diganti terbawa dari revisi sebelumnya.
+- Sebelum reviewer menetapkan Keputusan Akhir, Pengusul hanya melihat keterangan **"Menunggu verifikasi"** (jumlah dan tabel checklist masih kosong), walaupun AI sudah selesai menilai. Tujuannya agar Pengusul hanya membaca hasil yang sudah diverifikasi. Setelah final, Pengusul melihat hasil AI, penilaian verifikator, dan Keputusan Akhir beserta catatannya.
+- Penilaian verifikator yang sedang dikerjakan (belum final) tidak ditampilkan kepada Pengusul.
+- Revisi cukup mengunggah **PDF TOR saja, RAB saja, atau keduanya**. Dokumen yang tidak diganti terbawa dari revisi sebelumnya. Hierarki anggaran dan kategori tidak diubah lewat revisi; bila salah input, Satker menghapus usulan lalu mengajukan ulang.
 - **Satu revisi = satu hasil review AI.** Reviewer **tidak dapat** menjalankan review AI ulang. Tujuannya agar Pengusul dan Reviewer selalu melihat hasil review AI yang **sama**. Review AI baru hanya terjadi bila Pengusul mengajukan revisi baru.
 - Pengecualian: bila review AI **GAGAL** (tidak menghasilkan keluaran), Pengusul dapat mengulang pengajuannya. Karena belum ada hasil, tidak ada hasil berbeda yang dilihat kedua pihak.
 - Review AI berjalan **di latar belakang**. Pengguna dapat meninggalkan halaman dan melihat progres/status. Jika beberapa review diminta bersamaan, sistem mengantrekannya.
@@ -135,14 +136,18 @@ Aturan alur:
 ### Modul A — Data Usulan (TOR & RAB)
 
 **Kebutuhan:**
-- A1. Form untuk membuat usulan: **Satker**, **Tahun Anggaran**, **nama/kode RO**, **unggah PDF TOR**, **unggah PDF RAB**. Keduanya wajib PDF.
-- A2. Tabel daftar usulan, menampilkan minimal: Satker, Tahun Anggaran, RO, nama file TOR, nama file RAB, nomor revisi, **status review** (BELUM DIREVIEW / LOLOS / TIDAK LOLOS, serta status proses lain pada §5), kategori final, tanggal update.
-- A3. Tombol aksi per baris sesuai role dan status: **"Ajukan Review"** (Pengusul, saat status DRAF/BELUM DIREVIEW), **"Lihat Hasil AI"** (Pengusul, setelah AI selesai), **"Periksa Hasil"** (Reviewer, saat MENUNGGU VERIFIKASI REVIEWER).
-- A4. Untuk baris yang sudah direview, tabel dapat menampilkan **checklist mana saja yang terpenuhi dan belum terpenuhi** (mis. ringkasan "8/10 terpenuhi" yang dapat dibuka untuk rincian per item).
+- A1. Halaman **Pengajuan Baru** (halaman tersendiri, bukan pop-up), Satker otomatis dari akun Pengusul:
+  - **A. Parameter Hierarki Anggaran RKA-K/L**: dropdown bertingkat dan wajib — **Program**, **Kegiatan**, **Klasifikasi Rincian Output (KRO)**, **Rincian Output (RO)** — sesuai daftar Renja yang berlaku. Pilihan tingkat bawah mengikuti tingkat di atasnya.
+  - **B. Klasifikasi Kategori Usulan**: **Kategori** (wajib, dari kategori Aktif di menu Kategori) dan **Deskripsi** kategori yang terisi otomatis.
+  - **C. Unggah Berkas Dokumen**: PDF **TOR** dan/atau **RAB**; minimal satu dokumen. Tidak dapat dikirim tanpa dokumen.
+  - Setelah dikirim (dengan konfirmasi), usulan langsung direview AI. Tahun anggaran tercatat otomatis.
+- A2. Halaman pertama menu Usulan = **histori usulan** dengan tombol **"Pengajuan Baru"** di kanan atas, berupa tabel: **No**, **Satuan Kerja**, **Rincian Output** (kode dan nama RO), **Dokumen** (dapat diklik untuk melihat isinya), **Status** (status revisi terbaru, §5), **Tanggal Pengajuan**, dan **Aksi**.
+- A3. Aksi per baris: **Detail** (semua), **Edit** (Pengusul Satker tersebut, saat Gagal atau Tidak Lolos — hanya mengganti PDF TOR dan/atau RAB), **Hapus** (A8).
+- A4. Halaman **Detail** usulan: (A) parameter hierarki anggaran yang diisi saat pengajuan beserta kategori usulan; (B) **Histori Dokumen** berupa tabel **No | Dokumen | Tanggal Verifikasi | Status Verifikasi | Aksi**, satu baris per revisi (dokumen yang diunggah ketika diminta revisi). Aksi: Pengusul **"Detail"** (lihat saja), Reviewer **"Review"** (menilai) — keduanya membuka halaman Pemeriksaan (Override & Finalisasi).
 - A5. Filter & pencarian: Satker, Tahun Anggaran, status, kategori, RO.
 - A6. Lihat isi PDF TOR & RAB langsung di aplikasi.
-- A7. Halaman **Riwayat** per usulan: daftar semua revisi dan semua review, termasuk perbandingan pemenuhan checklist antar-revisi (item yang berubah dari tidak terpenuhi → terpenuhi, dan sebaliknya).
-- A8. Usulan yang sudah pernah direview **tidak boleh dihapus**, hanya dapat **diarsipkan**, demi menjaga riwayat usulan. Usulan arsip tetap dapat dilihat beserta seluruh riwayatnya. Usulan yang belum pernah diajukan review (DRAF) boleh dihapus oleh Pengusul.
+- A7. Halaman **Riwayat/Perbandingan** per usulan: daftar semua revisi dan semua review, termasuk perbandingan pemenuhan checklist antar-revisi yang sudah diverifikasi (item yang berubah dari tidak terpenuhi → terpenuhi, dan sebaliknya).
+- A8. **Hapus usulan** bersifat permanen (seluruh revisi dan hasil review-nya ikut terhapus; jejak penghapusan tetap di audit log). Pengusul dapat menghapus usulan Satker-nya saat Gagal atau setelah diverifikasi (Lolos/Tidak Lolos), misalnya karena salah input, lalu mengajukan ulang. Admin dapat menghapus usulan mana pun. Usulan yang sedang diproses AI tidak dapat dihapus, dan Pengusul tidak dapat menghapus usulan yang sedang menunggu verifikasi. Usulan yang tidak ingin dihapus tetapi tidak lagi aktif dapat **diarsipkan**; usulan arsip tetap dapat dilihat beserta seluruh riwayatnya.
 
 ### Modul B — Checklist
 
@@ -187,7 +192,7 @@ Aturan alur:
 
 #### Screening 1 — Pemenuhan Checklist
 
-Dijalankan saat Pengusul menekan **"Ajukan Review"**. Input: TOR, RAB, versi checklist aktif, panduan aktif, daftar kategori Aktif terbaru.
+Dijalankan saat Pengusul mengirim Pengajuan Baru atau revisi. Input: TOR dan/atau RAB, versi checklist aktif, panduan aktif, daftar kategori Aktif terbaru. Item checklist untuk dokumen yang tidak diunggah dinyatakan "tidak ditemukan di dokumen".
 
 Keluaran **WAJIB**:
 
@@ -218,21 +223,26 @@ Kebutuhan tambahan:
 
 #### Override & Finalisasi oleh Reviewer
 
-Hasil AI bersifat **rekomendasi**. Keputusan final ada pada Reviewer. Reviewer dapat meng-override:
-1. **Status per item checklist** (terpenuhi ↔ tidak terpenuhi)
-2. **Label akhir** (LOLOS ↔ TIDAK LOLOS)
+Hasil AI bersifat **rekomendasi**. Keputusan final ada pada Reviewer. Pemeriksaan dilakukan di halaman **Pemeriksaan**:
+- Dua label informasi: jumlah checklist **Lolos** dan jumlah checklist **Tidak Lolos**, masing-masing dari AI dan dari verifikator. Bagi Pengusul sebelum final, label hanya bertuliskan "Menunggu verifikasi" dan tabel checklist kosong.
+- Tabel checklist: **No | Kode Checklist | Checklist | Kriteria Lolos | Status AI | Catatan AI | Rekomendasi AI | Status Verifikator | Catatan Verifikator**. Pengusul hanya melihat; Reviewer mengisi Status dan Catatan Verifikator.
+- Kartu **Keputusan Akhir** (Reviewer): pilihan **LOLOS** / **TIDAK LOLOS** dan kolom **catatan akhir**.
+
+Reviewer dapat meng-override:
+1. **Status per item checklist** (Status Verifikator: Lolos / Tidak Lolos; boleh sama dengan AI sebagai konfirmasi)
+2. **Label akhir** (Keputusan Akhir LOLOS ↔ TIDAK LOLOS)
 3. **Kategori** (K1 / K2 / K3 / K4)
 
 Reviewer juga dapat menambah atau mengubah **catatan/rekomendasi untuk Pengusul**.
 
 Aturan:
-- O1. Setiap override **WAJIB** disertai alasan.
+- O1. Override label dan kategori **WAJIB** disertai alasan. Catatan Verifikator per item bersifat opsional.
 - O2. Hasil asli AI **tetap tersimpan dan dapat dilihat**. Override disimpan terpisah, tidak menimpa hasil AI.
 - O3. Tampilan membedakan dengan jelas nilai AI dan nilai yang diubah reviewer.
 - O4. Tercatat siapa yang meng-override, kapan, nilai sebelum, dan nilai sesudah.
 - O5. Override dapat dibatalkan (kembali ke nilai AI) selama review belum difinalkan.
 - O6. Jika item checklist di-override, label akhir **dihitung ulang otomatis** sesuai §7.1. Reviewer tetap boleh meng-override label akhir secara langsung. Bila label tidak konsisten dengan status checklist, sistem menampilkan peringatan dan alasan override wajib diisi.
-- O7. Tombol **"Finalkan"** mengunci hasil review. Setelah final, hasil tidak dapat diubah. Perubahan hanya melalui revisi baru dari Pengusul.
+- O7. Menetapkan **Keputusan Akhir** (dengan konfirmasi) memfinalkan dan mengunci hasil review; keputusan verifikator menjadi label final. Setelah final, hasil tidak dapat diubah. Perubahan hanya melalui revisi baru dari Pengusul.
 - O8. **Nilai final** = nilai override bila ada, selain itu nilai AI. Nilai final inilah yang dipakai untuk status usulan, kategori di tabel, dan tampilan bagi Pengusul.
 
 ---
@@ -251,7 +261,7 @@ Aturan:
 
 ### 7.3 Ketertelusuran (Audit)
 - Setiap review menyimpan: revisi dokumen yang direview, versi checklist, daftar panduan + versinya (kecuali panduan yang kemudian dihapus permanen, D6), salinan daftar kategori yang dipakai (C3), hasil AI, override, siapa yang menjalankan/memfinalkan, dan waktu.
-- Perubahan pada Checklist, Kategori, Panduan, pengguna, dan override tercatat di audit log (siapa, kapan, apa).
+- Perubahan pada Checklist, Kategori, Panduan, pengguna, override, dan penghapusan usulan tercatat di audit log (siapa, kapan, apa). Usulan yang dihapus (A8) beserta hasil review-nya tidak lagi tersimpan; yang tersisa hanya jejak di audit log.
 
 ---
 
@@ -313,10 +323,13 @@ Ketentuan:
 | --- | --- | --- |
 | Login | Semua | — |
 | Dashboard | Semua | Ringkasan jumlah usulan per status/kategori/Satker |
-| Daftar Usulan | Semua (Pengusul: Satker sendiri) | Tabel Modul A + filter |
-| Buat Usulan / Unggah Revisi | Pengusul | Form A1 / unggah revisi, tombol "Ajukan Review" |
-| Detail Review | Reviewer, Pengusul (hasil AI segera; hasil final setelah difinalkan) | Hasil Screening 1 & 2, rincian checklist, rekomendasi, override, finalisasi, viewer PDF, acuan yang dipakai (panduan dan kategori beserta definisinya, C3) |
-| Riwayat Usulan | Semua | Timeline revisi & review, perbandingan |
+| Usulan (histori) | Semua (Pengusul: Satker sendiri) | Tabel A2 + tombol Pengajuan Baru + filter |
+| Pengajuan Baru | Pengusul | Form A1 (hierarki anggaran, kategori, TOR dan/atau RAB) |
+| Edit / Unggah Revisi | Pengusul | Unggah PDF TOR dan/atau RAB pengganti |
+| Detail Usulan | Semua (Pengusul: Satker sendiri) | Parameter hierarki anggaran + Histori Dokumen (A4) |
+| Pemeriksaan | Reviewer (menilai), Pengusul (lihat setelah final) | Label Lolos/Tidak Lolos (AI & verifikator), tabel checklist, Keputusan Akhir |
+| Bukti & Rujukan | Reviewer, Pengusul (setelah final) | Rincian Screening 1 & 2, rujukan yang dapat diklik ke PDF, override, acuan yang dipakai (panduan dan kategori beserta definisinya, C3) |
+| Riwayat / Perbandingan Usulan | Semua | Timeline revisi & review, perbandingan |
 | Kelola Checklist | Admin | CRUD + daftar versi |
 | Kelola Kategori | Admin | Tabel daftar kategori (C7), detail & Kategori Histori (C5), konfirmasi hapus (C8) |
 | Tambah / Edit Kategori | Admin | Form C7 + konfirmasi periksa kembali |

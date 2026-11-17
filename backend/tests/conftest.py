@@ -103,6 +103,14 @@ RAB_CONTOH = [["Komponen", "Volume", "Satuan", "Harga Satuan"],
               ["Paket rapat", "20", "OK", "450.000"]]
 
 
+def isian(c, kode_kategori: str = "K1") -> dict:
+    """Pilihan form Pengajuan yang sah: hierarki dari app/data_rka.py (Renja 2026) + kategori Aktif + tahun berjalan (WIB)."""
+    from app.api.usulan import tahun_berjalan
+    k = next(k for k in c.get("/api/usulan/opsi/pengajuan").json()["kategori"] if k["kode"] == kode_kategori)
+    return {"program": "059.WA", "kegiatan": "4490", "kro": "EBA", "ro": "994", "kategori_id": k["id"],
+            "tahun_anggaran": tahun_berjalan()}
+
+
 def unggah(c, path="/api/usulan", tor=None, rab=None, **form):
     """Kirim form multipart usulan/revisi."""
     files = {}

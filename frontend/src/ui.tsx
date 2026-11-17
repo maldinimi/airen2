@@ -1,10 +1,10 @@
 /** Komponen UI bersama (gaya shadcn/ui di atas Radix + Tailwind). */
 import * as D from "@radix-ui/react-dialog";
 import * as Pop from "@radix-ui/react-popover";
-import { AlertTriangle, ArrowDown, ArrowUp, ArrowUpDown, Check, CircleCheck, Loader2, X } from "lucide-react";
+import { AlertTriangle, ArrowDown, ArrowUp, ArrowUpDown, Check, ChevronLeft, ChevronRight, CircleCheck, Loader2, X } from "lucide-react";
 import { type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode, type SelectHTMLAttributes,
   type TextareaHTMLAttributes, forwardRef } from "react";
-import type { KategoriRingkas, StatusRevisi } from "./types";
+import type { StatusRevisi } from "./types";
 
 export const cx = (...k: (string | false | null | undefined)[]) => k.filter(Boolean).join(" ");
 
@@ -35,15 +35,21 @@ export const Pilih = forwardRef<HTMLSelectElement, SelectHTMLAttributes<HTMLSele
 export const AreaTeks = forwardRef<HTMLTextAreaElement, TextareaHTMLAttributes<HTMLTextAreaElement>>(({ className, ...p }, ref) =>
   <textarea ref={ref} {...p} className={cx(gayaInput, "py-2 min-h-24", className)} />);
 
-export function Kolom({ label, wajib, petunjuk, children }: { label: string; wajib?: boolean; petunjuk?: string; children: ReactNode }) {
+export function Kolom({ label, wajib, petunjuk, galat, children }: { label: string; wajib?: boolean; petunjuk?: string; galat?: string | null; children: ReactNode }) {
   return (
     <label className="block space-y-1.5">
       <span className="text-sm font-medium text-slate-700">{label}{wajib && <span className="text-red-600"> *</span>}</span>
       {children}
       {petunjuk && <span className="block text-xs text-slate-500">{petunjuk}</span>}
+      {galat && <span className="block text-xs font-medium text-red-600" role="alert">{galat}</span>}
     </label>
   );
 }
+
+/** Kelas isian yang belum diisi/salah: seluruh kotak merah (latar & bingkai), dipakai bersama `Kolom galat`.
+ *  `!` (important) agar menang atas latar bawaan `bg-white`/`disabled:bg-slate-100` di `gayaInput`. */
+export const kelasGalat = (salah: boolean) =>
+  (salah ? "border-red-500! bg-red-100! text-red-900 ring-2 ring-red-200 disabled:bg-red-100!" : undefined);
 
 export const Kartu = ({ className, children }: { className?: string; children: ReactNode }) =>
   <div className={cx("rounded-xl border border-slate-200 bg-white shadow-sm", className)}>{children}</div>;
@@ -86,20 +92,6 @@ export function LencanaStatus({ status }: { status: StatusRevisi }) {
   );
 }
 
-export function LencanaLabel({ label }: { label: string }) {
-  const lolos = label === "LOLOS";
-  return <Lencana className={lolos ? WARNA_STATUS.LOLOS : WARNA_STATUS.TIDAK_LOLOS}>{lolos ? "LOLOS" : "TIDAK LOLOS"}</Lencana>;
-}
-
-export function LencanaKategori({ k }: { k: KategoriRingkas | null | undefined }) {
-  if (!k) return <span className="text-slate-400">—</span>;
-  return (
-    <span className="inline-flex flex-wrap items-center gap-1">
-      <Lencana className="bg-utama-50 text-utama-700 ring-utama-100" title={k.nama}>{k.kode}</Lencana>
-    </span>
-  );
-}
-
 /** Urutan kolom Status (Panduan, Kategori): Default = urutan dari server; Aktif/Nonaktif = status itu di atas. */
 export type UrutStatus = "" | "aktif" | "tidak";
 const OPSI_URUT_STATUS: Record<UrutStatus, string> = { "": "Default", aktif: "Aktif", tidak: "Nonaktif" };
@@ -131,10 +123,6 @@ export function KepalaStatus({ urut, ubah, className }: { urut: UrutStatus; ubah
     </th>
   );
 }
-
-export const TandaAI = () => <Lencana className="bg-slate-100 text-slate-600 ring-slate-200">AI</Lencana>;
-export const TandaUbah = ({ title }: { title?: string }) =>
-  <Lencana className="bg-ubah-100 text-ubah-700 ring-ubah-600/30" title={title}>Diubah reviewer</Lencana>;
 
 export const Memuat = ({ teks = "Memuat…" }: { teks?: string }) =>
   <div className="flex items-center justify-center gap-2 py-16 text-sm text-slate-500"><Loader2 className="size-5 animate-spin" />{teks}</div>;
@@ -212,30 +200,37 @@ export function Konfirmasi({ buka, baris, batal, ya, memuat, galat, bahaya, judu
   );
 }
 
-export function Tab<T extends string>({ pilihan, aktif, ubah }: { pilihan: { nilai: T; label: ReactNode }[]; aktif: T; ubah: (t: T) => void }) {
-  return (
-    <div role="tablist" className="flex gap-1 overflow-x-auto overflow-y-hidden border-b border-slate-200 [scrollbar-width:thin]">
-      {pilihan.map((p) => (
-        <button key={p.nilai} role="tab" aria-selected={aktif === p.nilai} onClick={() => ubah(p.nilai)}
-          className={cx("-mb-px whitespace-nowrap border-b-2 px-3 py-2 text-sm font-medium",
-            aktif === p.nilai ? "border-utama-600 text-utama-700" : "border-transparent text-slate-500 hover:text-slate-800")}>
-          {p.label}
-        </button>
-      ))}
-    </div>
-  );
-}
-
-export function Halaman({ total, halaman, per, ubah }: { total: number; halaman: number; per: number; ubah: (h: number) => void }) {
+/** Nomor halaman (‹ 1 2 3 ›) di kiri dan pilihan jumlah baris di kanan (bila `ubahPer` diisi); selalu tampil walau satu halaman. */
+export function Halaman({ total, halaman, per, ubah, ubahPer }:
+  { total: number; halaman: number; per: number; ubah: (h: number) => void; ubahPer?: (n: number) => void }) {
   const maks = Math.max(1, Math.ceil(total / per));
-  if (maks <= 1) return null;
+  // Banyak halaman: tampilkan awal, akhir, dan sekitar halaman aktif; celah ditandai "…".
+  const nomor = Array.from({ length: maks }, (_, i) => i + 1).filter((n) => maks <= 7 || n === 1 || n === maks || Math.abs(n - halaman) <= 1);
+  const kotak = "inline-flex size-8 items-center justify-center rounded-md text-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-utama-100";
   return (
-    <div className="mt-4 flex items-center justify-between text-sm text-slate-600">
-      <span>{total} data · halaman {halaman} dari {maks}</span>
-      <div className="flex gap-2">
-        <Tombol varian="sekunder" kecil disabled={halaman <= 1} onClick={() => ubah(halaman - 1)}>Sebelumnya</Tombol>
-        <Tombol varian="sekunder" kecil disabled={halaman >= maks} onClick={() => ubah(halaman + 1)}>Berikutnya</Tombol>
-      </div>
+    <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-sm text-slate-600">
+      <nav aria-label="Halaman" className="flex items-center gap-1">
+        <button type="button" className={cx(kotak, "text-slate-500 hover:bg-slate-100 disabled:opacity-40")} disabled={halaman <= 1}
+          onClick={() => ubah(halaman - 1)} aria-label="Halaman sebelumnya"><ChevronLeft className="size-4" /></button>
+        {nomor.map((n, i) => (
+          <span key={n} className="flex items-center gap-1">
+            {i > 0 && n - nomor[i - 1] > 1 && <span className="px-1 text-slate-400">…</span>}
+            <button type="button" aria-current={n === halaman ? "page" : undefined} onClick={() => ubah(n)}
+              className={cx(kotak, n === halaman ? "bg-utama-600 font-semibold text-white" : "text-slate-700 hover:bg-slate-100")}>{n}</button>
+          </span>
+        ))}
+        <button type="button" className={cx(kotak, "text-slate-500 hover:bg-slate-100 disabled:opacity-40")} disabled={halaman >= maks}
+          onClick={() => ubah(halaman + 1)} aria-label="Halaman berikutnya"><ChevronRight className="size-4" /></button>
+      </nav>
+      {ubahPer && (
+        <label className="flex items-center gap-2">
+          <span>Baris per halaman</span>
+          <select className="h-8 rounded-md border border-slate-300 bg-white px-2 text-sm focus:outline-none focus:ring-2 focus:ring-utama-100"
+            value={per} onChange={(e) => ubahPer(Number(e.target.value))}>
+            {[10, 20, 50, 100].map((n) => <option key={n} value={n}>{n}</option>)}
+          </select>
+        </label>
+      )}
     </div>
   );
 }
@@ -252,6 +247,24 @@ export function Progres({ persen, tahap }: { persen: number; tahap: string }) {
 }
 
 /** Saklar on/off (role=switch) dengan label status di sampingnya; lebar label tetap agar tata letak tidak bergeser. */
+/** Pop-up konfirmasi menu Usulan: cukup "Apakah Anda Yakin?" dengan tombol Tidak/Ya, tanpa ringkasan (desain.md §7 no. 31). */
+export function KonfirmasiYakin({ buka, batal, ya, memuat, galat, bahaya }:
+  { buka: boolean; batal: () => void; ya: () => void; memuat?: boolean; galat?: string | null; bahaya?: boolean }) {
+  return (
+    <Dialog buka={buka} ubahBuka={(b) => !b && !memuat && batal()} judul="Apakah Anda Yakin?" lebar="max-w-sm"
+      ikon={<span className={cx("flex size-12 items-center justify-center rounded-full", bahaya ? "bg-red-100" : "bg-amber-100")}>
+        <AlertTriangle className={cx("size-6", bahaya ? "text-red-600" : "text-amber-600")} aria-hidden /></span>}>
+      <div className="space-y-4">
+        {galat && <Peringatan>{galat}</Peringatan>}
+        <div className="flex justify-center gap-2">
+          <Tombol varian="sekunder" disabled={memuat} onClick={batal} className="min-w-24">Tidak</Tombol>
+          <Tombol varian={bahaya ? "bahaya" : "utama"} memuat={memuat} onClick={ya} className="min-w-24">Ya</Tombol>
+        </div>
+      </div>
+    </Dialog>
+  );
+}
+
 export function Saklar({ aktif, label, ubah }: { aktif: boolean; label: string; ubah: (aktif: boolean) => void }) {
   const isi = <>
     <span className={cx("relative inline-flex h-5 w-9 shrink-0 rounded-full transition-colors", aktif ? "bg-emerald-500" : "bg-slate-300")}>

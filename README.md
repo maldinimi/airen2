@@ -4,7 +4,8 @@ Aplikasi web untuk mereview dokumen TOR & RAB usulan anggaran dengan AI lokal:
 
 - **Screening 1**: menilai pemenuhan setiap item checklist, dengan bukti (halaman, lokasi, kutipan) dari TOR/RAB dan Panduan. Label LOLOS/TIDAK LOLOS **dihitung oleh kode**.
 - **Screening 2**: merekomendasikan kategori K1–K4 berdasarkan definisi kategori Aktif terbaru saat review dimulai.
-- **Reviewer** memverifikasi, meng-override (dengan alasan), lalu memfinalkan. Pengusul mengunggah revisi hingga LOLOS.
+- **Usulan**: Pengusul membuat **Pengajuan Baru** — hierarki anggaran RKA-K/L (Program → Kegiatan → KRO → RO, dari Renja 2026), kategori usulan (deskripsi otomatis), dan PDF **TOR dan/atau RAB** (minimal satu) — yang langsung direview AI. Halaman Usulan berisi histori usulan; halaman Detail berisi parameter hierarki dan **Histori Dokumen** per revisi. Edit/revisi cukup mengunggah PDF pengganti; bila salah input, Satker **menghapus** usulan (saat Gagal atau setelah diverifikasi) lalu mengajukan ulang.
+- **Reviewer (verifikator)** menilai tiap item di halaman **Pemeriksaan** (saklar Status Verifikator Lolos/Ditolak dan Catatan Verifikator yang dapat diisi kapan saja, di samping Status, Catatan — dengan bukti & rujukan yang dapat diklik ke PDF — dan Rekomendasi AI), lalu menetapkan **Keputusan Akhir** LOLOS/TIDAK LOLOS dengan catatan akhir (dapat disimpan sebagai draf). Pengusul melihat hasil AI segera, dan penilaian verifikator setelah final. Reviewer juga dapat mengedit hierarki/kategori dan menghapus usulan.
 - **Panduan** (PDF acuan AI): Admin mengunggah satu PDF per form dengan Nama Acuan (maks. 500 karakter), Deskripsi, dan Status Aktif/Nonaktif; PDF dapat **dipratinjau** sebelum diunggah dan tombol **Reset** mengosongkan form. Hanya panduan **Aktif** yang sudah **Siap** dipakai review. Setiap edit (nama, deskripsi, status) tercatat di **Panduan Histori**. **Hapus bersifat permanen** setelah konfirmasi: panduan, histori, file PDF beserta hasil pemrosesannya, dan rujukannya di hasil review lama ikut terhapus dari database (PDF yang sama yang masih dipakai panduan lain atau TOR/RAB tetap disimpan; jejaknya tetap ada di audit log). Untuk sekadar berhenti memakai panduan, ubah statusnya menjadi Nonaktif.
 - **Kategori** (acuan Screening 2): Admin mengelola kategori satu per satu dalam tabel Kode, Kategori, Status, Deskripsi. **Tambah** dan **Edit** di halaman form (Kode unik maks. 20 karakter, Kategori maks. 255 karakter, Deskripsi; Edit juga mengatur Status Aktif/Nonaktif) dengan pop-up periksa kembali. Isi sebelum tiap edit tercatat di **Kategori Histori** (halaman Detail). **Hapus bersifat permanen** beserta historinya; minimal satu kategori Aktif harus ada. Hanya kategori Aktif yang dipakai review berikutnya. Setiap review menyimpan salinan kategori yang dipakai, sehingga hasil review lama tidak berubah dan definisinya dapat dilihat di hasil review ("Lihat kategori yang dipakai").
 
@@ -50,6 +51,13 @@ Catatan untuk pembaruan menu Panduan & Kategori (Oktober 2026):
 - Database yang dibuat **sejak 22 Oktober 2026** (kategori masih berupa versi daftar) dinaikkan **otomatis** saat `make up` oleh revisi `0002_kategori_per_kategori`: kategori dari versi aktif terakhir (semuanya Aktif), salinan kategori tiap review, dan id yang sama sehingga hasil review lama tetap cocok. Riwayat versi daftar lama tidak dipindah ke Kategori Histori.
 - Nama tabel & kolom berubah: panduan (`panduan_versi` → `panduan_histori`, `judul` → `panduan`, dll.; [desain.md](desain.md) §7 no. 17–19) dan kategori (`kategori_versi`/`kategori_item` → `kategori` + `kategori_histori` + `review_kategori`, `nama` → `kategori`, `definisi` → `deskripsi`; §7 no. 23–25). Query atau laporan SQL buatan sendiri yang memakai nama lama perlu disesuaikan.
 - API panduan tidak berubah. API kategori berubah: `GET /api/kategori` mengembalikan daftar kategori terbaru, endpoint versi kategori diganti tambah/ubah/hapus per kategori dan `/api/kategori/{id}/riwayat` (lihat [docs/api.md](docs/api.md)).
+
+Catatan untuk pembaruan Menu Usulan (November 2026, [desain.md](desain.md) §7 no. 29):
+
+- Revisi `0013_usulan_created_updated_date` membuat ulang tabel `usulan` dengan kolom jejak `created_by`, `created_date`, `updated_by`, `updated_date` setelah `id`, menggantikan `created_at`/`updated_at` (data, indeks, dan relasi tetap); otomatis saat `make up`. Query SQL buatan sendiri yang memakai `usulan.created_at`/`updated_at` perlu disesuaikan.
+- Revisi `0012_usulan_hierarki_kategori` berjalan otomatis saat `make up`: menambah `usulan.hierarki` dan `usulan.kategori_usulan`, serta membuat `revisi.tor_*`/`rab_*` boleh kosong. Usulan lama tetap ada, tetapi hierarki dan kategorinya tampil "—".
+- Daftar Program/Kegiatan/KRO/RO ada di `backend/app/data_rka.py`, disalin dari `Revisi_laporan_renja_2026.xlsx` (file Excel-nya tidak disimpan di repo). Bila Renja diperbarui, file tersebut perlu dibuat ulang.
+- API berubah: `POST /api/usulan` kini menerima `program, kegiatan, kro, ro, kategori_id` (bukan `tahun_anggaran, kode_ro, nama_ro`) dan TOR/RAB opsional; `PUT /api/usulan/{id}/draf` hanya mengganti PDF; `DELETE /api/usulan/{id}` untuk Admin dan Pengusul Satker itu; `POST /api/review/{id}/finalkan` menerima `{label, catatan}`. Lihat [docs/api.md](docs/api.md).
 
 ### Mengakses database (dev & tiruan)
 
@@ -109,7 +117,7 @@ Jalankan `make test`. Cakupannya:
 - fingerprint/konsistensi hasil;
 - versioning checklist/kategori/panduan, status Aktif/Nonaktif panduan dan kategori, hapus panduan permanen, serta CRUD, riwayat, dan hapus permanen kategori tanpa mengubah review lama;
 - hak akses role + Satker, CSRF, dan validasi unggahan;
-- alur ujung ke ujung (buat → ajukan → AI → override → finalkan → revisi → riwayat);
+- alur ujung ke ujung (pengajuan → AI → verifikasi/override → keputusan akhir → revisi → riwayat), pengajuan dengan TOR atau RAB saja, Pengusul tidak melihat hasil sebelum final, serta hapus usulan oleh Satker/Admin;
 - **tidak ada koneksi keluar** selama review.
 
 `make cek-offline` memeriksa jaringan kontainer yang sedang berjalan. Build frontend juga gagal bila ada aset dari domain luar.

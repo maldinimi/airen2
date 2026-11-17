@@ -17,19 +17,18 @@ Masuk dengan username dan password dari Admin. Menu yang tampil menyesuaikan rol
 
 Anda hanya melihat usulan milik Satker Anda.
 
-1. **Buat usulan**: buka menu **Usulan › Buat Usulan**. Isi Tahun Anggaran, Kode RO, dan Nama RO, lalu unggah PDF TOR dan RAB (maks. 100 MB per file).
-   - **Simpan Draf**: menyimpan tanpa mereview. Draf masih dapat diubah atau dihapus.
-   - **Simpan & Ajukan Review**: langsung menjalankan review AI.
-2. **Pantau progres**: kolom Status menampilkan posisi antrean atau tahap proses (mis. "Menilai item 3/15"). Anda boleh menutup halaman; proses tetap berjalan. "Menunggu kapasitas AI" berarti server AI belum menyala, dan review tetap aman di antrean.
-3. **Lihat Hasil AI**: tersedia begitu AI selesai, ditandai **"Hasil AI — belum diverifikasi reviewer"**.
-   - **Label** (LOLOS/TIDAK LOLOS) dan **kategori** rekomendasi.
-   - **Checklist**: status setiap item beserta alasan, apa yang kurang, dan **bukti**. Klik bukti untuk membuka PDF di halaman tersebut dengan bagian yang disorot.
-   - **Rekomendasi TOR/RAB**: langkah perbaikan beserta dasar panduan.
-4. **Hasil final**: setelah reviewer memfinalkan, Anda melihat nilai final (termasuk perubahan reviewer, bertanda ungu "Diubah reviewer") berdampingan dengan nilai AI, serta tab **Catatan Reviewer**.
-5. **Unggah revisi** (bila TIDAK LOLOS): klik **Unggah Revisi**. Ganti TOR saja, RAB saja, atau keduanya; dokumen yang tidak diganti terbawa otomatis. Lalu ajukan review lagi.
-6. **Gagal**: bila review AI gagal, pesan menampilkan ID pelacakan (laporkan ke Admin). Anda dapat mengganti file lalu klik **Ajukan Ulang**.
-7. **Riwayat**: menampilkan semua revisi, siapa memfinalkan, dan tabel perbandingan checklist. Sel hijau berarti item berubah menjadi terpenuhi; sel merah berarti sebaliknya.
-8. **Arsip**: usulan yang pernah direview tidak dapat dihapus, tetapi dapat diarsipkan dari halaman Riwayat. Usulan arsip tetap dapat dilihat dengan mencentang "Tampilkan arsip".
+1. **Usulan**: halaman pertama menampilkan histori usulan (No, Satuan Kerja, Rincian Output, Dokumen, Status, Tanggal Pengajuan, Aksi). Klik nama dokumen untuk membuka PDF-nya. **Form Filter Pencarian Usulan** di atas tabel (klik judulnya untuk membuka): isi Satuan Kerja, Rincian Output, Dokumen, Status (Lolos, Menunggu Reviewer, Tidak Lolos), dan/atau Tanggal Pengajuan (dd/mm/yyyy, atau pilih dari ikon kalender), lalu klik **Terapkan**; **Reset** mengosongkan semua. Klik judul kolom untuk mengurutkan naik/turun. Pilihan **Tahun** di bilah atas menyaring daftar ini. Aksi untuk Pengusul: **Detail** (ikon mata); saat Gagal juga **Edit**.
+2. **Pengajuan Baru** (kanan atas) membuka halaman form. Usulan dicatat pada **Tahun Anggaran** yang sedang dipilih di bilah atas (tertulis di bawah judul form):
+   - **A. Parameter Hierarki Anggaran RKA-K/L**: pilih Program, lalu Kegiatan, KRO, dan RO (semuanya wajib; pilihan berikutnya muncul setelah tingkat di atasnya dipilih).
+   - **B. Klasifikasi Kategori Usulan**: pilih Kategori; Deskripsi terisi otomatis.
+   - **C. Unggah Berkas Dokumen**: PDF TOR **dan** RAB (keduanya wajib, maks. 100 MB per file).
+   - Klik **Kirim Pengajuan**. Isian wajib yang belum diisi ditandai merah. Bila lengkap, muncul "Apakah Anda Yakin?" → **Ya**; usulan langsung masuk antrean review AI.
+3. **Pantau progres**: kolom Status menampilkan posisi antrean atau tahap proses. Anda boleh menutup halaman; proses tetap berjalan.
+4. **Detail** (ikon mata): parameter hierarki dan **Histori Dokumen** (satu baris per revisi, urut dari revisi 1, dengan Tanggal Pengajuan dan Tanggal Verifikasi). Klik ikon mata pada baris revisi untuk melihat hasil pemeriksaan; bila revisi terbaru Tidak Lolos, tombolnya bertuliskan **Revisi**.
+5. **Hasil pemeriksaan**: hasil AI dapat dilihat begitu AI selesai — label AI, tabel checklist dengan catatan AI (alasan AI beserta bukti & rujukan; klik untuk membuka PDF di halaman yang dirujuk), Rujukan Checklist (nama acuan), dan rekomendasi AI. Status & catatan verifikator serta **Keputusan Akhir** muncul setelah reviewer memfinalkan.
+6. **Unggah Revisi** (bila Tidak Lolos): di Detail, klik **Revisi** pada revisi terbaru, lalu klik **Unggah Revisi** di paling bawah halaman pemeriksaan. Unggah PDF TOR, RAB, atau keduanya; dokumen yang tidak diganti terbawa otomatis. **Edit** (ikon pensil) hanya tersedia saat Gagal untuk mengganti dokumen lalu mengirim ulang.
+7. **Gagal**: bila review AI gagal, pesan menampilkan ID pelacakan (laporkan ke Admin).
+8. **Hapus** usulan dilakukan oleh Reviewer. Bila hierarki anggaran atau kategori salah input, hubungi Reviewer untuk membetulkannya (Edit) atau menghapus usulan.
 
 Satu revisi hanya direview AI **sekali**, agar Anda dan reviewer selalu melihat hasil yang sama. Bila dokumen dan acuan identik dengan revisi sebelumnya, hasilnya disalin persis.
 
@@ -37,15 +36,12 @@ Satu revisi hanya direview AI **sekali**, agar Anda dan reviewer selalu melihat 
 
 Anda melihat seluruh usulan dan dapat memfilternya per Satker, tahun, status, kategori, atau RO.
 
-1. Dari Dashboard (**Perlu tindakan saya**) atau Daftar Usulan, klik **Periksa Hasil** pada usulan berstatus Menunggu verifikasi.
-2. Periksa setiap item checklist dan klik bukti untuk mencocokkannya dengan PDF di panel kanan. Di ponsel atau tablet, PDF tampil di tab **Dokumen**.
-3. **Override**: klik **Override** pada item, label, atau kategori, pilih nilai baru, dan **isi alasan (wajib)**.
-   - Override item membuat label dihitung ulang otomatis.
-   - Bila Anda mengubah label sehingga tidak konsisten dengan checklist, muncul peringatan; jelaskan alasannya.
-   - Override dapat **dibatalkan** selama belum final. Riwayatnya tetap tersimpan di tab Riwayat Override.
-   - Hasil asli AI tidak pernah diubah dan selalu terlihat (dicoret di sebelah nilai baru).
-4. **Catatan Reviewer**: tambahkan catatan umum, catatan TOR, atau catatan RAB untuk Pengusul. Catatan baru terlihat oleh Pengusul setelah final.
-5. **Finalkan**: periksa ringkasan, lalu konfirmasi. Hasil terkunci; perubahan hanya dapat dilakukan melalui revisi baru dari Pengusul.
+1. Di halaman Usulan, aksi Reviewer: **Detail** (ikon mata), **Edit** (betulkan hierarki anggaran & kategori, dan bila perlu unggah TOR/RAB pengganti — dokumen diganti pada revisi yang sama, lalu langsung direview AI ulang), dan **Hapus**. Buka usulan berstatus Menunggu verifikasi, lalu klik **Review** pada revisi terbaru di **Histori Dokumen**.
+2. Halaman Pemeriksaan menampilkan label **AI**, **Verifikator** (Lolos/Ditolak), dan **Jumlah Checklist** (lolos/total) yang langsung berubah saat Anda memeriksa. Status Verifikator setiap item sudah terisi mengikuti AI; ubah dengan saklar **Lolos**/**Ditolak** (keterangan "*Diubah dari AI" muncul bila berbeda). Tulis **Catatan Verifikator** langsung di kotaknya. Penilaian belum tersimpan sampai Anda klik **Simpan Sebagai Draf** atau **Finalkan Keputusan** — bila halaman dimuat ulang sebelum itu, penilaian kembali ke draf terakhir.
+3. **Kategori** (di atas Keputusan Akhir): bandingkan Kategori Usulan (pilihan Pengusul) dengan rekomendasi AI beserta catatan dan rujukannya. Kolom **Verifikator** sudah terisi mengikuti AI; ubah bila perlu dan tulis Catatan Verifikator. Tersimpan bersama Simpan Sebagai Draf/Finalkan.
+4. **Keputusan Akhir**: pilih **LOLOS** atau **TIDAK LOLOS** dan isi catatan akhir. **Simpan Sebagai Draf** menyimpan seluruh penilaian tanpa mengunci. **Finalkan Keputusan** → "Apakah Anda Yakin?" → **Ya** menyimpan dan mengunci hasil, lalu menampilkannya ke Pengusul.
+5. Bukti & rujukan setiap item ada di kolom **Catatan AI**: klik untuk membuka PDF di halaman yang dirujuk dengan bagian yang disorot.
+6. Catatan verifikator dan catatan akhir terlihat oleh Pengusul setelah final. Hasil asli AI tidak pernah diubah dan tetap ditampilkan di samping penilaian verifikator. Setelah final, perubahan hanya melalui revisi baru dari Pengusul.
 
 Reviewer tidak dapat menjalankan ulang review AI.
 

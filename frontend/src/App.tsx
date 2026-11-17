@@ -13,8 +13,8 @@ import Login from "./pages/Login";
 import PanduanPage, { PanduanDetail } from "./pages/Panduan";
 import PanduanForm from "./pages/PanduanForm";
 import Pdf from "./pages/Pdf";
-import ReviewDetail from "./pages/ReviewDetail";
-import Riwayat from "./pages/Riwayat";
+import Pemeriksaan from "./pages/Pemeriksaan";
+import UsulanDetail from "./pages/UsulanDetail";
 import UsulanForm from "./pages/UsulanForm";
 import UsulanList from "./pages/UsulanList";
 import type { Role } from "./types";
@@ -37,10 +37,10 @@ export default function App() {
           <Route index element={<Dashboard />} />
           <Route path="usulan" element={<UsulanList />} />
           <Route path="usulan/baru" element={<Wajib role={["PENGUSUL"]}><UsulanForm mode="baru" /></Wajib>} />
-          <Route path="usulan/:id/draf" element={<Wajib role={["PENGUSUL"]}><UsulanForm mode="draf" /></Wajib>} />
-          <Route path="usulan/:id/revisi" element={<Wajib role={["PENGUSUL"]}><UsulanForm mode="revisi" /></Wajib>} />
-          <Route path="usulan/:id/riwayat" element={<Riwayat />} />
-          <Route path="review/:id" element={<ReviewDetail />} />
+          <Route path="usulan/:id" element={<UsulanDetail />} />
+          <Route path="usulan/:id/ubah" element={<Wajib role={["PENGUSUL"]}><UsulanForm mode="ubah" /></Wajib>} />
+          <Route path="usulan/:id/parameter" element={<Wajib role={["REVIEWER"]}><UsulanForm mode="parameter" /></Wajib>} />
+          <Route path="review/:id" element={<Pemeriksaan />} />
           <Route path="pdf/:fileId" element={<Pdf />} />
           <Route path="panduan" element={<PanduanPage />} />
           <Route path="panduan/:id" element={<PanduanDetail />} />

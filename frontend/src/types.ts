@@ -11,21 +11,22 @@ export type Proses = {
   error_pesan: string | null; posisi_antrean?: number | null; menunggu_kapasitas?: boolean;
 };
 
-export type RingkasChecklist = {
-  terpenuhi: number; total: number; label: string; final: boolean;
-  item: { kode: string; judul: string; terpenuhi: boolean }[];
-};
+type KodeNama = { kode: string; nama: string };
+/** Salinan hierarki anggaran RKA-K/L yang dipilih saat pengajuan (null = usulan lama). */
+export type Hierarki = { program: KodeNama; kegiatan: KodeNama; kro: KodeNama; ro: KodeNama };
 
 export type BarisUsulan = {
   id: string; satker: Satker; tahun_anggaran: number; kode_ro: string; nama_ro: string; revisi_id: string;
-  revisi_nomor: number; status: StatusRevisi; tor: Dok; rab: Dok; kategori_final: KategoriRingkas | null;
-  updated_at: string; diarsipkan: boolean; pernah_direview: boolean; review_id: string | null;
-  checklist: RingkasChecklist | null; proses: Proses | null; boleh_kelola: boolean;
+  revisi_nomor: number; status: StatusRevisi; tor: Dok | null; rab: Dok | null; kategori_final: KategoriRingkas | null;
+  dibuat_at: string; diarsipkan: boolean; review_id: string | null;
+  hierarki: Hierarki | null; kategori_usulan: { id: string; kode: string; nama: string; deskripsi: string } | null;
+  proses: Proses | null; boleh_kelola: boolean;
 };
 
 export type Rujukan = {
   id: string; peran: "bukti_dokumen" | "dasar_panduan"; dokumen: "TOR" | "RAB" | "PANDUAN"; judul_dokumen: string;
   file_id: string; halaman: number; label_lokasi: string; kutipan: string; bbox: number[] | null; sumber: string; jenis: string;
+  nama_acuan: string | null; // Nama Acuan panduan (tanpa versi), null untuk TOR/RAB
 };
 
 export type Override = {
@@ -37,6 +38,7 @@ export type ItemReview = {
   id: string; kode: string; judul: string; kriteria: string; berlaku_untuk: string; ai_terpenuhi: boolean;
   terpenuhi: boolean; diubah: boolean; override: Override | null; ditemukan: boolean; alasan: string;
   yang_kurang: string | null; rujukan: Rujukan[];
+  catatan_verifikator: { teks: string; oleh: string | null; diubah_at: string } | null; // null juga bagi Pengusul sebelum final
 };
 
 export type Rekomendasi = { id: string; teks: string; tidak_diperlukan: boolean; item_kode: string | null; rujukan: Rujukan[] };
@@ -45,9 +47,10 @@ export type DetailReview = {
   id: string; status: string; trace_id: string; tampilan: "reviewer" | "pengusul"; final: boolean;
   difinalkan_oleh: string | null; difinalkan_at: string | null; selesai_at: string | null;
   model_info: Record<string, string> | null; proses: Proses | null; disalin_dari_revisi?: number | null;
-  usulan: { id: string; satker: string; tahun_anggaran: number; kode_ro: string; nama_ro: string; diarsipkan: boolean };
-  revisi: { id: string; nomor: number; status: StatusRevisi; tor: Dok; rab: Dok };
-  boleh_override: boolean;
+  usulan: { id: string; satker: string; tahun_anggaran: number; kode_ro: string; nama_ro: string; diarsipkan: boolean;
+    kategori_usulan: { id: string; kode: string; nama: string; deskripsi: string } | null };
+  revisi: { id: string; nomor: number; status: StatusRevisi; tor: Dok | null; rab: Dok | null };
+  boleh_override: boolean; boleh_unggah_revisi: boolean;
   acuan?: { checklist: { jumlah_item: number }; kategori: { jumlah: number };
     panduan: { judul: string; nomor: number; file_id: string; nama_file: string }[] };
   item?: ItemReview[];

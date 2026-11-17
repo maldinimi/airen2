@@ -9,11 +9,12 @@ export default function Pdf() {
   const [sp] = useSearchParams();
   const nav = useNavigate();
   const hlm = Number(sp.get("hlm") ?? 1);
+  const bbox = sp.get("bbox")?.split(",").map(Number) ?? null;  // bagian yang dirujuk disorot (E3)
   return (
     <div className="flex h-[calc(100vh-7rem)] flex-col gap-3">
       <div><Tombol varian="sekunder" kecil onClick={() => nav(-1)}><ArrowLeft className="size-4" />Kembali</Tombol></div>
       <div className="min-h-0 flex-1 overflow-hidden rounded-xl border border-slate-200">
-        <PdfViewer fileId={fileId!} judul={sp.get("judul") ?? "Dokumen"} sorot={{ halaman: hlm, bbox: null }} />
+        <PdfViewer fileId={fileId!} judul={sp.get("judul") ?? "Dokumen"} sorot={{ halaman: hlm, bbox }} />
       </div>
     </div>
   );
