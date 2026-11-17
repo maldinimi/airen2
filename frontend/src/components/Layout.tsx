@@ -1,25 +1,27 @@
-import { BookOpen, Building2, FileText, History, KeyRound, LayoutDashboard, ListChecks, LogOut, Menu, Server, Tags, Users, X } from "lucide-react";
+import { BookOpen, Building2, FileText, History, KeyRound, Landmark, LayoutDashboard, ListChecks, LogOut, Menu, Server, Tags, Users, X } from "lucide-react";
 import { type ReactNode, useState } from "react";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { useAuth } from "../auth";
 import type { Role } from "../types";
 import { cx } from "../ui";
 
-type Menu = { ke: string; label: string; ikon: ReactNode; role?: Role[] };
-const MENU: { grup?: string; item: Menu[] }[] = [
-  { item: [
-    { ke: "/", label: "Dashboard", ikon: <LayoutDashboard className="size-4" /> },
-    { ke: "/usulan", label: "Usulan", ikon: <FileText className="size-4" /> },
-    { ke: "/panduan", label: "Panduan", ikon: <BookOpen className="size-4" /> },
-  ] },
-  { grup: "Kelola", item: [
-    { ke: "/kelola/checklist", label: "Checklist", ikon: <ListChecks className="size-4" />, role: ["ADMIN"] },
-    { ke: "/kelola/kategori", label: "Kategori", ikon: <Tags className="size-4" />, role: ["ADMIN"] },
-    { ke: "/kelola/pengguna", label: "Pengguna", ikon: <Users className="size-4" />, role: ["ADMIN"] },
-    { ke: "/kelola/satker", label: "Satuan Kerja", ikon: <Building2 className="size-4" />, role: ["ADMIN"] },
-    { ke: "/kelola/node-ai", label: "Node AI", ikon: <Server className="size-4" />, role: ["ADMIN"] },
-    { ke: "/audit", label: "Audit Log", ikon: <History className="size-4" />, role: ["ADMIN"] },
-  ] },
+type Menu = { ke: string; label: string; ikon: ReactNode; role: Role[] };
+const KERJA: Role[] = ["PENGUSUL", "REVIEWER"];
+/** Satu daftar tanpa judul grup (permintaan pemilik produk). Hak akses (juga dicek backend):
+ *  - Pengusul : Dashboard, Usulan, dan Panduan/Checklist/Kategori untuk dilihat saja.
+ *  - Reviewer : Dashboard, Usulan, serta mengelola Panduan, Checklist, Kategori, Master RO, Satuan Kerja.
+ *  - Admin    : Pengguna (CRUD & reset password), Node AI, Audit Log. */
+const MENU: Menu[] = [
+  { ke: "/", label: "Dashboard", ikon: <LayoutDashboard className="size-4" />, role: KERJA },
+  { ke: "/usulan", label: "Usulan", ikon: <FileText className="size-4" />, role: KERJA },
+  { ke: "/panduan", label: "Panduan", ikon: <BookOpen className="size-4" />, role: KERJA },
+  { ke: "/kelola/checklist", label: "Checklist", ikon: <ListChecks className="size-4" />, role: KERJA },
+  { ke: "/kelola/kategori", label: "Kategori", ikon: <Tags className="size-4" />, role: KERJA },
+  { ke: "/kelola/master-ro", label: "Master RO", ikon: <Landmark className="size-4" />, role: ["REVIEWER"] },
+  { ke: "/kelola/satker", label: "Satuan Kerja", ikon: <Building2 className="size-4" />, role: ["REVIEWER"] },
+  { ke: "/kelola/pengguna", label: "Pengguna", ikon: <Users className="size-4" />, role: ["ADMIN"] },
+  { ke: "/kelola/node-ai", label: "Node AI", ikon: <Server className="size-4" />, role: ["ADMIN"] },
+  { ke: "/audit", label: "Audit Log", ikon: <History className="size-4" />, role: ["ADMIN"] },
 ];
 const NAMA_ROLE: Record<Role, string> = { PENGUSUL: "Pengusul", REVIEWER: "Reviewer", ADMIN: "Admin" };
 
@@ -29,23 +31,14 @@ export default function Layout() {
   const lokasi = useLocation();
 
   const nav = (
-    <nav className="flex flex-1 flex-col gap-5 overflow-y-auto px-3 py-4" aria-label="Menu utama">
-      {MENU.map((g, i) => {
-        const item = g.item.filter((m) => !m.role || punya(...m.role));
-        if (!item.length) return null;
-        return (
-          <div key={i} className="space-y-1">
-            {g.grup && <div className="px-3 text-xs font-semibold uppercase tracking-wide text-utama-100/70">{g.grup}</div>}
-            {item.map((m) => (
-              <NavLink key={m.ke} to={m.ke} end={m.ke === "/"} onClick={() => setLaci(false)}
-                className={({ isActive }) => cx("flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium",
-                  isActive ? "bg-white/15 text-white" : "text-utama-100 hover:bg-white/10 hover:text-white")}>
-                {m.ikon}{m.label}
-              </NavLink>
-            ))}
-          </div>
-        );
-      })}
+    <nav className="flex flex-1 flex-col gap-1 overflow-y-auto px-3 py-4" aria-label="Menu utama">
+      {MENU.filter((m) => punya(...m.role)).map((m) => (
+        <NavLink key={m.ke} to={m.ke} end={m.ke === "/"} onClick={() => setLaci(false)}
+          className={({ isActive }) => cx("flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium",
+            isActive ? "bg-white/15 text-white" : "text-utama-100 hover:bg-white/10 hover:text-white")}>
+          {m.ikon}{m.label}
+        </NavLink>
+      ))}
     </nav>
   );
 

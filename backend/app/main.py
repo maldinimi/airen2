@@ -11,7 +11,7 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
-from app.api import admin, auth, dashboard, master, panduan, review, usulan
+from app.api import admin, auth, dashboard, master, master_ro, panduan, review, usulan
 from app.galat import Galat
 from app.log import bersihkan_konteks, log, set_konteks, siapkan_logging, trace_id_saat_ini
 
@@ -20,7 +20,7 @@ logger = logging.getLogger("api")
 
 app = FastAPI(title="AIREN — Review TOR & RAB", version="1.0.0", docs_url=None, redoc_url=None,
               openapi_url="/api/openapi.json")
-for r in (auth, usulan, review, master, panduan, admin, dashboard):
+for r in (auth, usulan, review, master, master_ro, panduan, admin, dashboard):
     app.include_router(r.router)
 
 

@@ -1,7 +1,7 @@
 """Checklist: `checklist_item` = isi terbaru, `checklist_histori` = semua versi item (`checklist_id` → item).
 
 Isi checklist yang dipakai review disusun ulang dari kedua tabel pada waktu review dimulai (`review.mulai_at`): untuk
-tiap item yang sudah ada saat itu, dipakai versi dengan `update_date` terakhir ≤ waktu tersebut. Perubahan isi item
+tiap item yang sudah ada saat itu, dipakai versi dengan `updated_date` terakhir ≤ waktu tersebut. Perubahan isi item
 setelahnya tidak mengubah review lama. Item yang dihapus permanen ikut hilang dari review lama — penyimpangan PRD B4
 atas keputusan pemilik produk (desain.md §7).
 """
@@ -11,11 +11,18 @@ import uuid
 from dataclasses import dataclass
 from datetime import datetime
 
+from fastapi import Request
+from pydantic import BaseModel
 from sqlalchemy import select, text
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
+from sqlalchemy.orm.attributes import InstrumentedAttribute
 
-from app.model import ChecklistHistory, ChecklistItem, Kategori, Review
+from app.audit import catat
+from app.galat import Galat
+from app.model import ChecklistHistory, ChecklistItem, Kategori, Panduan, Review
+
+ModelUrut = type[ChecklistItem] | type[Kategori] | type[Panduan]  # tabel yang punya `no_urut` + Atur Urutan
 
 
 @dataclass(frozen=True)
@@ -36,8 +43,8 @@ def kunci_kode(kode: str) -> list:
 
 
 def urut_ulang(db: Session, baru: ChecklistItem | Kategori | None = None, urutan: list[uuid.UUID] | None = None,
-               model: type[ChecklistItem] | type[Kategori] = ChecklistItem) -> None:
-    """Rapikan `no_urut` tabel `model` (checklist_item atau kategori) jadi 1..n. Urutan diatur Admin (`urutan` = daftar id); item `baru` ditaruh tepat setelah item
+               model: ModelUrut = ChecklistItem) -> None:
+    """Rapikan `no_urut` tabel `model` (checklist_item, kategori, atau panduan) jadi 1..n. Urutan diatur Admin (`urutan` = daftar id); item `baru` ditaruh tepat setelah item
     dengan kode sebelumnya (E.02 sesudah E.01) walau urutan lain sudah diatur bebas.
 
     Baris tabel juga disusun ulang di disk menurut no_urut (CLUSTER), karena pgAdmin "View Data → All Rows" menampilkan
@@ -57,6 +64,24 @@ def urut_ulang(db: Session, baru: ChecklistItem | Kategori | None = None, urutan
     rapikan_fisik(db, model.__tablename__, f"ix_{model.__tablename__}_no_urut")
 
 
+class UrutanMasuk(BaseModel):
+    """Isian Atur Urutan: semua id data sesuai urutan baru."""
+    id: list[uuid.UUID]
+
+
+def terapkan_urutan(db: Session, request: Request, model: ModelUrut, ids: list[uuid.UUID], aksi: str, label: str,
+                    urut_kedua: InstrumentedAttribute) -> None:
+    """Atur Urutan bersama (Checklist, Kategori, Panduan): hanya `no_urut` yang berubah — tidak membuat riwayat, jejak
+    Diinput Oleh/Tanggal Input tetap. `ids` wajib memuat tepat semua id tabel (daftar di layar bisa basi bila ada data
+    yang baru ditambah/dihapus). Dicatat di audit (`aksi`) dengan urutan sebelum & sesudah; commit oleh pemanggil.
+    Error: 400 daftar tidak memuat tepat semua data (`label` = nama data di pesan, mis. "checklist")."""
+    sebelum = [str(i) for i in db.scalars(select(model.id).order_by(model.no_urut, urut_kedua))]
+    if len(ids) != len(sebelum) or set(map(str, ids)) != set(sebelum):
+        raise Galat(400, f"Daftar {label} sudah berubah. Muat ulang halaman lalu atur urutan lagi.")
+    urut_ulang(db, urutan=ids, model=model)
+    catat(db, request, aksi, model.__tablename__, None, sebelum={"id": sebelum}, sesudah={"id": [str(i) for i in ids]})
+
+
 def rapikan_fisik(db: Session, tabel: str, indeks: str) -> None:
     """CLUSTER tabel (urutan fisik untuk pgAdmin) hanya bila tidak sedang dipakai: tunggu kunci ≤1 detik, selain itu
     dilewati. Tanpa batas ini, simpan Admin menunggu worker yang sedang membaca checklist sambil menunggu jawaban AI,
@@ -74,13 +99,13 @@ def rapikan_fisik(db: Session, tabel: str, indeks: str) -> None:
 
 def isi_checklist(db: Session, waktu: datetime) -> list[IsiItem]:
     """Isi checklist (termasuk nonaktif) pada `waktu`, urut nomor urut."""
-    item = db.scalars(select(ChecklistItem).where(ChecklistItem.create_date <= waktu)).all()
+    item = db.scalars(select(ChecklistItem).where(ChecklistItem.created_date <= waktu)).all()
     versi: dict[str, list] = {}
-    for h in db.scalars(select(ChecklistHistory).where(ChecklistHistory.update_date <= waktu)):
+    for h in db.scalars(select(ChecklistHistory).where(ChecklistHistory.updated_date <= waktu)):
         versi.setdefault(h.checklist_id, []).append(h)
     hasil = []
     for i in item:
-        x = max([v for v in [i, *versi.get(i.id, [])] if v.update_date <= waktu], key=lambda v: v.update_date, default=i)
+        x = max([v for v in [i, *versi.get(i.id, [])] if v.updated_date <= waktu], key=lambda v: v.updated_date, default=i)
         hasil.append(IsiItem(i.id, x.kode, x.no_urut, x.checklist, x.kriteria, x.berlaku_untuk, x.aktif))
     return sorted(hasil, key=lambda r: (r.urutan, r.kode))
 

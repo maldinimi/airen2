@@ -1,4 +1,4 @@
-/** Atur urutan (Checklist, Kategori): seret baris atau tombol ▲▼ (untuk keyboard & layar sentuh), lalu simpan sekaligus
+/** Atur urutan (Checklist, Kategori, Panduan): seret baris atau tombol ▲▼ (untuk keyboard & layar sentuh), lalu simpan sekaligus
  *  lewat `PUT {endpoint}/urutan` dengan semua id sesuai urutan baru. */
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { ArrowDown, ArrowLeft, ArrowUp, GripVertical } from "lucide-react";
@@ -6,10 +6,11 @@ import { useState } from "react";
 import { api } from "../api";
 import { Judul, Kartu, Peringatan, Tombol, cx } from "../ui";
 
-type Baris = { id?: string; kode: string; judul: string };
+// `kode` kosong (Panduan tidak punya kode) → kolom kode tidak ditampilkan dan label tombol memakai judul.
+type Baris = { id?: string; kode?: string; judul: string };
 
-export default function AturUrutan({ judul, sub, endpoint, item, tutup, disimpan }: {
-  judul: string; sub: string; endpoint: string; item: Baris[]; tutup: () => void; disimpan: () => void;
+export default function AturUrutan({ judul, endpoint, item, tutup, disimpan }: {
+  judul: string; endpoint: string; item: Baris[]; tutup: () => void; disimpan: () => void;
 }) {
   const qc = useQueryClient();
   const [daftar, setDaftar] = useState(item);
@@ -30,7 +31,7 @@ export default function AturUrutan({ judul, sub, endpoint, item, tutup, disimpan
       <button type="button" onClick={tutup} className="mb-3 inline-flex items-center gap-1 text-sm text-slate-500 hover:text-slate-800">
         <ArrowLeft className="size-4" />Kembali
       </button>
-      <Judul judul={judul} sub={sub} />
+      <Judul judul={judul} />
       {simpan.error && <div className="mb-3"><Peringatan>{(simpan.error as Error).message}</Peringatan></div>}
       <Kartu className="divide-y divide-slate-100">
         {daftar.map((i, n) => (
@@ -39,10 +40,10 @@ export default function AturUrutan({ judul, sub, endpoint, item, tutup, disimpan
             className={cx("flex items-center gap-3 px-3 py-2.5", seret === n && "bg-utama-50")}>
             <GripVertical className="size-4 shrink-0 cursor-grab text-slate-400" aria-hidden />
             <span className="w-6 shrink-0 text-right text-xs text-slate-400">{n + 1}</span>
-            <span className="w-14 shrink-0 text-sm font-medium text-slate-900">{i.kode}</span>
-            <span className="min-w-0 flex-1 truncate text-sm text-slate-700">{i.judul}</span>
-            <button type="button" className={tombol} disabled={n === 0} onClick={() => pindah(n, n - 1)} aria-label={`Naikkan ${i.kode}`} title="Naikkan"><ArrowUp className="size-4" /></button>
-            <button type="button" className={tombol} disabled={n === daftar.length - 1} onClick={() => pindah(n, n + 1)} aria-label={`Turunkan ${i.kode}`} title="Turunkan"><ArrowDown className="size-4" /></button>
+            {i.kode && <span className="w-14 shrink-0 text-sm font-medium text-slate-900">{i.kode}</span>}
+            <span className={cx("min-w-0 flex-1 truncate text-sm", i.kode ? "text-slate-700" : "font-medium text-slate-900")}>{i.judul}</span>
+            <button type="button" className={tombol} disabled={n === 0} onClick={() => pindah(n, n - 1)} aria-label={`Naikkan ${i.kode || i.judul}`} title="Naikkan"><ArrowUp className="size-4" /></button>
+            <button type="button" className={tombol} disabled={n === daftar.length - 1} onClick={() => pindah(n, n + 1)} aria-label={`Turunkan ${i.kode || i.judul}`} title="Turunkan"><ArrowDown className="size-4" /></button>
           </div>
         ))}
       </Kartu>

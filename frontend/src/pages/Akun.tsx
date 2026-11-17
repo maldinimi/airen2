@@ -22,7 +22,7 @@ export default function Akun() {
   };
 
   return (
-    <div className="max-w-md">
+    <div className="w-full">
       <Judul judul="Ganti password" />
       <Kartu className="p-5">
         <form onSubmit={kirim} className="space-y-4">

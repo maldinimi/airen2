@@ -3,7 +3,6 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Archive, ArchiveRestore, ArrowLeft, Check, Minus, X } from "lucide-react";
 import { Link, useParams } from "react-router-dom";
 import { api } from "../api";
-import { useAuth } from "../auth";
 import { AksiUsulan } from "../components/Usulan";
 import { waktu } from "../format";
 import type { BarisUsulan, Dok, KategoriRingkas, StatusRevisi } from "../types";
@@ -21,7 +20,6 @@ type DataRiwayat = {
 
 export default function Riwayat() {
   const { id } = useParams();
-  const { punya } = useAuth();
   const qc = useQueryClient();
   const q = useQuery({ queryKey: ["riwayat", id], queryFn: () => api.get<DataRiwayat>(`/api/usulan/${id}/riwayat`) });
   const arsip = useMutation({ mutationFn: (a: boolean) => api.post(`/api/usulan/${id}/arsip`, { arsip: a }),
@@ -29,7 +27,7 @@ export default function Riwayat() {
   if (q.isLoading) return <Memuat />;
   if (q.error || !q.data) return <Peringatan>{(q.error as Error)?.message}</Peringatan>;
   const { usulan: u, revisi, perbandingan } = q.data;
-  const bolehArsip = (u.boleh_kelola || punya("ADMIN")) && u.pernah_direview;
+  const bolehArsip = u.boleh_kelola && u.pernah_direview;  // Pengusul Satker itu (Admin tidak lagi mengakses usulan)
 
   return (
     <div className="space-y-6">

@@ -1,8 +1,9 @@
-/** Kelola pengguna (multi-role, Satker, aktif, reset password). Satker dipilih dari menu Satker. */
+/** Kelola pengguna (satu role per akun lewat form, Satker, aktif, reset password). Satker dipilih dari menu Satker. */
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Plus } from "lucide-react";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { api } from "../../api";
+import { FormFilter, type NilaiFilter, OPSI_STATUS, Paginasi, ThUrut, cocok, padaTanggal, lolosStatus, usePaginasi, useUrut } from "../../components/TabelData";
 import { Aksi, HalamanDetail, HalamanForm, type Jejak, LencanaAktif, PilihBawah, type Satker, TD, barisJejak, th, usePesanSukses } from "../../components/Kelola";
 import { waktuAngka } from "../../format";
 import type { Role } from "../../types";
@@ -61,8 +62,19 @@ export default function KelolaPengguna() {
     onSuccess: (_, p) => { setSukses(`Pengguna ${p.username} berhasil dihapus.`); setDihapus(null); qc.invalidateQueries({ queryKey: ["pengguna"] }); },
   });
 
+  // Filter & urut hanya tampilan (bawaan = urutan server). Hook ini harus di atas return bersyarat.
+  const [f, setF] = useState<NilaiFilter>({});
+  const semua = q.data ?? [];
+  const lolos = useMemo(() => semua.filter((p) => cocok(f.cari, p.username, p.satker?.nama, p.satker?.unit_kerja)
+    && (!f.role || p.roles.includes(f.role as Role)) && lolosStatus(f.status, p.aktif) && padaTanggal(p.last_login_at, f.tanggal)), [semua, f]);
+  const { baris, urut, klik } = useUrut<P, "username" | "roles" | "aktif" | "login">(lolos, {
+    username: (p) => p.username, roles: (p) => p.roles.map((r) => NAMA_ROLE[r]).join(", "), aktif: (p) => +!p.aktif, login: (p) => p.last_login_at ?? "",
+  });
+  // Paginasi di browser seperti Satuan Kerja & Master RO (bawaan 20 baris); kembali ke halaman 1 setiap filter/urutan berubah.
+  const pg = usePaginasi(baris, [f, urut], 20);
+
   if (lihat) return (
-    <HalamanDetail kembali="Pengguna" judul={`Detail Pengguna ${lihat.username}`} sub={lihat.username} tutup={() => setLihat(null)} info={[
+    <HalamanDetail kembali="Pengguna" judul={`Detail Pengguna ${lihat.username}`} tutup={() => setLihat(null)} info={[
       ["Username", lihat.username],
       ["Role", <div className="[&>div]:justify-start"><LencanaRole roles={lihat.roles} /></div>],
       ["Satuan Kerja (Eselon II)", lihat.satker?.nama || "—"], ["Unit Kerja (Eselon I)", lihat.satker?.unit_kerja || "—"],
@@ -71,13 +83,15 @@ export default function KelolaPengguna() {
   );
 
   if (form) return (
-    <HalamanForm judul={form.id ? `Ubah Pengguna ${form.username}` : "Tambah Pengguna"} sub={form.id ? "Perbarui data akun. Kosongkan password bila tidak ingin mereset." : "Lengkapi data akun baru. Akun Pengusul wajib dihubungkan ke Satuan Kerja."}
+    <HalamanForm judul={form.id ? `Ubah Pengguna ${form.username}` : "Tambah Pengguna"}
       tutup={() => setForm(null)} kirim={() => simpan.mutate()} reset={form.id ? undefined : () => buka()} galat={simpan.error} sibuk={simpan.isPending}>
       <Kolom label="Username" wajib><Input required maxLength={100} value={form.username} onChange={(e) => setForm({ ...form, username: e.target.value })} /></Kolom>
       <fieldset className="space-y-1.5"><legend className="text-sm font-medium text-slate-700">Role<span className="text-red-600"> *</span></legend>
-        <div className="flex flex-wrap gap-4">{ROLE.map((r) => (
-          <label key={r} className="flex items-center gap-2 text-sm"><input type="checkbox" checked={form.roles.includes(r)}
-            onChange={(e) => setForm({ ...form, roles: e.target.checked ? [...form.roles, r] : form.roles.filter((x) => x !== r) })} />{NAMA_ROLE[r]}</label>))}</div>
+        {/* Radio seperti pilihan jenis di form Satuan Kerja: satu role per akun (permintaan pemilik produk, lihat docs/asumsi.md).
+            API tetap menerima daftar `roles`; akun lama ber-role ganda menampilkan role pertamanya; role gandanya tetap bila radio tidak diubah. */}
+        <div className="flex flex-wrap gap-6">{ROLE.map((r) => (
+          <label key={r} className="flex items-center gap-2 text-sm"><input type="radio" name="role" checked={form.roles[0] === r}
+            onChange={() => setForm({ ...form, roles: [r] })} />{NAMA_ROLE[r]}</label>))}</div>
       </fieldset>
       <PilihSatker daftar={satker.data ?? []} unitKerja={form.unit_kerja} nilai={form.satker_id}
         ubah={(unit_kerja, satker_id) => setForm({ ...form, unit_kerja, satker_id })} />
@@ -88,18 +102,32 @@ export default function KelolaPengguna() {
 
   return (
     <div className="w-full">
-      <Judul judul="Pengguna" sub="Kelola akun pengguna beserta role dan Satuan Kerja-nya."
+      <Judul judul="Pengguna"
         aksi={<Tombol onClick={() => buka()}><Plus className="size-4" />Tambah Pengguna</Tombol>} />
       {sukses && <div className="mb-3"><Peringatan jenis="sukses">{sukses}</Peringatan></div>}
-      {q.isLoading ? <Memuat /> : q.error ? <Peringatan>{(q.error as Error).message}</Peringatan> : !q.data?.length ? <Kosong>Belum ada pengguna.</Kosong> : (
+      {!!q.data?.length && (
+        <FormFilter judul="Pengguna" nilai={f} terapkan={setF} bidang={[
+          { jenis: "teks", kunci: "cari", label: "Username", placeholder: "Cari username / satuan kerja…" },
+          { jenis: "pilih", kunci: "role", label: "Role", semua: "Semua Role", opsi: ROLE.map((r) => ({ nilai: r, label: NAMA_ROLE[r] })), kecil: true },
+          { jenis: "pilih", kunci: "status", label: "Status", semua: "Semua Status", opsi: OPSI_STATUS, kecil: true },
+          { jenis: "tanggal", kunci: "tanggal", label: "Login Terakhir", kecil: true },
+        ]} />
+      )}
+      {q.isLoading ? <Memuat /> : q.error ? <Peringatan>{(q.error as Error).message}</Peringatan> : !q.data?.length ? <Kosong>Belum ada pengguna.</Kosong>
+        : baris.length === 0 ? <Kosong>Tidak ada pengguna yang cocok dengan filter.</Kosong> : (
         <Kartu className="overflow-x-auto">
           <table className="w-full min-w-[48rem] text-sm">
             <thead className="bg-slate-100 text-xs font-semibold text-slate-700">
-              <tr>{["No", "Username", "Role", "Status", "Login Terakhir", "Aksi"].map(th)}</tr>
+              <tr>{th("No")}
+                <ThUrut label="Username" kolom="username" urut={urut} klik={klik} />
+                <ThUrut label="Role" kolom="roles" urut={urut} klik={klik} />
+                <ThUrut label="Status" kolom="aktif" urut={urut} klik={klik} />
+                <ThUrut label="Login Terakhir" kolom="login" urut={urut} klik={klik} />
+                {th("Aksi")}</tr>
             </thead>
-            <tbody className="divide-y divide-slate-100">{q.data.map((p, i) => (
+            <tbody className="divide-y divide-slate-100">{pg.tampil.map((p, i) => (
               <tr key={p.id} className="align-middle transition-colors hover:bg-slate-50">
-                <td className={cx(TD, "text-slate-500")}>{i + 1}</td>
+                <td className={cx(TD, "text-slate-500")}>{pg.awal + i + 1}</td>
                 <td className={cx(TD, "whitespace-nowrap font-medium text-slate-900")}>{p.username}</td>
                 <td className={TD}><LencanaRole roles={p.roles} /></td>
                 <td className={TD}><LencanaAktif aktif={p.aktif} /></td>
@@ -109,6 +137,7 @@ export default function KelolaPengguna() {
           </table>
         </Kartu>
       )}
+      {baris.length > 0 && <Paginasi {...pg} />}
       {dihapus && (
         <Konfirmasi bahaya buka judul="Hapus pengguna secara permanen?" teksYa="Ya, hapus" teksBatal="Batal"
           baris={[["Username", dihapus.username], ["Status", dihapus.aktif ? "Aktif" : "Nonaktif"]]}

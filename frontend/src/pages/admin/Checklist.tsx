@@ -2,10 +2,13 @@
  *  checklist_item, setiap versi (termasuk terbaru) dicatat backend di checklist_histori, sehingga review
  *  lama tetap menampilkan checklist yang dipakai saat itu. */
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowDown, ArrowLeft, ArrowUp, ArrowUpDown, Eye, ListOrdered, Pencil, Plus, Trash2, TriangleAlert } from "lucide-react";
-import { type FormEvent, type ReactNode, useEffect, useState } from "react";
+import { ArrowLeft, Eye, ListOrdered, Pencil, Plus, Trash2, TriangleAlert } from "lucide-react";
+import { type FormEvent, type ReactNode, useEffect, useMemo, useState } from "react";
 import { api } from "../../api";
+import { useAuth } from "../../auth";
 import AturUrutan from "../../components/AturUrutan";
+import { TOMBOL_IKON } from "../../components/Kelola";
+import { FormFilter, type NilaiFilter, OPSI_STATUS, Paginasi, ThUrut, cocok, lolosJejak, lolosStatus, usePaginasi, useUrut } from "../../components/TabelData";
 import { waktuAngka } from "../../format";
 import type { ItemChecklist } from "../../types";
 import { AreaTeks, Dialog, Input, Judul, Kartu, Kolom, Kosong, Lencana, Memuat, Peringatan, Pilih, Saklar, Tombol, cx } from "../../ui";
@@ -28,7 +31,7 @@ function bandingKode(a: string, b: string): number {
 
 type KolomUrut = "kode" | "judul" | "kriteria" | "berlaku_untuk" | "aktif" | "diubah_oleh" | "diubah_at";
 const HEADER: [string, KolomUrut | null][] = [["Kode", "kode"], ["Checklist", "judul"], ["Kriteria Lolos", "kriteria"],
-  ["Berlaku Untuk", "berlaku_untuk"], ["Status", "aktif"], ["Last Modified By", "diubah_oleh"], ["Last Modified Date", "diubah_at"], ["Aksi", null]];
+  ["Berlaku Untuk", "berlaku_untuk"], ["Status", "aktif"], ["Diinput Oleh", "diubah_oleh"], ["Tanggal Input", "diubah_at"], ["Aksi", null]];
 
 const LencanaStatus = ({ aktif }: { aktif: boolean }) => aktif
   ? <Lencana className="bg-emerald-50 text-emerald-700 ring-emerald-300">Aktif</Lencana>
@@ -39,6 +42,8 @@ const LencanaBerlaku = ({ b }: { b: ItemChecklist["berlaku_untuk"] }) =>
 
 export default function KelolaChecklist() {
   const qc = useQueryClient();
+  // Reviewer mengelola; Pengusul membuka halaman ini hanya untuk melihat (backend menolak perubahan dari non-Reviewer).
+  const kelola = useAuth().punya("REVIEWER");
   const q = useQuery({ queryKey: [ENDPOINT], queryFn: () => api.get<Data>(ENDPOINT) });
   const [form, setForm] = useState<{ idx: number | null; nilai: ItemChecklist } | null>(null);
   const item = q.data?.item ?? [];
@@ -64,7 +69,7 @@ export default function KelolaChecklist() {
     setForm({ idx, nilai: idx === null ? { kode: "", judul: "", kriteria: "", berlaku_untuk: "TOR", aktif: true } : { ...item[idx] } });
   };
 
-  if (form) return (
+  if (form && kelola) return (
     <FormItem form={form} sibuk={simpan.isPending} galat={simpan.error} tutup={() => setForm(null)}
       kirim={(nilai) => simpan.mutate(form.idx === null ? { jenis: "tambah", nilai } : { jenis: "ubah", nilai: { ...nilai, id: item[form.idx].id } },
         { onSuccess: () => { if (form.idx === null) setSukses(`Item ${nilai.kode.trim().toUpperCase()} berhasil disimpan.`); setForm(null); } })} />
@@ -72,22 +77,20 @@ export default function KelolaChecklist() {
 
   const dilihat = lihat ? item.find((x) => x.id === lihat) : undefined;
   if (dilihat) return <DetailItem i={dilihat} tutup={() => setLihat(null)} />;
-  if (atur) return <AturUrutan judul="Atur Urutan Checklist" endpoint={ENDPOINT} item={item} tutup={() => setAtur(false)}
-    sub="Seret baris atau gunakan tombol naik/turun, lalu klik Simpan Urutan. Urutan ini dipakai di tabel checklist dan saat AI menilai; item baru otomatis ditempatkan setelah kode sebelumnya."
+  if (atur && kelola) return <AturUrutan judul="Atur Urutan Checklist" endpoint={ENDPOINT} item={item} tutup={() => setAtur(false)}
     disimpan={() => { setSukses("Urutan berhasil disimpan."); setAtur(false); }} />;
 
   return (
     <div className="w-full">
-      <Judul judul="Kelola Checklist"
-        sub="Setiap tambah dan perubahan item tercatat di riwayat. Review lama tetap menampilkan isi checklist saat review dimulai."
-        aksi={<>
+      <Judul judul="Checklist"
+        aksi={kelola && <>
           <Tombol varian="sekunder" onClick={() => setAtur(true)} disabled={item.length < 2}><ListOrdered className="size-4" />Atur Urutan</Tombol>
           <Tombol onClick={() => buka(null)}><Plus className="size-4" />Tambah Item</Tombol>
         </>} />
       {sukses && <div className="mb-3"><Peringatan jenis="sukses">{sukses}</Peringatan></div>}
       {simpan.error && <div className="mb-3"><Peringatan>{(simpan.error as Error).message}</Peringatan></div>}
       {item.length === 0 ? <Kosong>Belum ada checklist.</Kosong> : (
-        <TabelChecklist item={item} sibuk={simpan.isPending} ubah={buka}
+        <TabelChecklist item={item} kelola={kelola} sibuk={simpan.isPending} ubah={buka}
           hapus={(id, selesai) => {
             const kode = item.find((x) => x.id === id)?.kode;
             simpan.mutate({ jenis: "hapus", id }, { onSuccess: () => setSukses(`Item ${kode} berhasil dihapus.`), onSettled: selesai });
@@ -110,8 +113,7 @@ function FormItem({ form, sibuk, galat, tutup, kirim }: {
       <button type="button" onClick={tutup} className="mb-3 inline-flex items-center gap-1 text-sm text-slate-500 hover:text-slate-800">
         <ArrowLeft className="size-4" />Kembali
       </button>
-      <Judul judul={form.idx === null ? "Tambah Item" : `Ubah Checklist ${form.nilai.kode}`}
-        sub="Perubahan langsung disimpan sebagai versi checklist baru; review yang sudah berjalan tidak terpengaruh." />
+      <Judul judul={form.idx === null ? "Tambah Item" : `Ubah Checklist ${form.nilai.kode}`} />
       <Kartu className="p-5">
         <form className="space-y-4" onSubmit={submit}>
           {galat && <Peringatan>{galat.message}</Peringatan>}
@@ -142,8 +144,8 @@ function FormItem({ form, sibuk, galat, tutup, kirim }: {
   );
 }
 
-function TabelChecklist({ item, sibuk, ubah, hapus, lihat }: {
-  item: ItemChecklist[]; sibuk: boolean; ubah: (n: number) => void;
+function TabelChecklist({ item, kelola, sibuk, ubah, hapus, lihat }: {
+  item: ItemChecklist[]; kelola: boolean; sibuk: boolean; ubah: (n: number) => void;
   hapus: (id: string, selesai: () => void) => void; lihat: (kode: string) => void;
 }) {
   // Simpan itemnya (bukan indeks baris): setelah hapus daftar dimuat ulang & bergeser sebelum dialog tertutup.
@@ -151,48 +153,45 @@ function TabelChecklist({ item, sibuk, ubah, hapus, lihat }: {
   const idHapus = konfirmasi?.id;
   const jumlahHistori = useQuery({ queryKey: [ENDPOINT, "riwayat", idHapus], enabled: !!idHapus,
     queryFn: () => api.get<unknown[]>(`${ENDPOINT}/item/${idHapus}/riwayat`) });
-  // Pengurutan hanya tampilan; `n` di bawah tetap indeks item asli sehingga Edit/Hapus/Detail mengenai baris yang benar.
-  // Bawaan (kolom null) = urutan yang diatur Admin (no_urut dari server).
-  const [urut, setUrut] = useState<{ kolom: KolomUrut | null; naik: boolean }>({ kolom: null, naik: true });
-  const nilai = (n: number, kolom: KolomUrut): string | number => {
+  // Filter & pengurutan hanya tampilan; `n` di bawah tetap indeks item asli sehingga Edit/Hapus/Detail mengenai baris yang benar.
+  // Bawaan (kolom null) = urutan yang diatur Reviewer (no_urut dari server).
+  const [f, setF] = useState<NilaiFilter>({});
+  // useMemo: tanpanya array baru tiap render (mis. dialog hapus dibuka) membuat useUrut mengurutkan ulang.
+  const lolos = useMemo(() => item.map((_, n) => n).filter((n) => {
     const i = item[n];
-    if (kolom === "aktif") return i.aktif === false ? 1 : 0;
-    if (kolom === "diubah_oleh") return i.diubah_oleh ?? "Sistem";
-    if (kolom === "diubah_at") return i.diubah_at ?? "";
-    return i[kolom];
-  };
-  const baris = item.map((_, n) => n).sort((a, b) => {
-    const k = urut.kolom;
-    if (k === null) return a - b;
-    const x = nilai(a, k), y = nilai(b, k);
-    const h = typeof x === "number" ? x - (y as number) : k === "kode" ? bandingKode(x, y as string) : x.localeCompare(y as string, "id");
-    return (urut.naik ? h : -h) || a - b;
-  });
-  const klikUrut = (k: KolomUrut) => setUrut((u) => ({ kolom: k, naik: u.kolom === k ? !u.naik : true }));
-  const tombol = "rounded-lg p-1.5 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-utama-100";
+    // Satu filter per kolom tabel (urut kolom); penginput kosong tampil "Sistem" seperti di tabel.
+    return cocok(f.kode, i.kode) && cocok(f.cari, i.judul) && cocok(f.kriteria, i.kriteria) && (!f.berlaku || i.berlaku_untuk === f.berlaku)
+      && lolosStatus(f.status, i.aktif !== false) && lolosJejak(f, i);
+  }), [item, f]);
+  const { baris, urut, klik: klikUrut } = useUrut<number, KolomUrut>(lolos, {
+    kode: (n) => item[n].kode, judul: (n) => item[n].judul, kriteria: (n) => item[n].kriteria, berlaku_untuk: (n) => item[n].berlaku_untuk,
+    aktif: (n) => (item[n].aktif === false ? 1 : 0), diubah_oleh: (n) => item[n].diubah_oleh ?? "Sistem", diubah_at: (n) => item[n].diubah_at ?? "",
+  }, { kode: bandingKode });
+  // Paginasi di browser seperti Satuan Kerja & Master RO (bawaan 20 baris); kembali ke halaman 1 setiap filter/urutan berubah.
+  const pg = usePaginasi(baris, [f, urut], 20);
+  const tombol = TOMBOL_IKON;
 
   return (
     <>
-      <Kartu className="overflow-x-auto">
+      <FormFilter judul="Checklist" nilai={f} terapkan={setF} bidang={[
+        { jenis: "teks", kunci: "kode", label: "Kode", placeholder: "Cari kode, mis. C01…" },
+        { jenis: "teks", kunci: "cari", label: "Checklist", placeholder: "Cari checklist…" },
+        { jenis: "teks", kunci: "kriteria", label: "Kriteria Lolos", placeholder: "Cari kriteria lolos…" },
+        { jenis: "pilih", kunci: "berlaku", label: "Berlaku Untuk", semua: "Semua Dokumen", opsi: Object.entries(BERLAKU).map(([nilai, label]) => ({ nilai, label })), kecil: true },
+        { jenis: "pilih", kunci: "status", label: "Status", semua: "Semua Status", opsi: OPSI_STATUS, kecil: true },
+        { jenis: "teks", kunci: "oleh", label: "Diinput Oleh", placeholder: "Cari nama penginput…" },
+        { jenis: "tanggal", kunci: "tanggal", label: "Tanggal Input", kecil: true },
+      ]} />
+      {baris.length === 0 && <Kosong>Tidak ada checklist yang cocok dengan filter.</Kosong>}
+      {baris.length > 0 && <Kartu className="overflow-x-auto">
         <table className="w-full min-w-[64rem] text-sm">
           <thead className="bg-slate-100 text-xs font-semibold text-slate-700">
-            <tr>{HEADER.map(([h, k]) => {
-              const aktif = k !== null && urut.kolom === k;
-              const Ikon = !aktif ? ArrowUpDown : urut.naik ? ArrowUp : ArrowDown;
-              return (
-                <th key={h} scope="col" className={cx("whitespace-nowrap px-3 py-2.5", k !== "judul" && k !== "kriteria" && "text-center")} aria-sort={aktif ? (urut.naik ? "ascending" : "descending") : undefined}>
-                  {k === null ? h : (
-                    <button type="button" onClick={() => klikUrut(k)} title={`Urutkan berdasarkan ${h}`}
-                      className="inline-flex items-center gap-1 rounded font-semibold hover:text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-utama-100">
-                      {h}<Ikon className={cx("size-3.5", aktif ? "text-utama-600" : "text-slate-400")} aria-hidden />
-                    </button>
-                  )}
-                </th>
-              );
-            })}</tr>
+            <tr>{HEADER.map(([h, k]) => k === null
+              ? <th key={h} scope="col" className="whitespace-nowrap px-3 py-2.5 text-center">{h}</th>
+              : <ThUrut key={h} label={h} kolom={k} urut={urut} klik={klikUrut} />)}</tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {baris.map((n) => { const i = item[n]; return (
+            {pg.tampil.map((n) => { const i = item[n]; return (
               <tr key={i.kode} className="align-middle transition-colors hover:bg-slate-50">
                 <td className="whitespace-nowrap px-3 py-2.5 text-center font-medium text-slate-900">{i.kode}</td>
                 <td className="min-w-[12rem] px-3 py-2.5 text-slate-900">{i.judul}</td>
@@ -203,14 +202,17 @@ function TabelChecklist({ item, sibuk, ubah, hapus, lihat }: {
                 <td className="min-w-[9.5rem] whitespace-nowrap px-3 py-2.5 text-center text-slate-600">{waktuAngka(i.diubah_at)}</td>
                 <td className="whitespace-nowrap px-3 py-2 text-center">
                   <button type="button" className={cx(tombol, "text-emerald-600 hover:bg-emerald-50 hover:text-emerald-700")} title="Detail" aria-label={`Detail ${i.kode}`} onClick={() => lihat(i.id!)}><Eye className="size-4" /></button>
-                  <button type="button" className={cx(tombol, "text-utama-600 hover:bg-utama-50 hover:text-utama-700")} title="Edit" aria-label={`Edit ${i.kode}`} onClick={() => ubah(n)}><Pencil className="size-4" /></button>
-                  <button type="button" className={cx(tombol, "text-red-600 hover:bg-red-50 hover:text-red-700")} title="Hapus" aria-label={`Hapus ${i.kode}`} onClick={() => setKonfirmasi(i)}><Trash2 className="size-4" /></button>
+                  {kelola && <>
+                    <button type="button" className={cx(tombol, "text-utama-600 hover:bg-utama-50 hover:text-utama-700")} title="Edit" aria-label={`Edit ${i.kode}`} onClick={() => ubah(n)}><Pencil className="size-4" /></button>
+                    <button type="button" className={cx(tombol, "text-red-600 hover:bg-red-50 hover:text-red-700")} title="Hapus" aria-label={`Hapus ${i.kode}`} onClick={() => setKonfirmasi(i)}><Trash2 className="size-4" /></button>
+                  </>}
                 </td>
               </tr>
             ); })}
           </tbody>
         </table>
-      </Kartu>
+      </Kartu>}
+      {baris.length > 0 && <Paginasi {...pg} />}
 
       {konfirmasi !== null && (
         <Dialog buka ubahBuka={(b) => !b && setKonfirmasi(null)} judul="Hapus checklist secara permanen?"
@@ -259,8 +261,8 @@ function DetailItem({ i, tutup }: { i: ItemChecklist; tutup: () => void }) {
     ["Kriteria Lolos", <span className="whitespace-pre-line">{i.kriteria}</span>],
     ["Berlaku Untuk", <LencanaBerlaku b={i.berlaku_untuk} />],
     ["Status", <LencanaStatus aktif={i.aktif !== false} />],
-    ["Terakhir Diubah", waktuAngka(i.diubah_at)],
-    ["Diubah Oleh", i.diubah_oleh ?? "Sistem"],
+    ["Tanggal Input", waktuAngka(i.diubah_at)],
+    ["Diinput Oleh", i.diubah_oleh ?? "Sistem"],
   ];
   return (
     <div className="w-full space-y-4">
@@ -268,7 +270,7 @@ function DetailItem({ i, tutup }: { i: ItemChecklist; tutup: () => void }) {
         <button type="button" onClick={tutup} className="mb-3 inline-flex items-center gap-1 text-sm text-slate-500 hover:text-slate-800">
           <ArrowLeft className="size-4" />Checklist
         </button>
-        <Judul judul={`Detail Checklist ${kode}`} sub={i.judul} />
+        <Judul judul={`Detail Checklist ${kode}`} />
       </div>
       <Kartu className="space-y-5 p-5">
         <div className="overflow-hidden rounded-lg border border-slate-200">

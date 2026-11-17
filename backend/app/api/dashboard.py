@@ -7,7 +7,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app import status as st
-from app.akses import ADMIN, boleh_lihat_semua, boleh_lihat_usulan, pastikan, pengguna_saat_ini
+from app.akses import ADMIN, PENGUSUL, REVIEWER, boleh_lihat_semua, boleh_lihat_usulan, pastikan, pengguna_saat_ini, wajib_role
 from app.api.usulan import baris_usulan, revisi_terbaru
 from app.db import sesi_db
 from app.galat import Galat
@@ -20,9 +20,10 @@ router = APIRouter(prefix="/api", tags=["dashboard & file"])
 
 
 @router.get("/dashboard")
-def dashboard(db: Session = Depends(sesi_db), p: Pengguna = Depends(pengguna_saat_ini)) -> dict:
-    """Ringkasan jumlah usulan per status/kategori/Satker + daftar "Perlu tindakan saya".
-    Admin juga melihat antrean AI, node aktif, dan perkiraan waktu selesai (desain §2.3)."""
+def dashboard(db: Session = Depends(sesi_db), p: Pengguna = Depends(wajib_role(PENGUSUL, REVIEWER))) -> dict:
+    """Ringkasan jumlah usulan per status/kategori/Satker + daftar "Perlu tindakan saya". Pengusul & Reviewer saja
+    (Admin tidak memiliki menu Dashboard → 403). Pengguna yang juga ber-role Admin melihat antrean AI, node aktif,
+    dan perkiraan waktu selesai (desain §2.3)."""
     dasar = (select(Usulan, Revisi).join(Revisi, (Revisi.usulan_id == Usulan.id) & (Revisi.nomor == revisi_terbaru()))
              .where(Usulan.diarsipkan_at.is_(None)))
     if not boleh_lihat_semua(p):
@@ -76,13 +77,15 @@ def dashboard(db: Session = Depends(sesi_db), p: Pengguna = Depends(pengguna_saa
 def unduh(file_id: uuid.UUID, db: Session = Depends(sesi_db), p: Pengguna = Depends(pengguna_saat_ini)) -> FileResponse:
     """Unduh/tampilkan PDF dengan pemeriksaan hak akses (bukan URL statis).
 
-    Boleh bila: file panduan (semua pengguna), atau TOR/RAB dari usulan yang boleh dilihat pengguna.
+    Boleh bila: file panduan bagi Reviewer & Pengusul (sama dengan hak baca GET /api/panduan; Admin tidak memiliki
+    menu Panduan), atau TOR/RAB dari usulan yang boleh dilihat pengguna.
     Error: 404 bila tidak ada atau tidak berhak (tidak membocorkan keberadaan file).
     """
     f = db.get(File, file_id)
     if f is None:
         raise Galat(404, "File tidak ditemukan.")
-    boleh = any(db.scalar(select(kolom).where(kolom == f.id).limit(1)) for kolom in (Panduan.file_id, PanduanHistori.file_id))
+    boleh = bool(p.daftar_role & {REVIEWER, PENGUSUL}) and any(
+        db.scalar(select(kolom).where(kolom == f.id).limit(1)) for kolom in (Panduan.file_id, PanduanHistori.file_id))
     if not boleh:
         for u in db.scalars(select(Usulan).join(Revisi, Revisi.usulan_id == Usulan.id)
                             .where(or_(Revisi.tor_file_id == f.id, Revisi.rab_file_id == f.id)).distinct()):
