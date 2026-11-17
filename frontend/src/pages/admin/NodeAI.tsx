@@ -20,8 +20,8 @@ export default function NodeAI() {
   const aktif = (n: Node) => n.aktif && n.terakhir_terlihat && Date.now() - new Date(n.terakhir_terlihat).getTime() < 90_000;
 
   return (
-    <div className="max-w-4xl">
-      <Judul judul="Node AI" sub="Satu node = worker + model di satu server GPU. Tambah node untuk menambah kapasitas review tanpa mengubah kode."
+    <div className="w-full">
+      <Judul judul="Node AI"
         aksi={<Tombol onClick={() => { setBuka(true); setToken(null); setNama(""); daftar.reset(); }}><Plus className="size-4" />Daftarkan node GPU sewaan</Tombol>} />
       {q.isLoading ? <Memuat /> : (
         <Kartu className="divide-y divide-slate-100">{q.data?.map((n) => (

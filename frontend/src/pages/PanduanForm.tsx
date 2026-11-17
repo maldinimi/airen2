@@ -1,4 +1,4 @@
-/** Unggah (D2): Nama Acuan, Deskripsi, Status, file PDF. Edit: sama tanpa ganti file. Hanya Admin. */
+/** Unggah (D2): Nama Acuan, Deskripsi, Status, file PDF. Edit: sama tanpa ganti file. Hanya Reviewer. */
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft } from "lucide-react";
 import { type FormEvent, useState } from "react";
@@ -58,9 +58,9 @@ function Isi({ p }: { p?: Panduan }) {
   };
 
   return (
-    <div className="max-w-3xl">
+    <div className="w-full">
       <Link to="/panduan" className="mb-3 inline-flex items-center gap-1 text-sm text-slate-500 hover:text-slate-800"><ArrowLeft className="size-4" />Kembali</Link>
-      <Judul judul={p ? "Edit Panduan" : "Unggah Panduan"} sub={p ? p.terkini.judul : "File diproses (teks, tabel, gambar, scan) sebelum siap dirujuk AI."} />
+      <Judul judul={p ? "Edit Panduan" : "Unggah Panduan"} />
       <Kartu className="p-5">
         <form className="space-y-5" onSubmit={cek}>
           {galat && <Peringatan>{galat}</Peringatan>}

@@ -15,17 +15,17 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.akses import ADMIN, pengguna_saat_ini, wajib_role
+from app.akses import PENGUSUL, REVIEWER, wajib_role
 from app.audit import catat
-from app.checklist import rapikan_fisik, urut_ulang
-from app.db import sesi_db
+from app.checklist import UrutanMasuk, rapikan_fisik, terapkan_urutan, urut_ulang
+from app.db import jam_db, sesi_db
 from app.galat import Galat
 from app.model import ChecklistHistory, ChecklistItem, Kategori, KategoriHistori, Pengguna
 
 router = APIRouter(prefix="/api", tags=["checklist & kategori"])
 
 # Kolom yang disalin dari checklist_item ke checklist_histori (id baru, isi & jejak buat/ubah sama).
-KOLOM_SALIN = ("created_by", "create_date", "update_by", "update_date", "no_urut", "kode", "checklist", "kriteria",
+KOLOM_SALIN = ("created_by", "created_date", "updated_by", "updated_date", "no_urut", "kode", "checklist", "kriteria",
                "berlaku_untuk", "aktif")
 
 
@@ -51,8 +51,8 @@ def _nama(db: Session, pid) -> str | None:
 def _item(db: Session, i: ChecklistItem | ChecklistHistory) -> dict:
     # Nama field API tetap (judul/urutan/diubah_*) agar frontend tidak berubah; kolom DB memakai nama baru.
     return {"id": str(i.id), "urutan": i.no_urut, "kode": i.kode, "judul": i.checklist, "kriteria": i.kriteria,
-            "berlaku_untuk": i.berlaku_untuk, "aktif": i.aktif, "diubah_oleh": _nama(db, i.update_by),
-            "diubah_at": i.update_date.isoformat()}
+            "berlaku_untuk": i.berlaku_untuk, "aktif": i.aktif, "diubah_oleh": _nama(db, i.updated_by),
+            "diubah_at": i.updated_date.isoformat()}
 
 
 def _isi_item(db: Session, data: ItemChecklistMasuk, kecuali: uuid.UUID | None = None) -> dict:
@@ -72,17 +72,12 @@ def _isi_item(db: Session, data: ItemChecklistMasuk, kecuali: uuid.UUID | None =
 def _catat_history(db: Session, i: ChecklistItem) -> None:
     """Salin isi item SAAT INI ke `checklist_histori` (setiap tambah & ubah → riwayat memuat semua versi)."""
     db.add(ChecklistHistory(checklist_id=i.id, **{c: getattr(i, c) for c in KOLOM_SALIN}))
-    rapikan_fisik(db, "checklist_histori", "ix_checklist_histori_update_date")  # terbaru paling atas
-
-
-def _jam_db(db: Session):
-    """Waktu dari jam DATABASE: dibandingkan dengan review.mulai_at dari worker (mungkin di server GPU lain)."""
-    return db.scalar(select(func.now()))
+    rapikan_fisik(db, "checklist_histori", "ix_checklist_histori_updated_date")  # terbaru paling atas
 
 
 @contextmanager
 def _kode_unik(db: Session):
-    """Dua Admin menyimpan kode yang sama bersamaan: DB menolak (unik) → pesan 400, bukan error 500."""
+    """Dua Reviewer menyimpan kode yang sama bersamaan: DB menolak (unik) → pesan 400, bukan error 500."""
     try:
         yield
     except IntegrityError:
@@ -104,19 +99,20 @@ def _ambil_item(db: Session, item_id: uuid.UUID) -> ChecklistItem:
 
 
 @router.get("/checklist")
-def checklist(db: Session = Depends(sesi_db), _: Pengguna = Depends(pengguna_saat_ini)) -> dict:
-    """Isi checklist terbaru, urut nomor urut."""
+def checklist(db: Session = Depends(sesi_db), _: Pengguna = Depends(wajib_role(REVIEWER, PENGUSUL))) -> dict:
+    """Isi checklist terbaru, urut nomor urut. Reviewer (kelola) dan Pengusul (lihat saja); Admin tidak memiliki menu
+    ini (desain.md §7 no. 29). Error: 403."""
     item = db.scalars(select(ChecklistItem).order_by(ChecklistItem.no_urut, ChecklistItem.kode)).all()
     return {"item": [_item(db, i) for i in item]}
 
 
 @router.post("/checklist/item")
 def checklist_tambah(data: ItemChecklistMasuk, request: Request, db: Session = Depends(sesi_db),
-                     p: Pengguna = Depends(wajib_role(ADMIN))) -> dict:
+                     p: Pengguna = Depends(wajib_role(REVIEWER))) -> dict:
     """Tambah item (ditaruh setelah item berkode sebelumnya). Error: 400 isian tidak valid / kode sudah dipakai."""
     isi = _isi_item(db, data)
-    sekarang = _jam_db(db)
-    i = ChecklistItem(**isi, no_urut=0, created_by=p.id, create_date=sekarang, update_by=p.id, update_date=sekarang)
+    sekarang = jam_db(db)
+    i = ChecklistItem(**isi, no_urut=0, created_by=p.id, created_date=sekarang, updated_by=p.id, updated_date=sekarang)
     with _kode_unik(db):
         db.add(i)
         urut_ulang(db, baru=i)
@@ -129,7 +125,7 @@ def checklist_tambah(data: ItemChecklistMasuk, request: Request, db: Session = D
 
 @router.put("/checklist/item/{item_id}")
 def checklist_ubah(item_id: uuid.UUID, data: ItemChecklistMasuk, request: Request, db: Session = Depends(sesi_db),
-                   p: Pengguna = Depends(wajib_role(ADMIN))) -> dict:
+                   p: Pengguna = Depends(wajib_role(REVIEWER))) -> dict:
     """Ubah item (termasuk kode & status). Isi baru juga dicatat ke `checklist_histori` (versi sebelumnya sudah ada di
     sana), sehingga review yang sudah berjalan tetap menampilkan isi saat itu.
 
@@ -142,7 +138,7 @@ def checklist_ubah(item_id: uuid.UUID, data: ItemChecklistMasuk, request: Reques
         return _item(db, i)
     for k, v in isi.items():
         setattr(i, k, v)
-    i.update_by, i.update_date = p.id, _jam_db(db)
+    i.updated_by, i.updated_date = p.id, jam_db(db)
     with _kode_unik(db):
         urut_ulang(db)
     _catat_history(db, i)
@@ -154,7 +150,7 @@ def checklist_ubah(item_id: uuid.UUID, data: ItemChecklistMasuk, request: Reques
 
 @router.delete("/checklist/item/{item_id}")
 def checklist_hapus(item_id: uuid.UUID, request: Request, db: Session = Depends(sesi_db),
-                    _: Pengguna = Depends(wajib_role(ADMIN))) -> dict:
+                    _: Pengguna = Depends(wajib_role(REVIEWER))) -> dict:
     """Hapus item beserta riwayatnya secara permanen; item ini ikut hilang dari tampilan review lama (keputusan
     pemilik produk, desain.md §7). Error: 400 tidak ada item aktif tersisa; 404 item tidak ada."""
     i = _ambil_item(db, item_id)
@@ -169,30 +165,23 @@ def checklist_hapus(item_id: uuid.UUID, request: Request, db: Session = Depends(
     return {"ok": True}
 
 
-class UrutanMasuk(BaseModel):
-    id: list[uuid.UUID]
-
-
 @router.put("/checklist/urutan")
 def checklist_urutan(data: UrutanMasuk, request: Request, db: Session = Depends(sesi_db),
-                     _: Pengguna = Depends(wajib_role(ADMIN))) -> dict:
+                     _: Pengguna = Depends(wajib_role(REVIEWER))) -> dict:
     """Atur urutan item (`id` = semua id item sesuai urutan baru). Hanya `no_urut` yang berubah — tidak membuat
     riwayat karena isi item tidak berubah. Error: 400 daftar tidak memuat tepat semua item (mis. ada yang baru ditambah)."""
-    semua = set(db.scalars(select(ChecklistItem.id)))
-    if len(data.id) != len(semua) or set(data.id) != semua:
-        raise Galat(400, "Daftar checklist sudah berubah. Muat ulang halaman lalu atur urutan lagi.")
-    urut_ulang(db, urutan=data.id)
-    catat(db, request, "CHECKLIST_URUTAN", "checklist_item", None, sesudah={"id": [str(i) for i in data.id]})
+    terapkan_urutan(db, request, ChecklistItem, data.id, "CHECKLIST_URUTAN", "checklist", ChecklistItem.kode)
     db.commit()
     return checklist(db, _)
 
 
 @router.get("/checklist/item/{item_id}/riwayat")
-def checklist_riwayat(item_id: uuid.UUID, db: Session = Depends(sesi_db), _: Pengguna = Depends(pengguna_saat_ini)) -> list[dict]:
-    """Semua versi item dari `checklist_histori`, terbaru dulu (baris pertama = isi saat ini). Error: 404."""
+def checklist_riwayat(item_id: uuid.UUID, db: Session = Depends(sesi_db),
+                      _: Pengguna = Depends(wajib_role(REVIEWER, PENGUSUL))) -> list[dict]:
+    """Semua versi item dari `checklist_histori`, terbaru dulu (baris pertama = isi saat ini). Error: 403, 404."""
     i = _ambil_item(db, item_id)
     baris = db.scalars(select(ChecklistHistory).where(ChecklistHistory.checklist_id == i.id)
-                       .order_by(ChecklistHistory.update_date.desc())).all()
+                       .order_by(ChecklistHistory.updated_date.desc())).all()
     return [_item(db, r) for r in baris]
 
 
@@ -237,18 +226,19 @@ def _ambil_kategori(db: Session, kategori_id: uuid.UUID, kunci: bool = False) ->
 
 
 @router.get("/kategori")
-def kategori(db: Session = Depends(sesi_db), _: Pengguna = Depends(wajib_role(ADMIN))) -> dict:
-    """Daftar kategori terbaru, urut nomor urut yang diatur Admin. Khusus Admin (C5, C7). Error: 403."""
+def kategori(db: Session = Depends(sesi_db), _: Pengguna = Depends(wajib_role(REVIEWER, PENGUSUL))) -> dict:
+    """Daftar kategori terbaru, urut nomor urut yang diatur Reviewer. Reviewer (kelola, C5, C7) dan Pengusul (lihat saja;
+    tambah/ubah/hapus/urutan khusus Reviewer). Admin tidak memiliki menu ini. Error: 403."""
     return {"item": [_kategori(db, k) for k in db.scalars(select(Kategori).order_by(Kategori.no_urut, Kategori.kode))]}
 
 
 @router.post("/kategori")
 def kategori_tambah(data: ItemKategoriMasuk, request: Request, db: Session = Depends(sesi_db),
-                    p: Pengguna = Depends(wajib_role(ADMIN))) -> dict:
+                    p: Pengguna = Depends(wajib_role(REVIEWER))) -> dict:
     """Tambah kategori (ditaruh setelah kategori berkode sebelumnya); dipakai AI mulai review berikutnya (C2).
     Error: 400 isian tidak valid / kode sudah dipakai."""
     isi = _isi_kategori(db, data)
-    sekarang = _jam_db(db)
+    sekarang = jam_db(db)
     k = Kategori(**isi, no_urut=0, created_by=p.id, created_date=sekarang, updated_by=p.id, updated_date=sekarang)
     with _kode_unik(db):
         db.add(k)
@@ -261,21 +251,17 @@ def kategori_tambah(data: ItemKategoriMasuk, request: Request, db: Session = Dep
 # Didaftarkan sebelum PUT /kategori/{kategori_id}: bila sesudahnya, "urutan" dicocokkan sebagai id lalu ditolak 422.
 @router.put("/kategori/urutan")
 def kategori_urutan(data: UrutanMasuk, request: Request, db: Session = Depends(sesi_db),
-                    p: Pengguna = Depends(wajib_role(ADMIN))) -> dict:
+                    p: Pengguna = Depends(wajib_role(REVIEWER))) -> dict:
     """Atur urutan kategori (`id` = semua id kategori sesuai urutan baru). Hanya `no_urut` yang berubah — tidak membuat
     Kategori Histori karena isi kategori tidak berubah. Error: 400 daftar tidak memuat tepat semua kategori."""
-    semua = set(db.scalars(select(Kategori.id)))
-    if len(data.id) != len(semua) or set(data.id) != semua:
-        raise Galat(400, "Daftar kategori sudah berubah. Muat ulang halaman lalu atur urutan lagi.")
-    urut_ulang(db, urutan=data.id, model=Kategori)
-    catat(db, request, "KATEGORI_URUTAN", "kategori", None, sesudah={"id": [str(i) for i in data.id]})
+    terapkan_urutan(db, request, Kategori, data.id, "KATEGORI_URUTAN", "kategori", Kategori.kode)
     db.commit()
     return kategori(db, p)
 
 
 @router.put("/kategori/{kategori_id}")
 def kategori_ubah(kategori_id: uuid.UUID, data: ItemKategoriMasuk, request: Request, db: Session = Depends(sesi_db),
-                  p: Pengguna = Depends(wajib_role(ADMIN))) -> dict:
+                  p: Pengguna = Depends(wajib_role(REVIEWER))) -> dict:
     """Ubah kategori (termasuk kode). Isi SEBELUM diubah disalin ke `kategori_histori`; review lama memakai salinannya
     sendiri (`review_kategori`) sehingga tidak berubah (C4). Error: 400 isian tidak valid / kode sudah dipakai; 404."""
     # Baris dikunci: dua edit bersamaan tidak menyalin versi lama yang sama dua kali.
@@ -287,7 +273,7 @@ def kategori_ubah(kategori_id: uuid.UUID, data: ItemKategoriMasuk, request: Requ
     _catat_histori_kategori(db, k)
     for c, v in isi.items():
         setattr(k, c, v)
-    k.updated_by, k.updated_date = p.id, _jam_db(db)
+    k.updated_by, k.updated_date = p.id, jam_db(db)
     with _kode_unik(db):
         db.flush()
     _wajib_ada_kategori_aktif(db)
@@ -298,7 +284,7 @@ def kategori_ubah(kategori_id: uuid.UUID, data: ItemKategoriMasuk, request: Requ
 
 @router.delete("/kategori/{kategori_id}")
 def kategori_hapus(kategori_id: uuid.UUID, request: Request, db: Session = Depends(sesi_db),
-                   _: Pengguna = Depends(wajib_role(ADMIN))) -> dict:
+                   _: Pengguna = Depends(wajib_role(REVIEWER))) -> dict:
     """Hapus kategori beserta riwayatnya secara permanen. Review lama tidak berubah (salinan di `review_kategori`).
     Error: 400 tidak ada kategori Aktif tersisa; 404."""
     k = _ambil_kategori(db, kategori_id)
@@ -313,9 +299,10 @@ def kategori_hapus(kategori_id: uuid.UUID, request: Request, db: Session = Depen
 
 
 @router.get("/kategori/{kategori_id}/riwayat")
-def kategori_riwayat(kategori_id: uuid.UUID, db: Session = Depends(sesi_db), _: Pengguna = Depends(wajib_role(ADMIN))) -> list[dict]:
-    """Versi sebelum tiap perubahan dari `kategori_histori`, terbaru dulu (isi saat ini tidak termasuk). Khusus Admin (C5).
-    Error: 403, 404."""
+def kategori_riwayat(kategori_id: uuid.UUID, db: Session = Depends(sesi_db),
+                     _: Pengguna = Depends(wajib_role(REVIEWER, PENGUSUL))) -> list[dict]:
+    """Versi sebelum tiap perubahan dari `kategori_histori`, terbaru dulu (isi saat ini tidak termasuk). Reviewer dan
+    Pengusul (lihat saja, C5). Error: 403, 404."""
     k = _ambil_kategori(db, kategori_id)
     baris = db.scalars(select(KategoriHistori).where(KategoriHistori.kategori_id == k.id)
                        .order_by(KategoriHistori.updated_date.desc())).all()

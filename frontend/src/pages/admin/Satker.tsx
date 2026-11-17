@@ -2,8 +2,10 @@
  *  dokumen "Data Satker dan Unit Kerja". Pengguna merujuk ke Satker ini. */
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Plus } from "lucide-react";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { api } from "../../api";
+import { FormFilter, type NilaiFilter, OPSI_STATUS, Paginasi, ThUrut, cocok, lolosJejak, lolosStatus, usePaginasi, useUrut } from "../../components/TabelData";
+import { waktuAngka } from "../../format";
 import { Aksi, HalamanDetail, HalamanForm, LencanaAktif, PilihBawah, type Satker, TD, barisJejak, daftarUke1, kunciUke1, th, usePesanSukses } from "../../components/Kelola";
 import { Input, Judul, Kartu, Kolom, Konfirmasi, Kosong, Memuat, Peringatan, Tombol, cx } from "../../ui";
 
@@ -41,7 +43,7 @@ export default function KelolaSatker() {
     onSuccess: () => {
       setSukses(jenis === "unit" ? `Unit Kerja ${(form!.unit_kerja ?? "").trim()} berhasil disimpan.` : pesan(form!.nama, "disimpan"));
       setForm(null);
-      qc.invalidateQueries({ queryKey: ["satker"] }); qc.invalidateQueries({ queryKey: ["pengguna"] });
+      qc.invalidateQueries({ queryKey: ["satker"], exact: true }); qc.invalidateQueries({ queryKey: ["pengguna"] });
     },
   });
   const buka = (s?: Satker) => {
@@ -67,8 +69,23 @@ export default function KelolaSatker() {
   const [dihapus, setDihapus] = useState<Satker | null>(null);
   const hapus = useMutation({
     mutationFn: (s: Satker) => api.del(`/api/satker/${s.id}`),
-    onSuccess: (_, s) => { setSukses(pesan(s.nama, "dihapus")); setDihapus(null); qc.invalidateQueries({ queryKey: ["satker"] }); },
+    onSuccess: (_, s) => { setSukses(pesan(s.nama, "dihapus")); setDihapus(null); qc.invalidateQueries({ queryKey: ["satker"], exact: true }); },
   });
+  // Filter & urut hanya tampilan (daftar tetap urutan server bila kolom tidak diklik). Hook ini harus di atas return bersyarat.
+  const [f, setF] = useState<NilaiFilter>({});
+  const semua = q.data ?? [];
+  // Isian filter = kolom tabel dengan urutan yang sama (Kode UKE I, Unit Kerja, Kode UKE II, Satuan Kerja, Status,
+  // Diinput Oleh, Tanggal Input) — ketentuan pemilik produk: "sesuai urutan tabel". Penginput kosong tampil "Sistem".
+  const lolos = useMemo(() => semua.filter((s) => cocok(f.kode_uke1, s.kode_uke1) && (!f.unit || s.unit_kerja === f.unit)
+    && cocok(f.kode_uke2, s.kode_uke2) && cocok(f.nama, s.nama) && lolosStatus(f.status, s.aktif !== false)
+    && lolosJejak(f, s)), [semua, f]);
+  const { baris, urut, klik } = useUrut<Satker, KolomIsi | "aktif" | "oleh" | "tanggal">(lolos, {
+    kode_uke1: (s) => s.kode_uke1 ?? "", unit_kerja: (s) => s.unit_kerja ?? "", kode_uke2: (s) => s.kode_uke2 ?? "", nama: (s) => s.nama ?? "",
+    aktif: (s) => +(s.aktif === false), oleh: (s) => s.diubah_oleh ?? "Sistem", tanggal: (s) => s.diubah_at ?? "",
+  });
+  // Paginasi di browser seperti Master RO (bawaan 20 baris); kembali ke halaman 1 setiap filter/urutan berubah.
+  const pg = usePaginasi(baris, [f, urut], 20);
+  const daftarUnit = [...new Set(semua.map((s) => s.unit_kerja).filter((u): u is string => !!u))].sort((a, b) => a.localeCompare(b, "id"));
   const isian = (k: KolomIsi, label: string, maks: number, wajib = false) => (
     <Kolom label={label} wajib={wajib}>
       <Input required={wajib} maxLength={maks} value={form?.[k] ?? ""} onChange={(e) => setForm({ ...form!, [k]: e.target.value })} />
@@ -81,12 +98,12 @@ export default function KelolaSatker() {
   const isi = (s: Satker) => KOLOM.map(({ k, label }): [string, string] => [label, s[k] || "—"]);
 
   if (lihat) return (
-    <HalamanDetail kembali="Satuan Kerja" judul="Detail Satuan Kerja" sub={lihat.nama || "—"} tutup={() => setLihat(null)}
+    <HalamanDetail kembali="Satuan Kerja" judul="Detail Satuan Kerja" tutup={() => setLihat(null)}
       info={[...isi(lihat), ["Status", <LencanaAktif aktif={lihat.aktif !== false} />], ...barisJejak(lihat)]} />
   );
 
   if (form) return (
-    <HalamanForm judul={form.id ? "Ubah Satuan Kerja" : "Tambah Satuan Kerja"} sub={form.id ? "Perbarui data Unit Kerja (Eselon I) atau Satuan Kerja (Eselon II)." : "Pilih tingkat yang ditambahkan: Unit Kerja (Eselon I), atau Satuan Kerja (Eselon II) beserta Unit Kerja induknya."}
+    <HalamanForm judul={form.id ? "Ubah Satuan Kerja" : "Tambah Satuan Kerja"}
       tutup={() => setForm(null)} kirim={kirim} reset={form.id ? undefined : () => buka()}
       galat={galatForm ? new Error(galatForm) : simpan.error} sibuk={simpan.isPending}>
       <fieldset className="space-y-1.5">
@@ -125,28 +142,48 @@ export default function KelolaSatker() {
 
   return (
     <div className="w-full">
-      <Judul judul="Satuan Kerja" sub="Kelola Unit Kerja (Eselon I) dan Satuan Kerja (Eselon II) beserta kodenya. Satuan Kerja dipilih saat membuat akun Pengusul."
+      <Judul judul="Satuan Kerja"
         aksi={<Tombol onClick={() => buka()}><Plus className="size-4" />Tambah Satuan Kerja</Tombol>} />
       {sukses && <div className="mb-3"><Peringatan jenis="sukses">{sukses}</Peringatan></div>}
-      {q.isLoading ? <Memuat /> : q.error ? <Peringatan>{(q.error as Error).message}</Peringatan> : !q.data?.length ? <Kosong>Belum ada Satuan Kerja.</Kosong> : (
+      {!!q.data?.length && (
+        <FormFilter judul="Satuan Kerja" nilai={f} terapkan={setF} bidang={[
+          { jenis: "teks", kunci: "kode_uke1", label: "Kode UKE I", placeholder: "Cari kode, mis. 01…", kecil: true },
+          { jenis: "pilih", kunci: "unit", label: "Unit Kerja (Eselon I)", semua: "Semua Unit Kerja", opsi: daftarUnit.map((u) => ({ nilai: u, label: u })) },
+          { jenis: "teks", kunci: "kode_uke2", label: "Kode UKE II", placeholder: "Cari kode, mis. 01.04…", kecil: true },
+          { jenis: "teks", kunci: "nama", label: "Satuan Kerja (Eselon II)", placeholder: "Cari satuan kerja…" },
+          { jenis: "pilih", kunci: "status", label: "Status", semua: "Semua Status", opsi: OPSI_STATUS, kecil: true },
+          { jenis: "teks", kunci: "oleh", label: "Diinput Oleh", placeholder: "Cari nama penginput…" },
+          { jenis: "tanggal", kunci: "tanggal", label: "Tanggal Input", kecil: true },
+        ]} />
+      )}
+      {q.isLoading ? <Memuat /> : q.error ? <Peringatan>{(q.error as Error).message}</Peringatan> : !q.data?.length ? <Kosong>Belum ada Satuan Kerja.</Kosong>
+        : baris.length === 0 ? <Kosong>Tidak ada Satuan Kerja yang cocok dengan filter.</Kosong> : (
         <Kartu className="overflow-x-auto">
-          <table className="w-full min-w-[60rem] text-sm">
+          <table className="w-full min-w-[84rem] text-sm">
             <thead className="bg-slate-100 text-xs font-semibold text-slate-700">
-              <tr>{["No", ...KOLOM.map((x) => x.label), "Aksi"].map(th)}</tr>
+              <tr>{th("No")}{KOLOM.map((x) => <ThUrut key={x.k} label={x.label} kolom={x.k} urut={urut} klik={klik} />)}
+                <ThUrut label="Status" kolom="aktif" urut={urut} klik={klik} />
+                <ThUrut label="Diinput Oleh" kolom="oleh" urut={urut} klik={klik} />
+                <ThUrut label="Tanggal Input" kolom="tanggal" urut={urut} klik={klik} />{th("Aksi")}</tr>
             </thead>
-            <tbody className="divide-y divide-slate-100">{q.data.map((s, i) => (
+            <tbody className="divide-y divide-slate-100">{pg.tampil.map((s, i) => (
               <tr key={s.id} className={cx("align-middle transition-colors hover:bg-slate-50", s.aktif === false && "bg-slate-50 text-slate-400")}>
-                <td className={cx(TD, "text-slate-500")}>{i + 1}</td>
+                <td className={cx(TD, "text-slate-500")}>{pg.awal + i + 1}</td>
                 {KOLOM.map(({ k, lebar }) => (
                   <td key={k} className={cx(TD, s.aktif === false ? "text-slate-400" : "text-slate-700", lebar)}>
-                    {s[k] || "—"}{k === "nama" && s.aktif === false && <div className="mt-1"><LencanaAktif aktif={false} /></div>}
+                    {s[k] || "—"}
                   </td>
                 ))}
+                {/* Status, Diinput Oleh, Tanggal Input: gaya sama dengan tabel Checklist & Master RO. */}
+                <td className={cx(TD, "whitespace-nowrap")}><LencanaAktif aktif={s.aktif !== false} /></td>
+                <td className={cx(TD, "min-w-[9rem] whitespace-nowrap text-slate-600")}>{s.diubah_oleh ?? "Sistem"}</td>
+                <td className={cx(TD, "min-w-[9.5rem] whitespace-nowrap text-slate-600")}>{waktuAngka(s.diubah_at)}</td>
                 <Aksi nama={s.nama || "Satuan Kerja"} lihat={() => setLihat(s)} ubah={() => buka(s)} hapus={() => { hapus.reset(); setDihapus(s); }} />
               </tr>))}</tbody>
           </table>
         </Kartu>
       )}
+      {baris.length > 0 && <Paginasi {...pg} />}
       {dihapus && (
         <Konfirmasi bahaya buka judul="Hapus Satuan Kerja secara permanen?" teksYa="Ya, hapus" teksBatal="Batal" baris={isi(dihapus)}
           pesan="Satuan Kerja dihapus dan tidak dapat dikembalikan. Satuan Kerja yang masih dipakai pengguna atau usulan tidak dapat dihapus."

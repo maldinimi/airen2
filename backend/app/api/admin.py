@@ -1,4 +1,4 @@
-"""Endpoint administrasi: pengguna & role, Satker, node AI, audit log."""
+"""Endpoint administrasi: pengguna & role (Admin), Satker (Reviewer), node AI & audit log (Admin)."""
 import re
 import uuid
 from datetime import datetime
@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 from app.akses import ADMIN, PENGUSUL, REVIEWER, wajib_role
 from app.audit import catat
 from app.data_satker import SATKER
-from app.db import sesi_db
+from app.db import jam_db, sesi_db
 from app.galat import Galat
 from app.keamanan import hash_password, hash_token, token_baru, validasi_password
 from app.model import AuditLog, NodeAI, Pengguna, PenggunaRole, Satker, Sesi
@@ -48,16 +48,12 @@ class NodeMasuk(BaseModel):
     nama: str
 
 
-def _jam_db(db: Session) -> datetime:
-    return db.scalar(select(func.now()))
-
-
 def _jejak(db: Session, x: Pengguna | Satker) -> dict:
-    """Siapa & kapan data dibuat/terakhir diubah (kolom created_by/create_date/update_by/update_date). None = sistem."""
+    """Siapa & kapan data dibuat/terakhir diubah (kolom created_by/created_date/updated_by/updated_date). None = sistem."""
     def nama(pid):
         return db.get(Pengguna, pid).nama if pid else None
-    return {"dibuat_oleh": nama(x.created_by), "dibuat_at": x.create_date.isoformat(),
-            "diubah_oleh": nama(x.update_by), "diubah_at": x.update_date.isoformat()}
+    return {"dibuat_oleh": nama(x.created_by), "dibuat_at": x.created_date.isoformat(),
+            "diubah_oleh": nama(x.updated_by), "diubah_at": x.updated_date.isoformat()}
 
 
 def _satker(db: Session, s: Satker) -> dict:
@@ -68,6 +64,8 @@ def _satker(db: Session, s: Satker) -> dict:
 def _validasi_satker(db: Session, data: SatkerMasuk, satker_id: uuid.UUID | None = None) -> None:
     """Error 400 bila isian terlalu panjang; 409 bila kode UKE II dipakai Satker lain atau Satuan Kerja yang sama
     sudah ada di Unit Kerja itu."""
+    if not data.unit_kerja and not data.nama:
+        raise Galat(400, "Isi minimal Unit Kerja atau Satuan Kerja.")
     if data.kode_uke1 and not re.fullmatch(r"\d{2}", data.kode_uke1):
         raise Galat(400, "Kode UKE I harus 2 digit angka, mis. 01.")
     if data.kode_uke2 and not re.fullmatch(r"\d{2}\.\d{2}", data.kode_uke2):
@@ -144,10 +142,10 @@ def buat_pengguna(data: PenggunaMasuk, request: Request, db: Session = Depends(s
         raise Galat(400, "Password wajib diisi.")
     if db.scalar(select(Pengguna.id).where(func.lower(Pengguna.username) == data.username.strip().lower())):
         raise Galat(409, "Username sudah dipakai.")
-    sekarang = _jam_db(db)
+    sekarang = jam_db(db)
     p = Pengguna(username=data.username.strip(), satker_id=data.satker_id, aktif=data.aktif,
-                 password_hash=hash_password(data.password), created_by=admin.id, create_date=sekarang,
-                 update_by=admin.id, update_date=sekarang)
+                 password_hash=hash_password(data.password), created_by=admin.id, created_date=sekarang,
+                 updated_by=admin.id, updated_date=sekarang)
     p.roles = [PenggunaRole(role=r) for r in sorted(set(data.roles))]
     db.add(p)
     _simpan(db, "Username sudah dipakai.")
@@ -172,7 +170,7 @@ def ubah_pengguna(pengguna_id: uuid.UUID, data: PenggunaMasuk, request: Request,
         raise Galat(409, "Username sudah dipakai.")
     sebelum = _pengguna(db, p)
     p.username, p.satker_id, p.aktif = username, data.satker_id, data.aktif
-    p.update_by, p.update_date = admin.id, _jam_db(db)
+    p.updated_by, p.updated_date = admin.id, jam_db(db)
     # Hanya selisihnya: mengganti seluruh list memicu INSERT sebelum DELETE → bentrok primary key.
     p.roles = [r for r in p.roles if r.role in data.roles] + \
         [PenggunaRole(role=r) for r in sorted(set(data.roles) - p.daftar_role)]
@@ -212,24 +210,26 @@ def hapus_pengguna(pengguna_id: uuid.UUID, request: Request, db: Session = Depen
 
 
 @router.get("/satker/referensi")
-def referensi_satker(_: Pengguna = Depends(wajib_role(ADMIN))) -> list[dict]:
+def referensi_satker(_: Pengguna = Depends(wajib_role(REVIEWER))) -> list[dict]:
     """Daftar resmi UKE I/UKE II dari dokumen "Data Satker dan Unit Kerja" (app/data_satker.py), urut dokumen —
     sumber pilihan Unit Kerja & Satuan Kerja di form Tambah/Ubah Satker."""
     return [{k: s[k] for k in ("kode_uke1", "unit_kerja", "kode_uke2", "nama")} for s in SATKER]
 
 
 @router.get("/satker")
-def daftar_satker(db: Session = Depends(sesi_db), _: Pengguna = Depends(wajib_role(ADMIN))) -> list[dict]:
-    """Daftar Satker untuk menu Satker & pilihan di form Pengguna (Admin saja: memuat nama pembuat/pengubah)."""
+def daftar_satker(db: Session = Depends(sesi_db), _: Pengguna = Depends(wajib_role(REVIEWER, ADMIN))) -> list[dict]:
+    """Daftar Satker untuk menu Satuan Kerja (Reviewer, kelola) & pilihan Satker di form Pengguna (Admin). Memuat nama
+    pembuat/pengubah, jadi tidak untuk Pengusul. Error: 403."""
     return [_satker(db, s) for s in db.scalars(select(Satker).order_by(Satker.kode_uke1, Satker.kode_uke2, Satker.unit_kerja, Satker.nama))]
 
 
 @router.post("/satker")
-def buat_satker(data: SatkerMasuk, request: Request, db: Session = Depends(sesi_db), admin: Pengguna = Depends(wajib_role(ADMIN))) -> dict:
+def buat_satker(data: SatkerMasuk, request: Request, db: Session = Depends(sesi_db), admin: Pengguna = Depends(wajib_role(REVIEWER))) -> dict:
+    """Tambah Unit Kerja / Satuan Kerja (Reviewer). Error: 400 isian tidak valid, 409 bentrok."""
     _validasi_satker(db, data)
-    sekarang = _jam_db(db)
+    sekarang = jam_db(db)
     s = Satker(**data.isian(), aktif=data.aktif,
-               created_by=admin.id, create_date=sekarang, update_by=admin.id, update_date=sekarang)
+               created_by=admin.id, created_date=sekarang, updated_by=admin.id, updated_date=sekarang)
     db.add(s)
     _simpan(db, PESAN_SATKER_GANDA)
     catat(db, request, "SATKER_BUAT", "satker", s.id, sesudah=_satker(db, s))
@@ -239,13 +239,14 @@ def buat_satker(data: SatkerMasuk, request: Request, db: Session = Depends(sesi_
 
 @router.put("/satker/{satker_id}")
 def ubah_satker(satker_id: uuid.UUID, data: SatkerMasuk, request: Request, db: Session = Depends(sesi_db),
-                admin: Pengguna = Depends(wajib_role(ADMIN))) -> dict:
+                admin: Pengguna = Depends(wajib_role(REVIEWER))) -> dict:
+    """Ubah Satker (Reviewer). Error: 400 isian tidak valid, 404, 409 bentrok."""
     s = db.get(Satker, satker_id)
     if s is None:
         raise Galat(404, "Satuan Kerja tidak ditemukan.")
     _validasi_satker(db, data, s.id)
     sebelum = _satker(db, s)
-    sekarang = _jam_db(db)
+    sekarang = jam_db(db)
     # Mengganti nama Unit Kerja (baris Unit Kerja saja) → Satuan Kerja di bawahnya ikut, agar satu Unit Kerja tidak
     # tercatat dengan dua nama berbeda (query WHERE unit_kerja = ... tetap mendapatkan semuanya).
     ikut = 0
@@ -255,12 +256,12 @@ def ubah_satker(satker_id: uuid.UUID, data: SatkerMasuk, request: Request, db: S
         if data.kode_uke1 != s.kode_uke1 and db.scalar(anak.where(Satker.kode_uke2 != "").limit(1)):
             raise Galat(400, "Kode UKE I tidak dapat diubah karena sudah dipakai Kode UKE II Satuan Kerja di bawahnya.")
         ikut = db.execute(update(Satker).where(Satker.unit_kerja == s.unit_kerja, Satker.id != s.id)
-                          .values(unit_kerja=data.unit_kerja, kode_uke1=data.kode_uke1, update_by=admin.id,
-                                  update_date=sekarang)).rowcount
+                          .values(unit_kerja=data.unit_kerja, kode_uke1=data.kode_uke1, updated_by=admin.id,
+                                  updated_date=sekarang)).rowcount
     for kolom, nilai in data.isian().items():
         setattr(s, kolom, nilai)
     s.aktif = data.aktif
-    s.update_by, s.update_date = admin.id, sekarang
+    s.updated_by, s.updated_date = admin.id, sekarang
     _simpan(db, PESAN_SATKER_GANDA)
     catat(db, request, "SATKER_UBAH", "satker", s.id, sebelum=sebelum, sesudah={**_satker(db, s), "satuan_kerja_ikut_diubah": ikut})
     db.commit()
@@ -269,8 +270,8 @@ def ubah_satker(satker_id: uuid.UUID, data: SatkerMasuk, request: Request, db: S
 
 @router.delete("/satker/{satker_id}")
 def hapus_satker(satker_id: uuid.UUID, request: Request, db: Session = Depends(sesi_db),
-                 _: Pengguna = Depends(wajib_role(ADMIN))) -> dict:
-    """Hapus permanen Satker. Error 404 bila tidak ada, 409 bila masih dipakai pengguna atau usulan."""
+                 _: Pengguna = Depends(wajib_role(REVIEWER))) -> dict:
+    """Hapus permanen Satker (Reviewer). Error 404 bila tidak ada, 409 bila masih dipakai pengguna atau usulan."""
     s = db.get(Satker, satker_id)
     if s is None:
         raise Galat(404, "Satuan Kerja tidak ditemukan.")

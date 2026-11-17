@@ -1,8 +1,8 @@
 """Hak akses: role + Satker, selalu dicek di backend (CLAUDE.md aturan 8, PRD §4).
 
 - Pengusul : hanya usulan milik Satker-nya; membuat/merevisi/mengajukan.
-- Reviewer : seluruh usulan; override & finalisasi.
-- Admin    : seluruh data; kelola master & pengguna.
+- Reviewer : seluruh usulan; override & finalisasi; kelola Panduan, Checklist, Kategori, Satuan Kerja, Master RO.
+- Admin    : hanya pengguna & role, Node AI, dan audit log (tidak melihat usulan; keputusan pemilik produk 2026-11).
 Satu pengguna dapat memiliki beberapa role; haknya adalah gabungan.
 """
 from datetime import datetime, timezone
@@ -23,7 +23,8 @@ METODE_AMAN = {"GET", "HEAD", "OPTIONS"}
 
 
 def boleh_lihat_semua(p: Pengguna) -> bool:
-    return bool(p.daftar_role & {REVIEWER, ADMIN})
+    """Melihat usulan semua Satker: hanya Reviewer. Admin tidak lagi mengakses Dashboard/Usulan."""
+    return REVIEWER in p.daftar_role
 
 
 def boleh_lihat_usulan(p: Pengguna, u: Usulan) -> bool:

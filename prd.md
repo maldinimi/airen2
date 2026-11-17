@@ -83,8 +83,10 @@ Aplikasi **WAJIB** memiliki login dan pembatasan akses per role.
 | Role | Tanggung jawab | Akses data |
 | --- | --- | --- |
 | **Pengusul** (penginput TOR & RAB) | Membuat usulan, mengunggah TOR & RAB, **mengajukan review** (yang langsung menjalankan review AI), memantau status, membaca **hasil review AI** (segera setelah selesai) dan **hasil final** dari reviewer, mengunggah revisi. | Hanya usulan milik Satker-nya. |
-| **Reviewer** | Memeriksa hasil review AI, melakukan **override**, memberi catatan, dan **memfinalkan** hasil review. Reviewer **tidak dapat** menjalankan review AI ulang. | Seluruh usulan (dapat difilter per Satker). |
-| **Admin** | Mengelola Checklist, Kategori, Panduan, pengguna & role, serta melihat audit log. | Seluruh data. |
+| **Reviewer** | Memeriksa hasil review AI, melakukan **override**, memberi catatan, dan **memfinalkan** hasil review. Reviewer **tidak dapat** menjalankan review AI ulang. Reviewer juga **mengelola** Panduan, Checklist, Kategori, Satuan Kerja, dan Master RO. | Seluruh usulan (dapat difilter per Satker). |
+| **Admin** | Mengelola pengguna & role (termasuk reset password) dan node AI, serta melihat audit log. Admin tidak mengelola usulan maupun acuan review. | Data pengguna, node AI, dan audit log. |
+
+Pengusul dapat **melihat** (tanpa mengubah) Panduan, Checklist, dan Kategori yang menjadi acuan review.
 
 Satu pengguna dapat memiliki lebih dari satu role.
 
@@ -150,7 +152,7 @@ Aturan alur:
 - B2. Setiap item memiliki minimal: judul, deskripsi/kriteria pemenuhan, dan berlaku untuk **TOR / RAB / keduanya**.
 - B3. **Versioning:** setiap perubahan pada daftar checklist menghasilkan versi baru. Setiap review **WAJIB** mencatat versi checklist yang dipakai, sehingga untuk review mana pun pengguna dapat melihat **persis checklist apa saja** (beserta isinya saat itu) yang digunakan.
 - B4. Menghapus atau mengubah item tidak boleh mengubah tampilan hasil review lama.
-- B5. Admin dapat melihat daftar versi dan isi setiap versi.
+- B5. Reviewer dapat melihat daftar versi dan isi setiap versi.
 
 ### Modul C — Kategori
 
@@ -166,21 +168,21 @@ Aturan alur:
 - C2. AI **WAJIB** memakai definisi kategori yang aktif saat review berjalan (bukan definisi yang di-hardcode).
 - C3. **Versioning:** setiap review **WAJIB** mencatat daftar kategori yang dipakai (kode, nama, dan definisi kategori berstatus **Aktif**) berupa **salinan** saat review dimulai, sehingga untuk review mana pun pengguna dapat melihat **persis definisi kategori apa saja** (beserta isinya saat itu) yang digunakan. Daftar ini ditampilkan di halaman hasil review dan **tidak berubah** walaupun kategori kemudian diubah atau dihapus.
 - C4. Menghapus atau mengubah kategori tidak boleh mengubah tampilan hasil review lama.
-- C5. **Detail kategori** (halaman tersendiri, Admin) menampilkan Kode, Kategori, Deskripsi, Status, Tanggal Input, dan Diinput Oleh (perubahan terakhir), serta **Kategori Histori**: isi kategori sebelum tiap perubahan (Tanggal Input, Diinput Oleh, Kode, Kategori, Deskripsi, Status), terbaru di atas. Versi terkini hanya ditampilkan di bagian atas detail. Menambah kategori atau menyimpan tanpa perubahan tidak menambah riwayat. Riwayat tidak pernah diubah.
+- C5. **Detail kategori** (halaman tersendiri, Reviewer) menampilkan Kode, Kategori, Deskripsi, Status, Tanggal Input, dan Diinput Oleh (perubahan terakhir), serta **Kategori Histori**: isi kategori sebelum tiap perubahan (Tanggal Input, Diinput Oleh, Kode, Kategori, Deskripsi, Status), terbaru di atas. Versi terkini hanya ditampilkan di bagian atas detail. Menambah kategori atau menyimpan tanpa perubahan tidak menambah riwayat. Riwayat tidak pernah diubah.
 - C6. Setiap kategori berstatus **Aktif** atau **Nonaktif**, seperti panduan. Hanya kategori Aktif yang dipakai AI pada review berikutnya; kategori Nonaktif tetap tampil di daftar dan dapat diaktifkan kembali tanpa dihapus. Kategori baru selalu Aktif (termasuk keempat kategori isi awal); status diubah lewat Edit. Minimal satu kategori harus berstatus Aktif.
-- C7. **Daftar kategori** berupa tabel: Kode, Kategori, Status (hanya ditampilkan), Deskripsi, dan Aksi berupa ikon — **Detail**, **Edit**, dan **Hapus** — diurutkan menurut kode (K1, K2, …, K10). **Tambah** dan **Edit** di halaman form tersendiri: Kode (wajib, unik, maksimal 20 karakter, otomatis huruf kapital; boleh diganti saat edit), Kategori (wajib, maksimal 255 karakter), dan Deskripsi (wajib; dipakai AI apa adanya, C2); form **Edit** juga memuat **Status** Aktif/Nonaktif (C6). Sebelum disimpan, tampil ringkasan isian untuk **diperiksa kembali dan dikonfirmasi**. Tambah, edit, dan hapus hanya oleh Admin; perubahan dipakai AI mulai review berikutnya.
-- C8. **Hapus bersifat permanen:** kategori beserta seluruh Kategori Histori-nya dihapus dan tidak dapat dikembalikan; jejak siapa dan kapan menghapus beserta isi kategori tetap tercatat di audit log (§7.3). Hasil review lama **tidak berubah** karena memakai salinannya sendiri (C3, C4). Sebelum menghapus, Admin diberi peringatan berisi ringkasan kategori (Kode, Kategori, jumlah versi di Kategori Histori) dan harus mengonfirmasinya. Minimal satu kategori Aktif harus tetap ada, karena Screening 2 membutuhkan kategori.
+- C7. **Daftar kategori** berupa tabel: Kode, Kategori, Status (hanya ditampilkan), Deskripsi, dan Aksi berupa ikon — **Detail**, **Edit**, dan **Hapus** — diurutkan menurut kode (K1, K2, …, K10). **Tambah** dan **Edit** di halaman form tersendiri: Kode (wajib, unik, maksimal 20 karakter, otomatis huruf kapital; boleh diganti saat edit), Kategori (wajib, maksimal 255 karakter), dan Deskripsi (wajib; dipakai AI apa adanya, C2); form **Edit** juga memuat **Status** Aktif/Nonaktif (C6). Sebelum disimpan, tampil ringkasan isian untuk **diperiksa kembali dan dikonfirmasi**. Tambah, edit, dan hapus hanya oleh Reviewer; perubahan dipakai AI mulai review berikutnya.
+- C8. **Hapus bersifat permanen:** kategori beserta seluruh Kategori Histori-nya dihapus dan tidak dapat dikembalikan; jejak siapa dan kapan menghapus beserta isi kategori tetap tercatat di audit log (§7.3). Hasil review lama **tidak berubah** karena memakai salinannya sendiri (C3, C4). Sebelum menghapus, Reviewer diberi peringatan berisi ringkasan kategori (Kode, Kategori, jumlah versi di Kategori Histori) dan harus mengonfirmasinya. Minimal satu kategori Aktif harus tetap ada, karena Screening 2 membutuhkan kategori.
 
 ### Modul D — Panduan
 
 - D1. Penyimpanan khusus (folder di dalam aplikasi) untuk file PDF panduan.
-- D2. **Unggah** dilakukan di halaman form tersendiri: satu file PDF per unggahan, beserta **Nama Acuan** (wajib, maksimal 500 karakter), **Deskripsi**, dan **Status** (Aktif/Nonaktif, bawaan Aktif). File yang dipilih dapat **dipratinjau** (dibuka dan dibaca) sebelum diunggah, sehingga Admin dapat memastikan file yang benar; file PDF yang rusak langsung ditandai. Tombol **Reset** mengosongkan seluruh isian, termasuk file. **Edit** juga di halaman form tersendiri untuk mengubah Nama Acuan, Deskripsi, dan Status; file **tidak dapat diganti** (untuk mengganti file, unggah panduan baru lalu nonaktifkan atau hapus yang lama). Sebelum unggah/edit disimpan, tampil ringkasan isian untuk **diperiksa kembali dan dikonfirmasi**. Unggah, edit, dan hapus hanya oleh Admin.
+- D2. **Unggah** dilakukan di halaman form tersendiri: satu file PDF per unggahan, beserta **Nama Acuan** (wajib, maksimal 500 karakter), **Deskripsi**, dan **Status** (Aktif/Nonaktif, bawaan Aktif). File yang dipilih dapat **dipratinjau** (dibuka dan dibaca) sebelum diunggah, sehingga Reviewer dapat memastikan file yang benar; file PDF yang rusak langsung ditandai. Tombol **Reset** mengosongkan seluruh isian, termasuk file. **Edit** juga di halaman form tersendiri untuk mengubah Nama Acuan, Deskripsi, dan Status; file **tidak dapat diganti** (untuk mengganti file, unggah panduan baru lalu nonaktifkan atau hapus yang lama). Sebelum unggah/edit disimpan, tampil ringkasan isian untuk **diperiksa kembali dan dikonfirmasi**. Unggah, edit, dan hapus hanya oleh Reviewer.
 - D3. Semua pengguna dapat melihat daftar dan detail panduan serta **membaca isi PDF panduan** di dalam aplikasi.
 - D4. Panduan baru harus diproses (dibaca, termasuk tabel, gambar, dan scan) agar siap dirujuk AI. Status pemrosesan tiap file ditampilkan (mis. antre / diproses / siap / gagal), dan file yang gagal dapat diproses ulang. Pemrosesan yang terhenti berulang kali (mis. file terlalu berat) tidak boleh tertahan di status "diproses"; file tersebut ditandai gagal beserta keterangannya agar dapat diproses ulang.
 - D5. **Versioning:** setiap review **WAJIB** mencatat panduan apa saja (dan versinya) yang berlaku saat review, sehingga pengguna dapat mengetahui TOR & RAB tersebut direview dengan acuan panduan apa saja. Catatan ini adalah **salinan** saat review dijalankan, sehingga **tidak berubah** walaupun panduan diedit kemudian; catatan hanya hilang bila panduan dihapus (lihat D6).
-- D6. **Hapus bersifat permanen:** panduan, seluruh Panduan Histori-nya, dan file PDF-nya (beserta hasil pemrosesannya) dihapus dari aplikasi dan database, dan tidak dapat dikembalikan. File PDF yang isinya sama dan masih dipakai data lain (panduan lain atau TOR/RAB) tetap disimpan. Jejak siapa dan kapan menghapus tetap tercatat di audit log (§7.3), tanpa isi dokumen. Akibatnya, hasil review lama kehilangan catatan dan rujukan ke panduan tersebut — sebelum menghapus, Admin diberi peringatan jelas berisi ringkasan panduan yang akan dihapus (Nama Acuan, file, status, jumlah versi di Panduan Histori) dan harus mengonfirmasinya. Penghapusan ditolak bila panduan sedang dipakai review yang berjalan atau filenya sedang diproses. Untuk berhenti memakai panduan **tanpa kehilangan data**, gunakan status Nonaktif (D7).
+- D6. **Hapus bersifat permanen:** panduan, seluruh Panduan Histori-nya, dan file PDF-nya (beserta hasil pemrosesannya) dihapus dari aplikasi dan database, dan tidak dapat dikembalikan. File PDF yang isinya sama dan masih dipakai data lain (panduan lain atau TOR/RAB) tetap disimpan. Jejak siapa dan kapan menghapus tetap tercatat di audit log (§7.3), tanpa isi dokumen. Akibatnya, hasil review lama kehilangan catatan dan rujukan ke panduan tersebut — sebelum menghapus, Reviewer diberi peringatan jelas berisi ringkasan panduan yang akan dihapus (Nama Acuan, file, status, jumlah versi di Panduan Histori) dan harus mengonfirmasinya. Penghapusan ditolak bila panduan sedang dipakai review yang berjalan atau filenya sedang diproses. Untuk berhenti memakai panduan **tanpa kehilangan data**, gunakan status Nonaktif (D7).
 - D7. **Status Aktif/Nonaktif:** hanya panduan **Aktif** yang sudah **siap** yang dipakai review berikutnya. Panduan Nonaktif tetap tampil di daftar, tetap dapat dibuka, dan dapat diaktifkan kembali lewat Edit.
-- D8. **Daftar panduan** berupa tabel: No, Nama Acuan, Deskripsi, Status, Diinput Oleh, Tanggal Input (input/perubahan terakhir), dan Aksi berupa ikon — **Lihat detail** (semua pengguna), **Edit** dan **Hapus** (Admin). Kolom Status dapat diurutkan: Default (urut nama), Aktif, atau Nonaktif.
+- D8. **Daftar panduan** berupa tabel: No, Nama Acuan, Deskripsi, Status, Diinput Oleh, Tanggal Input (input/perubahan terakhir), dan Aksi berupa ikon — **Lihat detail** (semua pengguna), **Edit** dan **Hapus** (Reviewer). Kolom Status dapat diurutkan: Default (urut nama), Aktif, atau Nonaktif.
 - D9. **Detail panduan** (halaman tersendiri) menampilkan Nama Acuan, Deskripsi, Status, status pemrosesan, file, tombol **Lihat PDF**, Tanggal Input, dan Diinput Oleh (unggahan pertama), serta **Panduan Histori** (riwayat versi): setiap unggah dan setiap edit (nama, deskripsi, maupun status) tercatat sebagai versi; tabel Panduan Histori menampilkan versi-versi sebelum perubahan terakhir (Tanggal Input, Diinput Oleh, Status, Nama Acuan, Deskripsi), sedangkan versi terkini ditampilkan di bagian atas detail. **Data terkini disimpan terpisah dari riwayat:** riwayat hanya berisi versi sebelum perubahan; setiap edit memindahkan data terkini ke riwayat (dengan tanggal dan penginput aslinya), lalu data terkini diperbarui. Riwayat tidak pernah diubah.
 
 ### Modul E — Review AI
@@ -236,6 +238,12 @@ Aturan:
 - O8. **Nilai final** = nilai override bila ada, selain itu nilai AI. Nilai final inilah yang dipakai untuk status usulan, kategori di tabel, dan tampilan bagi Pengusul.
 
 ---
+
+### Modul F — Master RO
+
+- F1. Reviewer mengelola data referensi RO secara berjenjang: **Program → Kegiatan → KRO → RO**. Setiap Kegiatan berada di bawah satu Program, setiap KRO di bawah satu Kegiatan, dan setiap RO di bawah satu KRO.
+- F2. Setiap data memiliki Kode, Nama, dan Status (Aktif/Nonaktif). Kode tidak boleh sama dengan data lain di bawah induk yang sama.
+- F3. Tambah, edit, dan hapus hanya oleh Reviewer. Data yang masih memiliki turunan tidak dapat dihapus. Setiap perubahan tercatat di audit log.
 
 ## 7. Aturan Bisnis
 
@@ -312,17 +320,20 @@ Ketentuan:
 | Halaman | Role | Isi |
 | --- | --- | --- |
 | Login | Semua | — |
-| Dashboard | Semua | Ringkasan jumlah usulan per status/kategori/Satker |
-| Daftar Usulan | Semua (Pengusul: Satker sendiri) | Tabel Modul A + filter |
+| Dashboard | Pengusul, Reviewer | Ringkasan jumlah usulan per status/kategori/Satker |
+| Daftar Usulan | Pengusul (Satker sendiri), Reviewer | Tabel Modul A + filter |
 | Buat Usulan / Unggah Revisi | Pengusul | Form A1 / unggah revisi, tombol "Ajukan Review" |
 | Detail Review | Reviewer, Pengusul (hasil AI segera; hasil final setelah difinalkan) | Hasil Screening 1 & 2, rincian checklist, rekomendasi, override, finalisasi, viewer PDF, acuan yang dipakai (panduan dan kategori beserta definisinya, C3) |
-| Riwayat Usulan | Semua | Timeline revisi & review, perbandingan |
-| Kelola Checklist | Admin | CRUD + daftar versi |
-| Kelola Kategori | Admin | Tabel daftar kategori (C7), detail & Kategori Histori (C5), konfirmasi hapus (C8) |
-| Tambah / Edit Kategori | Admin | Form C7 + konfirmasi periksa kembali |
-| Panduan | Semua (kelola: Admin) | Tabel daftar panduan + urut status (D8), detail & Panduan Histori (D9), viewer PDF, status pemrosesan, konfirmasi hapus (D6) |
-| Unggah / Edit Panduan | Admin | Form D2 (unggah: pratinjau PDF & Reset) + konfirmasi periksa kembali |
-| Kelola Pengguna | Admin | Pengguna, role, Satker |
+| Riwayat Usulan | Pengusul, Reviewer | Timeline revisi & review, perbandingan |
+| Kelola Checklist | Reviewer (Pengusul: lihat saja) | CRUD + daftar versi |
+| Kelola Kategori | Reviewer (Pengusul: lihat saja) | Tabel daftar kategori (C7), detail & Kategori Histori (C5), konfirmasi hapus (C8) |
+| Tambah / Edit Kategori | Reviewer | Form C7 + konfirmasi periksa kembali |
+| Panduan | Pengusul, Reviewer (kelola: Reviewer) | Tabel daftar panduan + urut status (D8), detail & Panduan Histori (D9), viewer PDF, status pemrosesan, konfirmasi hapus (D6) |
+| Unggah / Edit Panduan | Reviewer | Form D2 (unggah: pratinjau PDF & Reset) + konfirmasi periksa kembali |
+| Satuan Kerja | Reviewer | Unit Kerja (Eselon I) & Satuan Kerja (Eselon II) beserta kodenya |
+| Master RO | Reviewer | Program → Kegiatan → KRO → RO (Modul F) |
+| Kelola Pengguna | Admin | Pengguna, role, Satker, reset password |
+| Node AI | Admin | Node AI yang terhubung, daftarkan & cabut node |
 | Audit Log | Admin | — |
 
 ---

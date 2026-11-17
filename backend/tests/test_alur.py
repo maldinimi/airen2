@@ -109,9 +109,9 @@ def test_edit_kategori_mencegah_salin_hasil(klien):
         return pengusul.get(f"/api/review/{pengusul.get(f'/api/usulan/{u['id']}').json()['review_id']}").json()
 
     assert ajukan_lagi().get("disalin_dari_revisi") == 1  # kontrol: acuan sama → disalin
-    admin = klien("admin", "GantiSegera!2026")
-    k = admin.get("/api/kategori").json()["item"][0]
-    assert admin.put(f"/api/kategori/{k['id']}", json={**k, "definisi": k["definisi"] + " (diubah)"}).status_code == 200
+    kelola = klien("reviewer")  # Reviewer mengelola Checklist/Kategori/Panduan
+    k = kelola.get("/api/kategori").json()["item"][0]
+    assert kelola.put(f"/api/kategori/{k['id']}", json={**k, "definisi": k["definisi"] + " (diubah)"}).status_code == 200
     b = ajukan_lagi()
     assert b["status"] == "SELESAI" and b.get("disalin_dari_revisi") is None
 
@@ -127,11 +127,33 @@ def test_hak_akses(klien):
     reviewer = klien("reviewer")
     assert reviewer.get(f"/api/usulan/{u['id']}").status_code == 200
     assert unggah(reviewer, tor=TOR, rab=RAB, tahun_anggaran=2027, kode_ro="X", nama_ro="Y").status_code == 403
+    admin = klien("admin", "GantiSegera!2026")
+    # Pengguna, Node AI & Audit Log: khusus Admin.
     for c in (pengusul, reviewer):
         assert c.get("/api/pengguna").status_code == 403
-        assert c.post("/api/checklist/item", json={"kode": "Z1", "judul": "a", "kriteria": "b", "berlaku_untuk": "TOR"}).status_code == 403
         assert c.get("/api/audit").status_code == 403
+        assert c.get("/api/node-ai").status_code == 403
+    # Checklist, Panduan, Satker, Master RO dikelola Reviewer; Pengusul melihat Checklist (view only); Admin tidak
+    # punya menu-menu ini.
+    i = reviewer.get("/api/checklist").json()["item"][0]
+    assert pengusul.get("/api/checklist").status_code == 200 and pengusul.get(f"/api/checklist/item/{i['id']}/riwayat").status_code == 200
+    assert pengusul.get("/api/panduan").status_code == 200
+    assert admin.get("/api/checklist").status_code == 403 and admin.get(f"/api/checklist/item/{i['id']}/riwayat").status_code == 403
+    assert admin.get("/api/panduan").status_code == 403
+    for c in (pengusul, admin):
+        assert c.post("/api/checklist/item", json={"kode": "Z1", "judul": "a", "kriteria": "b", "berlaku_untuk": "TOR"}).status_code == 403
+        assert c.put(f"/api/checklist/item/{i['id']}", json={**i, "judul": "x"}).status_code == 403
+        assert c.delete(f"/api/checklist/item/{i['id']}").status_code == 403
+        assert c.put("/api/checklist/urutan", json={"id": [i["id"]]}).status_code == 403
         assert c.put("/api/panduan/00000000-0000-0000-0000-000000000000", data={"judul": "x", "aktif": "false"}).status_code == 403
+        assert c.post("/api/satker", json={"unit_kerja": "UK X"}).status_code == 403
+        assert c.get("/api/master-ro").status_code == 403
+    assert pengusul.get("/api/satker").status_code == 403
+    # Admin tidak lagi mengakses Dashboard & Usulan (termasuk file TOR/RAB).
+    assert admin.get("/api/dashboard").status_code == 403
+    assert admin.get("/api/usulan").status_code == 403
+    assert admin.get(f"/api/usulan/{u['id']}").status_code == 403
+    assert admin.get(f"/api/file/{u['tor']['file_id']}").status_code == 404
     anonim = klien()
     assert anonim.get("/api/usulan").status_code == 401
     assert anonim.get(f"/api/file/{u['tor']['file_id']}").status_code == 401
@@ -153,19 +175,19 @@ def test_versioning_tidak_mengubah_review_lama(klien):
     jalankan_antrean()
     rid = pengusul.get(f"/api/usulan/{u['id']}").json()["review_id"]
     sebelum = pengusul.get(f"/api/review/{rid}").json()
-    admin = klien("admin", "GantiSegera!2026")
-    ck = admin.get("/api/checklist").json()["item"]
+    kelola = klien("reviewer")  # Reviewer mengelola Checklist/Kategori/Panduan
+    ck = kelola.get("/api/checklist").json()["item"]
     for i in ck:  # ubah semua item: review lama tetap menampilkan isi saat review dimulai
-        assert admin.put(f"/api/checklist/item/{i['id']}", json={**i, "judul": i["judul"] + " (diubah)"}).status_code == 200
+        assert kelola.put(f"/api/checklist/item/{i['id']}", json={**i, "judul": i["judul"] + " (diubah)"}).status_code == 200
     # Item yang ditambah SETELAH review dimulai tidak ikut ke review lama
-    assert admin.post("/api/checklist/item", json={"kode": "Z99", "judul": "Item baru", "kriteria": "K", "berlaku_untuk": "TOR"}).status_code == 200
-    kat = admin.get("/api/kategori").json()["item"]
+    assert kelola.post("/api/checklist/item", json={"kode": "Z99", "judul": "Item baru", "kriteria": "K", "berlaku_untuk": "TOR"}).status_code == 200
+    kat = kelola.get("/api/kategori").json()["item"]
     # Seed kategori persis PRD C1
     assert [k["kode"] for k in kat] == ["K1", "K2", "K3", "K4"] and all(k["aktif"] for k in kat)
     assert kat[1]["definisi"].startswith("RO prioritas yang ditetapkan secara resmi oleh Menteri")
     assert [k["definisi"] for k in sebelum["kategori"]["pilihan"]] == [k["definisi"] for k in kat]  # C3: definisi tampil di review
     for k in kat:
-        assert admin.put(f"/api/kategori/{k['id']}", json={**k, "nama": k["nama"] + " X", "definisi": k["definisi"] + " X"}).status_code == 200
+        assert kelola.put(f"/api/kategori/{k['id']}", json={**k, "nama": k["nama"] + " X", "definisi": k["definisi"] + " X"}).status_code == 200
     sesudah = pengusul.get(f"/api/review/{rid}").json()
     assert [(i["kode"], i["judul"], i["kriteria"]) for i in sesudah["item"]] == [(i["kode"], i["judul"], i["kriteria"]) for i in sebelum["item"]]
     assert sesudah["acuan"] == sebelum["acuan"] and sesudah["kategori"] == sebelum["kategori"]
@@ -193,34 +215,41 @@ def test_kategori_crud_riwayat_dan_hapus_permanen(klien):
     jalankan_antrean()
     rid = pengusul.get(f"/api/usulan/{u['id']}").json()["review_id"]
     sebelum = pengusul.get(f"/api/review/{rid}").json()["kategori"]
-    admin = klien("admin", "GantiSegera!2026")
-    kat = {k["kode"]: k for k in admin.get("/api/kategori").json()["item"]}
+    kelola = klien("reviewer")  # Reviewer mengelola Checklist/Kategori/Panduan
+    kat = {k["kode"]: k for k in kelola.get("/api/kategori").json()["item"]}
     baru = {"kode": " k5 ", "nama": "RO Baru", "definisi": "Definisi baru", "aktif": True}
-    k5 = admin.post("/api/kategori", json=baru).json()
-    assert k5["kode"] == "K5" and k5["diubah_oleh"] == "admin"
-    assert admin.post("/api/kategori", json={**baru, "kode": "K1"}).status_code == 400  # kode sudah dipakai
-    assert admin.post("/api/kategori", json={**baru, "kode": "K6", "nama": " "}).status_code == 400
-    assert klien("reviewer").post("/api/kategori", json={**baru, "kode": "K7"}).status_code == 403
-    assert pengusul.get("/api/kategori").status_code == 403 and pengusul.get(f"/api/kategori/{k5['id']}/riwayat").status_code == 403
+    k5 = kelola.post("/api/kategori", json=baru).json()
+    assert k5["kode"] == "K5" and k5["diubah_oleh"] == "reviewer"
+    assert kelola.post("/api/kategori", json={**baru, "kode": "K1"}).status_code == 400  # kode sudah dipakai
+    assert kelola.post("/api/kategori", json={**baru, "kode": "K6", "nama": " "}).status_code == 400
+    admin = klien("admin", "GantiSegera!2026")
+    assert admin.post("/api/kategori", json={**baru, "kode": "K7"}).status_code == 403
+    # Pengusul boleh melihat daftar & Kategori Histori (view only); mengubah khusus Reviewer. Admin tidak punya menu ini.
+    assert pengusul.get("/api/kategori").status_code == 200 and pengusul.get(f"/api/kategori/{k5['id']}/riwayat").status_code == 200
+    assert pengusul.post("/api/kategori", json={**baru, "kode": "K8"}).status_code == 403
+    assert pengusul.put(f"/api/kategori/{k5['id']}", json={**k5, "nama": "X"}).status_code == 403
+    assert pengusul.delete(f"/api/kategori/{k5['id']}").status_code == 403
+    assert pengusul.put("/api/kategori/urutan", json={"id": [k5["id"]]}).status_code == 403
+    assert admin.get("/api/kategori").status_code == 403
     # Override kategori hanya ke salinan review (C3): K5 ditambah setelah review dimulai → ditolak
     assert klien("reviewer").post(f"/api/review/{rid}/override",
                                   json={"target": "KATEGORI", "nilai": k5["id"], "alasan": "x"}).status_code == 400
-    assert admin.get(f"/api/kategori/{k5['id']}/riwayat").json() == []  # riwayat hanya versi sebelum perubahan
+    assert kelola.get(f"/api/kategori/{k5['id']}/riwayat").json() == []  # riwayat hanya versi sebelum perubahan
     # Ubah → isi sebelumnya masuk riwayat (terbaru dulu); simpan tanpa perubahan tidak menambah riwayat
     url = f"/api/kategori/{kat['K2']['id']}"
     for _ in range(2):
-        assert admin.put(url, json={**kat["K2"], "nama": "Diubah"}).status_code == 200
-    assert admin.put(url, json={**kat["K2"], "nama": "Diubah lagi"}).json()["nama"] == "Diubah lagi"
-    assert [r["nama"] for r in admin.get(f"{url}/riwayat").json()] == ["Diubah", kat["K2"]["nama"]]
+        assert kelola.put(url, json={**kat["K2"], "nama": "Diubah"}).status_code == 200
+    assert kelola.put(url, json={**kat["K2"], "nama": "Diubah lagi"}).json()["nama"] == "Diubah lagi"
+    assert [r["nama"] for r in kelola.get(f"{url}/riwayat").json()] == ["Diubah", kat["K2"]["nama"]]
     # Hapus permanen: kategori & riwayatnya hilang dari database; review lama tetap menampilkan kategori saat itu (C4)
-    assert admin.delete(url).status_code == 200
-    assert admin.get(f"{url}/riwayat").status_code == 404
+    assert kelola.delete(url).status_code == 200
+    assert kelola.get(f"{url}/riwayat").status_code == 404
     with SessionLokal() as db:
         assert db.scalar(select(func.count()).where(KategoriHistori.kategori_id == uuid.UUID(kat["K2"]["id"]))) == 0
     assert pengusul.get(f"/api/review/{rid}").json()["kategori"] == sebelum
     # Kategori Nonaktif tetap tampil tetapi tidak dipakai review berikutnya (seperti panduan)
-    assert admin.put(f"/api/kategori/{k5['id']}", json={**k5, "aktif": False}).json()["aktif"] is False
-    assert admin.get(f"/api/kategori/{k5['id']}/riwayat").json()[0]["aktif"] is True
+    assert kelola.put(f"/api/kategori/{k5['id']}", json={**k5, "aktif": False}).json()["aktif"] is False
+    assert kelola.get(f"/api/kategori/{k5['id']}/riwayat").json()[0]["aktif"] is True
     # Review berikutnya memakai daftar terbaru yang Aktif
     p2, u2 = _usulan_diajukan(klien)
     jalankan_antrean()
@@ -228,95 +257,98 @@ def test_kategori_crud_riwayat_dan_hapus_permanen(klien):
     r2 = p2.get(f"/api/review/{rid2}").json()
     assert [k["kode"] for k in r2["kategori"]["pilihan"]] == ["K1", "K3", "K4"]
     # Minimal satu kategori Aktif harus ada: hapus atau nonaktifkan yang terakhir ditolak
-    for k in admin.get("/api/kategori").json()["item"][1:]:
-        assert admin.delete(f"/api/kategori/{k['id']}").status_code == 200
-    sisa = admin.get("/api/kategori").json()["item"]
-    assert len(sisa) == 1 and admin.delete(f"/api/kategori/{sisa[0]['id']}").status_code == 400
-    assert admin.put(f"/api/kategori/{sisa[0]['id']}", json={**sisa[0], "aktif": False}).status_code == 400
+    for k in kelola.get("/api/kategori").json()["item"][1:]:
+        assert kelola.delete(f"/api/kategori/{k['id']}").status_code == 200
+    sisa = kelola.get("/api/kategori").json()["item"]
+    assert len(sisa) == 1 and kelola.delete(f"/api/kategori/{sisa[0]['id']}").status_code == 400
+    assert kelola.put(f"/api/kategori/{sisa[0]['id']}", json={**sisa[0], "aktif": False}).status_code == 400
 
 
 def test_kategori_atur_urutan(klien):
-    admin = klien("admin", "GantiSegera!2026")
-    kat = admin.get("/api/kategori").json()["item"]
+    kelola = klien("reviewer")  # Reviewer mengelola Checklist/Kategori/Panduan
+    kat = kelola.get("/api/kategori").json()["item"]
     assert [k["kode"] for k in kat] == ["K1", "K2", "K3", "K4"]
     baru = [kat[3]["id"], kat[0]["id"], kat[1]["id"], kat[2]["id"]]
-    r = admin.put("/api/kategori/urutan", json={"id": baru})
+    r = kelola.put("/api/kategori/urutan", json={"id": baru})
     assert r.status_code == 200 and [k["id"] for k in r.json()["item"]] == baru
-    assert admin.put("/api/kategori/urutan", json={"id": baru[:3]}).status_code == 400  # daftar tidak lengkap
-    assert klien("reviewer").put("/api/kategori/urutan", json={"id": baru}).status_code == 403
-    assert admin.get(f"/api/kategori/{kat[0]['id']}/riwayat").json() == []  # atur urutan tidak membuat riwayat
+    assert kelola.put("/api/kategori/urutan", json={"id": baru[:3]}).status_code == 400  # daftar tidak lengkap
+    assert klien("admin", "GantiSegera!2026").put("/api/kategori/urutan", json={"id": baru}).status_code == 403
+    # Audit Atur Urutan menyimpan urutan sebelum & sesudah.
+    log = next(x for x in klien("admin", "GantiSegera!2026").get("/api/audit").json()["data"] if x["aksi"] == "KATEGORI_URUTAN")
+    assert log["data_sesudah"]["id"] == baru and sorted(log["data_sebelum"]["id"]) == sorted(baru) and log["data_sebelum"]["id"] != baru
+    assert kelola.get(f"/api/kategori/{kat[0]['id']}/riwayat").json() == []  # atur urutan tidak membuat riwayat
     # Kategori baru ditaruh setelah kode sebelumnya walau urutan sudah diatur bebas; hapus merapikan nomor urut
-    admin.post("/api/kategori", json={"kode": "K5", "nama": "RO Baru", "definisi": "Definisi baru"})
-    assert [k["kode"] for k in admin.get("/api/kategori").json()["item"]] == ["K4", "K5", "K1", "K2", "K3"]
-    assert admin.delete(f"/api/kategori/{kat[0]['id']}").status_code == 200
+    kelola.post("/api/kategori", json={"kode": "K5", "nama": "RO Baru", "definisi": "Definisi baru"})
+    assert [k["kode"] for k in kelola.get("/api/kategori").json()["item"]] == ["K4", "K5", "K1", "K2", "K3"]
+    assert kelola.delete(f"/api/kategori/{kat[0]['id']}").status_code == 200
     with SessionLokal() as db:
         assert db.scalars(select(Kategori.no_urut).order_by(Kategori.no_urut)).all() == [1, 2, 3, 4]
 
 
 def test_checklist_crud_riwayat_dan_status(klien):
     from app.model import ChecklistItem
-    admin = klien("admin", "GantiSegera!2026")
-    ck = admin.get("/api/checklist").json()["item"]
+    kelola = klien("reviewer")  # Reviewer mengelola Checklist/Kategori/Panduan
+    ck = kelola.get("/api/checklist").json()["item"]
     per_kode = {i["kode"]: i for i in ck}
     url = lambda kode: f"/api/checklist/item/{per_kode[kode]['id']}"  # noqa: E731
     isi = lambda i, **ubah: {**{k: i[k] for k in ("kode", "judul", "kriteria", "berlaku_untuk", "aktif")}, **ubah}  # noqa: E731
     # Ubah & nonaktifkan: hanya item itu yang dicap; checklist_item tetap satu baris per item
-    c02 = admin.put(url("C02"), json=isi(per_kode["C02"], judul="Judul diubah")).json()
-    assert c02["judul"] == "Judul diubah" and c02["diubah_oleh"] == "admin"
-    assert admin.put(url("C03"), json=isi(per_kode["C03"], aktif=False)).json()["aktif"] is False
-    terkini = admin.get("/api/checklist").json()["item"]
+    c02 = kelola.put(url("C02"), json=isi(per_kode["C02"], judul="Judul diubah")).json()
+    assert c02["judul"] == "Judul diubah" and c02["diubah_oleh"] == "reviewer"
+    assert kelola.put(url("C03"), json=isi(per_kode["C03"], aktif=False)).json()["aktif"] is False
+    terkini = kelola.get("/api/checklist").json()["item"]
     assert len(terkini) == len(ck) and terkini[0]["diubah_at"] == ck[0]["diubah_at"]
     # Tambah: kode manual dinormalisasi; kode kosong/ganda ditolak
     baru = {"judul": "Item baru", "kriteria": "Kriteria baru", "berlaku_untuk": "TOR"}
-    assert admin.post("/api/checklist/item", json={**baru, "kode": " c09 "}).json()["kode"] == "C09"
+    assert kelola.post("/api/checklist/item", json={**baru, "kode": " c09 "}).json()["kode"] == "C09"
     # no_urut mengikuti urutan kode: item baru langsung berada di tempatnya, bukan di akhir
-    c00 = admin.post("/api/checklist/item", json={**baru, "kode": "C00"}).json()
-    assert [i["kode"] for i in admin.get("/api/checklist").json()["item"]][:2] == ["C00", "C01"] and c00["urutan"] == 1
-    assert admin.delete(f"/api/checklist/item/{c00['id']}").status_code == 200
-    assert admin.post("/api/checklist/item", json={**baru, "kode": "C01"}).status_code == 400
-    assert admin.post("/api/checklist/item", json={**baru, "kode": ""}).status_code == 400
+    c00 = kelola.post("/api/checklist/item", json={**baru, "kode": "C00"}).json()
+    assert [i["kode"] for i in kelola.get("/api/checklist").json()["item"]][:2] == ["C00", "C01"] and c00["urutan"] == 1
+    assert kelola.delete(f"/api/checklist/item/{c00['id']}").status_code == 200
+    assert kelola.post("/api/checklist/item", json={**baru, "kode": "C01"}).status_code == 400
+    assert kelola.post("/api/checklist/item", json={**baru, "kode": ""}).status_code == 400
     # Item nonaktif tidak dinilai dan tidak dihitung
     pengusul, u = _usulan_diajukan(klien)
     jalankan_antrean()
     rv = pengusul.get(f"/api/review/{pengusul.get(f'/api/usulan/{u['id']}').json()['review_id']}").json()
-    aktif = [i for i in admin.get("/api/checklist").json()["item"] if i["aktif"]]
+    aktif = [i for i in kelola.get("/api/checklist").json()["item"] if i["aktif"]]
     assert "C03" not in [i["kode"] for i in rv["item"]] and rv["label"]["total"] == len(aktif)
     # checklist_histori memuat semua versi item (terbaru dulu), termasuk isi saat ini
-    riwayat = admin.get(f"{url('C02')}/riwayat").json()
+    riwayat = kelola.get(f"{url('C02')}/riwayat").json()
     assert [r["judul"] for r in riwayat] == ["Judul diubah", per_kode["C02"]["judul"]]
-    assert [r["judul"] for r in admin.get(f"{url('C01')}/riwayat").json()] == [per_kode["C01"]["judul"]]
-    assert admin.get("/api/checklist/item/00000000-0000-0000-0000-000000000000/riwayat").status_code == 404
+    assert [r["judul"] for r in kelola.get(f"{url('C01')}/riwayat").json()] == [per_kode["C01"]["judul"]]
+    assert kelola.get("/api/checklist/item/00000000-0000-0000-0000-000000000000/riwayat").status_code == 404
     # Hapus: permanen dari checklist_item & checklist_histori, ikut hilang dari review lama (keputusan pemilik produk)
-    assert admin.delete(url("C05")).status_code == 200
+    assert kelola.delete(url("C05")).status_code == 200
     with SessionLokal() as db:
         assert db.get(ChecklistItem, uuid.UUID(per_kode["C05"]["id"])) is None
         assert not db.scalars(text("SELECT 1 FROM checklist_histori WHERE checklist_id = :i"), {"i": per_kode["C05"]["id"]}).all()  # CASCADE
     assert "C05" not in [i["kode"] for i in pengusul.get(f"/api/review/{rv['id']}").json()["item"]]
     # Ganti kode: riwayat tetap tersambung lewat checklist_id dan kode lama tetap tercatat; review lama tetap kode saat itu
-    assert admin.put(url("C04"), json=isi(per_kode["C04"], kode="C01")).status_code == 400
-    assert admin.put(url("C04"), json=isi(per_kode["C04"], kode="x04")).json()["kode"] == "X04"
-    assert [r["kode"] for r in admin.get(f"{url('C04')}/riwayat").json()] == ["X04", "C04"]
+    assert kelola.put(url("C04"), json=isi(per_kode["C04"], kode="C01")).status_code == 400
+    assert kelola.put(url("C04"), json=isi(per_kode["C04"], kode="x04")).json()["kode"] == "X04"
+    assert [r["kode"] for r in kelola.get(f"{url('C04')}/riwayat").json()] == ["X04", "C04"]
     lama = {i["kode"]: i["judul"] for i in pengusul.get(f"/api/review/{rv['id']}").json()["item"]}
     assert lama["C04"] == per_kode["C04"]["judul"]
     # Atur urutan bebas (mis. dibalik); daftar yang tidak memuat semua item ditolak
-    ids = [i["id"] for i in admin.get("/api/checklist").json()["item"]]
-    assert [i["id"] for i in admin.put("/api/checklist/urutan", json={"id": ids[::-1]}).json()["item"]] == ids[::-1]
-    assert admin.put("/api/checklist/urutan", json={"id": ids[1:]}).status_code == 400
+    ids = [i["id"] for i in kelola.get("/api/checklist").json()["item"]]
+    assert [i["id"] for i in kelola.put("/api/checklist/urutan", json={"id": ids[::-1]}).json()["item"]] == ids[::-1]
+    assert kelola.put("/api/checklist/urutan", json={"id": ids[1:]}).status_code == 400
     # Item baru tetap ditaruh tepat setelah kode sebelumnya walau urutan sudah diatur bebas
-    admin.post("/api/checklist/item", json={**baru, "kode": "C10"})
-    kode = [i["kode"] for i in admin.get("/api/checklist").json()["item"]]
+    kelola.post("/api/checklist/item", json={**baru, "kode": "C10"})
+    kode = [i["kode"] for i in kelola.get("/api/checklist").json()["item"]]
     assert kode.index("C10") == kode.index("C09") + 1
     # Urutan fisik tabel (yang ditampilkan pgAdmin "All Rows", tanpa ORDER BY) = no_urut, setelah tambah/ubah/hapus/atur
     with SessionLokal() as db:
         fisik = list(db.scalars(text("SELECT kode FROM checklist_item")))
-        waktu = list(db.scalars(text("SELECT update_date FROM checklist_histori")))
+        waktu = list(db.scalars(text("SELECT updated_date FROM checklist_histori")))
     assert fisik == kode
     assert waktu == sorted(waktu, reverse=True)  # checklist_histori: terbaru paling atas
     # Minimal satu item aktif
-    aktif = [i for i in admin.get("/api/checklist").json()["item"] if i["aktif"]]
+    aktif = [i for i in kelola.get("/api/checklist").json()["item"] if i["aktif"]]
     for i in aktif[:-1]:
-        assert admin.put(f"/api/checklist/item/{i['id']}", json=isi(i, aktif=False)).status_code == 200
-    assert admin.put(f"/api/checklist/item/{aktif[-1]['id']}", json=isi(aktif[-1], aktif=False)).status_code == 400
+        assert kelola.put(f"/api/checklist/item/{i['id']}", json=isi(i, aktif=False)).status_code == 200
+    assert kelola.put(f"/api/checklist/item/{aktif[-1]['id']}", json=isi(aktif[-1], aktif=False)).status_code == 400
 
 
 def test_simpan_checklist_tidak_menunggu_pembaca_lama(klien):
@@ -325,33 +357,33 @@ def test_simpan_checklist_tidak_menunggu_pembaca_lama(klien):
     import time
 
     from app.db import engine
-    admin = klien("admin", "GantiSegera!2026")
-    i = admin.get("/api/checklist").json()["item"][0]
+    kelola = klien("reviewer")  # Reviewer mengelola Checklist/Kategori/Panduan
+    i = kelola.get("/api/checklist").json()["item"][0]
     with engine.connect() as c:
         c.execute(text("SELECT 1 FROM checklist_item LIMIT 1"))  # transaksi terbuka memegang kunci baca
         c.execute(text("SELECT 1 FROM checklist_histori LIMIT 1"))
         mulai = time.monotonic()
-        r = admin.put(f"/api/checklist/item/{i['id']}", json={**i, "judul": i["judul"] + " (diubah)"})
+        r = kelola.put(f"/api/checklist/item/{i['id']}", json={**i, "judul": i["judul"] + " (diubah)"})
         assert r.status_code == 200 and time.monotonic() - mulai < 10
         c.rollback()
-    assert admin.get(f"/api/checklist/item/{i['id']}/riwayat").json()[0]["judul"].endswith("(diubah)")
+    assert kelola.get(f"/api/checklist/item/{i['id']}/riwayat").json()[0]["judul"].endswith("(diubah)")
 
 
 def test_panduan_berversi_dan_dipakai_review(klien):
     import io
-    admin = klien("admin", "GantiSegera!2026")
+    kelola = klien("reviewer")  # Reviewer mengelola Checklist/Kategori/Panduan
     pdf = buat_pdf(["Pasal 5", "(1) Indikator keluaran wajib memuat target kuantitatif dan satuan.",
                     "(2) Honor narasumber paling tinggi Rp1.700.000 per orang jam."])
-    assert admin.post("/api/panduan", files={"file": ("pmk.pdf", io.BytesIO(pdf), "application/pdf")},
+    assert kelola.post("/api/panduan", files={"file": ("pmk.pdf", io.BytesIO(pdf), "application/pdf")},
                       data={"judul": "x" * 501}).status_code == 400  # ditolak sebelum PDF disimpan
-    pd = admin.post("/api/panduan", files={"file": ("pmk.pdf", io.BytesIO(pdf), "application/pdf")},
+    pd = kelola.post("/api/panduan", files={"file": ("pmk.pdf", io.BytesIO(pdf), "application/pdf")},
                     data={"judul": "pmk", "deskripsi": "Standar biaya", "aktif": "true"}).json()
     assert pd["terkini"]["status_proses"] == "BELUM" and pd["aktif"] and pd["diubah_oleh"] and pd["terkini"]["deskripsi"] == "Standar biaya"
     assert pd["terkini"]["dibuat_oleh"] == pd["diubah_oleh"]  # akun yang membuat versi
     jalankan_antrean()
-    daftar = admin.get("/api/panduan").json()
+    daftar = kelola.get("/api/panduan").json()
     assert daftar[0]["terkini"]["status_proses"] == "SIAP"
-    ubah = admin.put(f"/api/panduan/{pd['id']}", data={"judul": "PMK Standar Biaya"}).json()
+    ubah = kelola.put(f"/api/panduan/{pd['id']}", data={"judul": "PMK Standar Biaya"}).json()
     assert ubah["terkini"]["nomor"] == 2 and len(ubah["versi"]) == 2
     pengusul, u = _usulan_diajukan(klien)
     jalankan_antrean()
@@ -360,10 +392,10 @@ def test_panduan_berversi_dan_dipakai_review(klien):
     dasar = [r for i in rv["item"] for r in i["rujukan"] if r["peran"] == "dasar_panduan"]
     assert dasar and all(r["dokumen"] == "PANDUAN" for r in dasar)
     assert rv["acuan"]["panduan"][0]["nomor"] == 2  # review mencatat versi panduan yang dipakai (D5)
-    nonaktif = admin.put(f"/api/panduan/{pd['id']}", data={"judul": "PMK Standar Biaya", "aktif": "false"}).json()
+    nonaktif = kelola.put(f"/api/panduan/{pd['id']}", data={"judul": "PMK Standar Biaya", "aktif": "false"}).json()
     assert nonaktif["aktif"] is False and nonaktif["terkini"]["nomor"] == 3 and nonaktif["terkini"]["aktif"] is False
     assert [x["aktif"] for x in nonaktif["versi"]] == [False, True, True]  # status tercatat per versi
-    sama = admin.put(f"/api/panduan/{pd['id']}", data={"judul": "PMK Standar Biaya", "aktif": "false"}).json()
+    sama = kelola.put(f"/api/panduan/{pd['id']}", data={"judul": "PMK Standar Biaya", "aktif": "false"}).json()
     assert sama["terkini"]["nomor"] == 3  # simpan tanpa perubahan tidak membuat versi
     # Database: versi terkini hanya di `panduan`; `panduan_histori` hanya riwayat (v1, v2).
     with SessionLokal() as db:
@@ -375,18 +407,18 @@ def test_panduan_berversi_dan_dipakai_review(klien):
         assert {v.created_by for v in pdb.versi} == {pdb.created_by}  # riwayat menyalin pengunggah pertama
     assert pengusul.get(f"/api/review/{rv['id']}").json()["acuan"]["panduan"][0]["nomor"] == 2  # catatan review tidak berubah (D5)
     assert pengusul.get(f"/api/file/{pd['terkini']['file_id']}").status_code == 200  # PDF panduan terbuka untuk semua pengguna
-    assert admin.get("/api/panduan").json()[0]["aktif"] is False  # tetap tampil di daftar
+    assert kelola.get("/api/panduan").json()[0]["aktif"] is False  # tetap tampil di daftar
     _, u2 = _usulan_diajukan(klien)
     jalankan_antrean()
     rv2 = pengusul.get(f"/api/review/{pengusul.get(f'/api/usulan/{u2['id']}').json()['review_id']}").json()
     assert rv2["acuan"]["panduan"] == []  # Nonaktif → tidak dipakai review
     # Hapus = permanen: panduan, versi, file & ekstraksinya hilang; review lama tetap terbuka tanpa rujukan panduan.
-    assert admin.delete(f"/api/panduan/{pd['id']}").status_code == 200
-    assert admin.get("/api/panduan").json() == []
-    assert admin.get(f"/api/file/{pd['terkini']['file_id']}").status_code == 404
+    assert kelola.delete(f"/api/panduan/{pd['id']}").status_code == 200
+    assert kelola.get("/api/panduan").json() == []
+    assert kelola.get(f"/api/file/{pd['terkini']['file_id']}").status_code == 404
     rv_lama = pengusul.get(f"/api/review/{rv['id']}").json()
     assert rv_lama["acuan"]["panduan"] == [] and not [r for i in rv_lama["item"] for r in i["rujukan"] if r["peran"] == "dasar_panduan"]
-    assert admin.get("/api/panduan/versi").status_code in (404, 405, 422)  # versi daftar panduan sudah dihapus
+    assert kelola.get("/api/panduan/versi").status_code in (404, 405, 422)  # versi daftar panduan sudah dihapus
 
 
 def test_panduan_tidak_macet_bila_worker_mati_berulang(klien):
@@ -396,8 +428,8 @@ def test_panduan_tidak_macet_bila_worker_mati_berulang(klien):
 
     from app.model import File, Job
     from app.pekerja.utama import lepas_job_macet
-    admin = klien("admin", "GantiSegera!2026")
-    pd = admin.post("/api/panduan", files={"file": ("p.pdf", io.BytesIO(buat_pdf(["Pasal 1 uji macet"])), "application/pdf")},
+    kelola = klien("reviewer")  # Reviewer mengelola Checklist/Kategori/Panduan
+    pd = kelola.post("/api/panduan", files={"file": ("p.pdf", io.BytesIO(buat_pdf(["Pasal 1 uji macet"])), "application/pdf")},
                     data={"judul": "p"}).json()
     fid = uuid.UUID(pd["terkini"]["file_id"])
     with SessionLokal() as db:  # keadaan setelah worker mati pada percobaan ke-3
@@ -406,8 +438,8 @@ def test_panduan_tidak_macet_bila_worker_mati_berulang(klien):
         db.execute(update(File).where(File.id == fid).values(status_ekstraksi="DIPROSES"))
         db.commit()
     lepas_job_macet()
-    assert admin.get("/api/panduan").json()[0]["terkini"]["status_proses"] == "GAGAL"
-    assert admin.post(f"/api/panduan/{pd['id']}/proses-ulang").json()["terkini"]["status_proses"] == "BELUM"
+    assert kelola.get("/api/panduan").json()[0]["terkini"]["status_proses"] == "GAGAL"
+    assert kelola.post(f"/api/panduan/{pd['id']}/proses-ulang").json()["terkini"]["status_proses"] == "BELUM"
 
 
 def test_tidak_ada_koneksi_keluar_selama_review(klien, monkeypatch):

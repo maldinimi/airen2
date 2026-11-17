@@ -16,7 +16,7 @@ export default function Audit() {
 
   return (
     <div>
-      <Judul judul="Audit Log" sub="Aktivitas pengguna: perubahan checklist, kategori, panduan, pengguna, override, dan lainnya." />
+      <Judul judul="Audit Log" />
       <Kartu className="mb-4 grid gap-3 p-3 sm:grid-cols-4">
         <Kolom label="Aksi"><Pilih value={f.aksi} onChange={(e) => ubah("aksi", e.target.value)}><option value="">Semua</option>{q.data?.aksi.map((a) => <option key={a}>{a}</option>)}</Pilih></Kolom>
         <Kolom label="Entitas"><Pilih value={f.entitas} onChange={(e) => ubah("entitas", e.target.value)}><option value="">Semua</option>
