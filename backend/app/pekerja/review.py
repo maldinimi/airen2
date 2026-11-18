@@ -41,8 +41,8 @@ class GalatInvarian(Exception):
 @dataclass
 class Konteks:
     """Data yang dibagikan ke penilaian item (dibaca thread pekerja; hanya ID, bukan objek sesi)."""
-    tor_id: uuid.UUID
-    rab_id: uuid.UUID
+    tor_id: uuid.UUID | None  # None = dokumen tidak diunggah
+    rab_id: uuid.UUID | None
     panduan: dict[uuid.UUID, str] = field(default_factory=dict)  # file_id → judul panduan
 
     def nama(self, file_id) -> str:
@@ -89,7 +89,7 @@ def nilai_item(item: IsiItem, ktx: Konteks, llm) -> dict:
             teks_pdn, peta_pdn, alias_pdn = format_konteks(pdn, "P", ktx)
             out = llm.json("nilai_item", pr.prompt_nilai_item(item, teks_dok, teks_pdn, umpan_balik),
                            pr.skema_nilai_item(list(peta_dok), list(peta_pdn)),
-                           konteks={"kode": item.kode, "alias_dok": alias_dok, "alias_panduan": alias_pdn})
+                           konteks={"kode": item.kode, "kriteria": item.kriteria, "alias_dok": alias_dok, "alias_panduan": alias_pdn})
             if not out.get("ditemukan", True) and not sapuan_selesai:
                 # Sapuan konfirmasi (desain §4.2 langkah 4): jangan nyatakan "tidak ditemukan" hanya karena retrieval meleset.
                 sapuan_selesai = True
@@ -206,17 +206,19 @@ def _jalankan(db: Session, review: Review, revisi: Revisi, llm) -> None:
         review.status, review.mulai_at = "DIPROSES", db.scalar(select(func.now()))
     if revisi.status != st.DIPROSES_AI:
         st.pindah_status(revisi, st.DIPROSES_AI)
-    _progres(db, review, "Ekstraksi TOR", 5)
-    proses_file(revisi.tor_file_id, llm)
-    _progres(db, review, "Ekstraksi RAB", 15)
-    proses_file(revisi.rab_file_id, llm)
+    # TOR/RAB boleh tidak diunggah (minimal satu): item untuk dokumen yang tidak ada dinilai "tidak ditemukan".
+    for persen, nama, fid in ((5, "TOR", revisi.tor_file_id), (15, "RAB", revisi.rab_file_id)):
+        if fid:
+            _progres(db, review, f"Ekstraksi {nama}", persen)
+            proses_file(fid, llm)
 
     pv = db.scalars(select(ReviewPanduan).where(ReviewPanduan.review_id == review.id)).all()
-    tor, rab = db.get(File, revisi.tor_file_id), db.get(File, revisi.rab_file_id)
+    tor = db.get(File, revisi.tor_file_id) if revisi.tor_file_id else None
+    rab = db.get(File, revisi.rab_file_id) if revisi.rab_file_id else None
     # Id kategori ikut di-hash: hasil yang disalin menunjuk id kategori yang sama di review_kategori review ini.
     kat = [(str(k.kategori_id), k.kode, k.nama, k.definisi) for k in db.scalars(
         select(ReviewKategori).where(ReviewKategori.review_id == review.id).order_by(ReviewKategori.kategori_id))]
-    review.fingerprint = fingerprint(tor.sha256, rab.sha256, sidik_checklist(isi_review(db, review)), kat,
+    review.fingerprint = fingerprint(tor and tor.sha256, rab and rab.sha256, sidik_checklist(isi_review(db, review)), kat,
                                      [f"{v.panduan_id}:{v.nomor}" for v in pv], review.model_info)
     db.commit()
     asal = db.scalar(select(Review).where(Review.fingerprint == review.fingerprint, Review.status == "SELESAI",
@@ -226,7 +228,7 @@ def _jalankan(db: Session, review: Review, revisi: Revisi, llm) -> None:
         _progres(db, review, "Menyalin hasil identik", 50)
         salin_hasil(db, asal, review)
     else:
-        ktx = Konteks(tor_id=tor.id, rab_id=rab.id, panduan={v.file_id: f"{v.judul} (v{v.nomor})" for v in pv})
+        ktx = Konteks(tor_id=tor and tor.id, rab_id=rab and rab.id, panduan={v.file_id: f"{v.judul} (v{v.nomor})" for v in pv})
         screening_1(db, review, ktx, llm)
         keselarasan_dan_rekomendasi(db, review, ktx, llm)
         _progres(db, review, "Kategori", 92)
@@ -292,7 +294,8 @@ def keselarasan_dan_rekomendasi(db: Session, review: Review, ktx: Konteks, llm) 
             teks_pdn, peta_pdn, alias_pdn = format_konteks(pdn, "P", ktx)
             kode = [i.kode for i, _ in relevan]
             hasil = llm.json("rekomendasi", pr.prompt_rekomendasi(dokumen, masalah, teks_pdn), pr.skema_rekomendasi(kode, list(peta_pdn)),
-                             konteks={"kode_item": kode, "alias_panduan": alias_pdn}).get("rekomendasi", [])
+                             konteks={"kode_item": kode, "alias_panduan": alias_pdn, "kriteria": {i.kode: i.kriteria for i, _ in relevan},
+                                      "ditemukan": {i.kode: h.ditemukan for i, h in relevan}}).get("rekomendasi", [])
             if not hasil:  # LLM kosong padahal ada masalah → rekomendasi minimal dari kekurangan item
                 hasil = [{"teks": f"Perbaiki {i.judul}: {h.yang_kurang or h.alasan}", "kode_item": i.kode, "dasar_panduan": []} for i, h in relevan]
             per_kode = {i.kode: i.item_id for i, _ in relevan}
@@ -336,7 +339,7 @@ def screening_2(db: Session, review: Review, revisi: Revisi, ktx: Konteks, llm) 
     kode = [i.kode for i in kv]
     teks_dok = f"RO: {usulan.kode_ro} — {usulan.nama_ro}; Satker: {usulan.satker.nama}\n\n{teks_dok}"
     out = llm.json("kategori", pr.prompt_kategori(definisi, teks_dok, teks_pdn), pr.skema_kategori(kode, list(peta_dok), list(peta_pdn)),
-                   konteks={"kode": kode, "alias_dok": alias_dok, "alias_panduan": alias_pdn})
+                   konteks={"kode": kode, "nama": {i.kode: i.nama for i in kv}, "alias_dok": alias_dok, "alias_panduan": alias_pdn})
     pilih = next((i for i in kv if i.kode == out.get("kode")), None)
     if pilih is None:
         raise GalatPengguna("AI tidak menghasilkan kategori yang valid.")

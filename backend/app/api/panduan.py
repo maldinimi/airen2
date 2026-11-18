@@ -3,11 +3,10 @@
 Tiap panduan berversi: isi terkini di tabel `panduan`, versi sebelumnya (riwayat) di `panduan_histori`.
 Panduan + versi yang dipakai tiap review disalin ke `review_panduan` (D5).
 """
-import os
 import uuid
 
 from fastapi import APIRouter, Depends, File as FormFile, Form, Request, UploadFile
-from sqlalchemy import delete, func, or_, select, text
+from sqlalchemy import delete, func, select, text
 from sqlalchemy.orm import Session
 
 from app.akses import PENGUSUL, REVIEWER, wajib_role
@@ -15,9 +14,8 @@ from app.audit import catat
 from app.checklist import UrutanMasuk, terapkan_urutan, urut_ulang
 from app.db import jam_db, sesi_db
 from app.galat import Galat
-from app.model import (Chunk, Elemen, File, Halaman, Job, Panduan, PanduanHistori, Pengguna, Review, ReviewPanduan, Revisi,
-                       Rujukan)
-from app.penyimpanan import path_absolut, simpan_unggahan
+from app.model import File, Job, Panduan, PanduanHistori, Pengguna, Review, ReviewPanduan
+from app.penyimpanan import hapus_berkas, hapus_file_tak_terpakai, simpan_unggahan
 
 router = APIRouter(prefix="/api/panduan", tags=["panduan"])
 
@@ -156,27 +154,11 @@ def hapus(panduan_id: uuid.UUID, request: Request, db: Session = Depends(sesi_db
         db.execute(delete(tabel).where(tabel.panduan_id == pd.id))
     db.execute(delete(Panduan).where(Panduan.id == pd.id))
     urut_ulang(db, model=Panduan)  # no_urut sisanya dirapatkan lagi jadi 1..n
-    path_dihapus = []
-    for fid in file_ids:
-        # File identik (SHA sama) bisa dipakai panduan lain (terkini/riwayat/salinan) atau TOR/RAB — biarkan.
-        if any(db.scalar(select(kolom).where(kolom == fid).limit(1)) for kolom in (
-                Panduan.file_id, PanduanHistori.file_id, ReviewPanduan.file_id)) or db.scalar(
-                select(Revisi.id).where(or_(Revisi.tor_file_id == fid, Revisi.rab_file_id == fid)).limit(1)):
-            continue
-        db.execute(delete(Rujukan).where(Rujukan.elemen_id.in_(select(Elemen.id).where(Elemen.file_id == fid))))
-        for tabel in (Chunk, Elemen, Halaman):
-            db.execute(delete(tabel).where(tabel.file_id == fid))
-        db.execute(delete(Job).where(Job.ref_id == fid))
-        f = db.get(File, fid)
-        path_dihapus.append(path_absolut(f))
-        db.delete(f)
+    # File identik (SHA sama) yang masih dipakai panduan lain (terkini/riwayat/salinan) atau TOR/RAB dibiarkan.
+    path_dihapus = hapus_file_tak_terpakai(db, file_ids)
     catat(db, request, "PANDUAN_HAPUS", "panduan", panduan_id, sebelum={**sebelum, "file_dihapus": len(path_dihapus)})
     db.commit()
-    for path in path_dihapus:  # setelah commit: bila transaksi gagal, PDF tetap ada
-        try:
-            os.remove(path)
-        except FileNotFoundError:
-            pass
+    hapus_berkas(path_dihapus)
     return {"ok": True}
 
 

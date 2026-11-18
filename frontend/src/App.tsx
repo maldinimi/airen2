@@ -14,8 +14,8 @@ import Login from "./pages/Login";
 import PanduanPage, { PanduanDetail } from "./pages/Panduan";
 import PanduanForm from "./pages/PanduanForm";
 import Pdf from "./pages/Pdf";
-import ReviewDetail from "./pages/ReviewDetail";
-import Riwayat from "./pages/Riwayat";
+import Pemeriksaan from "./pages/Pemeriksaan";
+import UsulanDetail from "./pages/UsulanDetail";
 import UsulanForm from "./pages/UsulanForm";
 import UsulanList from "./pages/UsulanList";
 import type { Role } from "./types";
@@ -47,10 +47,10 @@ export default function App() {
           {/* Usulan, review, Panduan & PDF: Pengusul dan Reviewer (Admin tidak memiliki menu ini). */}
           <Route path="usulan" element={<Wajib role={KERJA}><UsulanList /></Wajib>} />
           <Route path="usulan/baru" element={<Wajib role={["PENGUSUL"]}><UsulanForm mode="baru" /></Wajib>} />
-          <Route path="usulan/:id/draf" element={<Wajib role={["PENGUSUL"]}><UsulanForm mode="draf" /></Wajib>} />
-          <Route path="usulan/:id/revisi" element={<Wajib role={["PENGUSUL"]}><UsulanForm mode="revisi" /></Wajib>} />
-          <Route path="usulan/:id/riwayat" element={<Wajib role={KERJA}><Riwayat /></Wajib>} />
-          <Route path="review/:id" element={<Wajib role={KERJA}><ReviewDetail /></Wajib>} />
+          <Route path="usulan/:id" element={<Wajib role={KERJA}><UsulanDetail /></Wajib>} />
+          <Route path="usulan/:id/ubah" element={<Wajib role={["PENGUSUL"]}><UsulanForm mode="ubah" /></Wajib>} />
+          <Route path="usulan/:id/parameter" element={<Wajib role={["REVIEWER"]}><UsulanForm mode="parameter" /></Wajib>} />
+          <Route path="review/:id" element={<Wajib role={KERJA}><Pemeriksaan /></Wajib>} />
           <Route path="pdf/:fileId" element={<Wajib role={KERJA}><Pdf /></Wajib>} />
           <Route path="panduan" element={<Wajib role={KERJA}><PanduanPage /></Wajib>} />
           <Route path="panduan/:id" element={<Wajib role={KERJA}><PanduanDetail /></Wajib>} />

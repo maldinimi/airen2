@@ -224,14 +224,20 @@ class Chunk(Base):
 class Usulan(Base):
     __tablename__ = "usulan"
     id: Mapped[uuid.UUID] = _id()
-    created_at: Mapped[datetime] = _dibuat()
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    # Nama & urutan kolom jejak seperti kategori/panduan, permintaan pemilik produk (desain.md §7 no. 37).
+    created_by: Mapped[uuid.UUID | None] = _fk("pengguna", nullable=True, index=False)  # pembuat usulan
+    created_date: Mapped[datetime] = _dibuat()
+    updated_by: Mapped[uuid.UUID | None] = _fk("pengguna", nullable=True, index=False)  # pengubah terakhir
+    updated_date: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
     satker_id: Mapped[uuid.UUID] = _fk("satker")
     tahun_anggaran: Mapped[int] = mapped_column(Integer, index=True)
     kode_ro: Mapped[str] = mapped_column(String(100))
     nama_ro: Mapped[str] = mapped_column(String(500))
     dibuat_oleh: Mapped[uuid.UUID] = _fk("pengguna", index=False)
     diarsipkan_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Salinan pilihan Pengusul saat mengajukan (menu Master RO & tabel kategori), tetap walau sumbernya berubah/dihapus.
+    hierarki: Mapped[dict | None] = mapped_column(JSONB)  # {program, kegiatan, kro, ro: {kode, nama}}; NULL = usulan lama
+    kategori_usulan: Mapped[dict | None] = mapped_column(JSONB)  # {id, kode, nama, deskripsi}
     satker: Mapped[Satker] = relationship(lazy="joined")
     revisi: Mapped[list["Revisi"]] = relationship(order_by="Revisi.nomor", lazy="selectin", back_populates="usulan")
 
@@ -244,10 +250,11 @@ class Revisi(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
     usulan_id: Mapped[uuid.UUID] = _fk("usulan")
     nomor: Mapped[int] = mapped_column(Integer)
-    tor_file_id: Mapped[uuid.UUID] = _fk("file", index=False)
-    tor_nama: Mapped[str] = mapped_column(String(255))
-    rab_file_id: Mapped[uuid.UUID] = _fk("file", index=False)
-    rab_nama: Mapped[str] = mapped_column(String(255))
+    # TOR dan RAB masing-masing opsional, minimal satu ada (dicek di api/usulan.py).
+    tor_file_id: Mapped[uuid.UUID | None] = _fk("file", nullable=True, index=False)
+    tor_nama: Mapped[str | None] = mapped_column(String(255))
+    rab_file_id: Mapped[uuid.UUID | None] = _fk("file", nullable=True, index=False)
+    rab_nama: Mapped[str | None] = mapped_column(String(255))
     status: Mapped[str] = mapped_column(String(30), default="DRAF", index=True)
     dibuat_oleh: Mapped[uuid.UUID] = _fk("pengguna", index=False)
     usulan: Mapped[Usulan] = relationship(back_populates="revisi")
@@ -497,6 +504,19 @@ class CatatanReviewer(Base):
     id: Mapped[uuid.UUID] = _id()
     review_id: Mapped[uuid.UUID] = _fk("review")
     dokumen: Mapped[str] = mapped_column(String(10))  # TOR|RAB|UMUM
+    teks: Mapped[str] = mapped_column(Text)
+    oleh: Mapped[uuid.UUID] = _fk("pengguna", index=False)
+    diubah_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+class CatatanItem(Base):
+    """Catatan Verifikator per item checklist (halaman Pemeriksaan), terpisah dari Status Verifikator (override ITEM) agar
+    dapat diisi kapan saja, sebelum status dipilih (desain.md §7 no. 39). Disembunyikan dari Pengusul sebelum final."""
+    __tablename__ = "catatan_item"
+    __table_args__ = (UniqueConstraint("review_id", "checklist_item_id"),)
+    id: Mapped[uuid.UUID] = _id()
+    review_id: Mapped[uuid.UUID] = _fk("review")
+    checklist_item_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True))  # tanpa FK, seperti HasilItem
     teks: Mapped[str] = mapped_column(Text)
     oleh: Mapped[uuid.UUID] = _fk("pengguna", index=False)
     diubah_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())

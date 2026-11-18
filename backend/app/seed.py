@@ -1,8 +1,7 @@
 """Data awal: 4 kategori PERSIS sesuai PRD C1 + akun admin awal.
 
 Daftar Satker awal dari dokumen "Data Satker dan Unit Kerja" (app/data_satker.py) diisi bila tabel satker kosong.
-Master RO awal dari Laporan Renja K/L TA 2026 revisi (app/data_master_ro.py) diisi bila tabel master_ro kosong. Berkas
-data itu OPSIONAL dan tidak di-commit (.gitignore); tanpa berkas itu Master RO mulai kosong.
+Master RO TIDAK di-seed: data Renja hanya berasal dari input/impor Excel di menu Master RO (permintaan pemilik produk).
 
 Bila `SEED_CONTOH=true` (mode dev/tiruan), juga dibuat akun Pengusul/Reviewer, dan
 checklist contoh agar alur lengkap dapat langsung dicoba. Seed hanya berjalan bila tabel kosong.
@@ -12,24 +11,10 @@ import logging
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
-from app.checklist import rapikan_fisik
 from app.data_satker import SATKER
 from app.keamanan import hash_password
 from app.konfigurasi import konfigurasi
-from app.model import (ChecklistHistory, ChecklistItem, Kategori, MasterRO, Pengguna, PenggunaRole,
-                       Satker)
-
-
-
-def baris_master_ro() -> list[dict]:
-    """Baris data awal Master RO dari berkas opsional `app/data_master_ro.py`; [] bila berkas tidak ada."""
-    try:
-        from app.data_master_ro import baris_lengkap
-    except ModuleNotFoundError as e:
-        if e.name != "app.data_master_ro":
-            raise
-        return []
-    return baris_lengkap()
+from app.model import ChecklistHistory, ChecklistItem, Kategori, Pengguna, PenggunaRole, Satker
 
 
 logger = logging.getLogger(__name__)
@@ -69,7 +54,7 @@ def jalankan_seed(db: Session) -> None:
 
     Penginput (`created_by`/`updated_by`) data awal mengikuti role pengelolanya (desain.md §7 no. 29), agar kolom
     "Diinput Oleh" tidak menampilkan "Sistem" bila akunnya ada (docs/asumsi.md):
-    - Kategori, Satuan Kerja, Master RO, checklist contoh → akun contoh `reviewer` (hanya ada bila `SEED_CONTOH=true`). Tanpa
+    - Kategori, Satuan Kerja, checklist contoh → akun contoh `reviewer` (hanya ada bila `SEED_CONTOH=true`). Tanpa
       akun Reviewer (instalasi produksi) dibiarkan kosong = "Sistem", sebab memang dibuat sistem.
     - Akun contoh → akun admin awal. Akun admin awal sendiri tetap tanpa pembuat (dibuat sistem)."""
     k = konfigurasi()
@@ -87,16 +72,6 @@ def jalankan_seed(db: Session) -> None:
         db.flush()
         logger.info("seed satker dibuat", extra={"ekstra": {"jumlah": len(SATKER)}})
 
-    if db.scalar(select(MasterRO.id).limit(1)) is None:
-        # Berkas data Renja (opsional) dapat memuat kolom lain (Unit Eselon I/II & Prioritas) yang tidak ada di tabel
-        # master_ro, jadi hanya kolom yang ada di model yang diisi.
-        kolom = set(MasterRO.__table__.columns.keys())
-        master_ro = [MasterRO(**{k: v for k, v in b.items() if k in kolom}) for b in baris_master_ro()]
-        db.add_all(master_ro)
-        data_awal += master_ro
-        db.flush()
-        logger.info("seed master RO dibuat", extra={"ekstra": {"jumlah": len(master_ro)}})
-
     if db.scalar(select(Pengguna.id).limit(1)) is None:
         admin = Pengguna(username=k.admin_username, password_hash=hash_password(k.admin_password_awal))
         admin.roles = [PenggunaRole(role="ADMIN")]
@@ -105,15 +80,12 @@ def jalankan_seed(db: Session) -> None:
         logger.info("akun admin awal dibuat", extra={"ekstra": {"username": k.admin_username}})
         if k.seed_contoh:
             reviewer = _seed_contoh(db, admin, data_awal)
-            # Satu UPDATE per tabel, bukan satu per baris (±800 baris termasuk Master RO).
+            # Satu UPDATE per tabel, bukan satu per baris.
             per_tabel: dict[type, list] = {}
             for x in data_awal:
                 per_tabel.setdefault(type(x), []).append(x.id)
             for model, ids in per_tabel.items():
                 db.execute(update(model).where(model.id.in_(ids)).values(created_by=reviewer.id, updated_by=reviewer.id))
-    if any(isinstance(x, MasterRO) for x in data_awal):
-        # Urutan fisik Master RO = urutan di layar (pgAdmin "View Data"), sama seperti setelah tambah/impor.
-        rapikan_fisik(db, "master_ro", "ix_master_ro_created_date")
     db.commit()
 
 

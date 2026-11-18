@@ -15,10 +15,12 @@ from app.akses import boleh_kelola_usulan, boleh_lihat_semua, pastikan
 from app.audit import catat
 from app.galat import Galat
 from app.checklist import isi_review, kunci_kode
-from app.model import (CatatanReviewer, ChecklistItem, Elemen, HasilItem, HasilKategori, Job,
+from app.model import (CatatanItem, CatatanReviewer, ChecklistItem, Elemen, HasilItem, HasilKategori, Job,
                        Kategori, NodeAI, Override, Pengguna, Rekomendasi, Review,
                        ReviewKategori, ReviewPanduan, Revisi, Rujukan, Usulan)
 from app.nilai_final import NilaiFinal, hitung_nilai_final
+from app.pekerja.llm import (ALASAN_TIRUAN_LAMA, KATEGORI_TIRUAN_LAMA, KURANG_TIRUAN_LAMA, REKOMENDASI_TIRUAN_LAMA,
+                             alasan_kategori_tiruan, catatan_tiruan)
 from app.pekerja.rujukan import nomor_kalimat
 
 NODE_AKTIF_DETIK = 90
@@ -28,14 +30,16 @@ def review_terbaru(db: Session, revisi_id) -> Review | None:
     return db.scalar(select(Review).where(Review.revisi_id == revisi_id).order_by(Review.created_at.desc()).limit(1))
 
 
-def ajukan_review(db: Session, request: Request | None, revisi: Revisi, p: Pengguna) -> Review:
-    """Pengusul menekan "Ajukan Review": revisi → ANTRE, buat review + job antrean.
+def ajukan_review(db: Session, request: Request | None, revisi: Revisi, p: Pengguna, oleh_reviewer: bool = False) -> Review:
+    """Pengusul menekan "Ajukan Review": revisi → ANTRE, buat review + job antrean. `oleh_reviewer` = revisi dokumen yang
+    diunggah Reviewer lewat Edit Usulan (hak Reviewer sudah dicek pemanggil, desain.md §7 no. 40).
 
     Versi checklist/kategori/panduan dikunci saat job mulai diproses (desain §4.7).
     Error: 403 bukan Pengusul Satker ini; 409 status tidak mengizinkan; 400 checklist/kategori belum ada.
     """
     usulan = db.get(Usulan, revisi.usulan_id)
-    pastikan(boleh_kelola_usulan(p, usulan), "Hanya Pengusul dari Satker ini yang dapat mengajukan review.")
+    if not oleh_reviewer:
+        pastikan(boleh_kelola_usulan(p, usulan), "Hanya Pengusul dari Satker ini yang dapat mengajukan review.")
     if usulan.diarsipkan_at:
         raise Galat(409, "Usulan diarsipkan.")
     if revisi.status not in st.BOLEH_AJUKAN:
@@ -98,16 +102,6 @@ def lihat_sebagai_reviewer(p: Pengguna) -> bool:
     return boleh_lihat_semua(p)
 
 
-def ringkasan_checklist(db: Session, review: Review | None, p: Pengguna) -> dict | None:
-    """Ringkasan "8/10 terpenuhi" + rincian per item untuk tabel usulan (A4)."""
-    if review is None or review.status != "SELESAI":
-        return None
-    nf, _ = nilai_final_review(db, review, lihat_sebagai_reviewer(p) or review.difinalkan_at is not None)
-    rincian = [{"kode": i.kode, "judul": i.judul, "terpenuhi": nf.item.get(str(i.item_id), False)} for i in isi_review(db, review)]
-    return {"terpenuhi": sum(r["terpenuhi"] for r in rincian), "total": len(rincian), "item": rincian,
-            "label": nf.label, "final": review.difinalkan_at is not None}
-
-
 def _kategori_ringkas(k: ReviewKategori | None) -> dict | None:
     # Definisi dikirim agar pengguna melihat persis isi kategori yang dipakai review ini (C3).
     return {"id": str(k.kategori_id), "kode": k.kode, "nama": k.nama, "definisi": k.definisi} if k else None
@@ -138,6 +132,7 @@ def _rujukan(db: Session, review: Review, revisi: Revisi, pemilik_ids: list) -> 
     panduan = {pv.file_id: pv for pv in db.scalars(select(ReviewPanduan).where(ReviewPanduan.review_id == review.id))}
     hasil: dict[str, list[dict]] = {}
     for r, e in baris:
+        nama_acuan = None  # Nama Acuan panduan saja (tanpa versi) untuk kolom "Rujukan Checklist"
         if e.file_id == revisi.tor_file_id:
             dokumen, judul = "TOR", revisi.tor_nama
         elif e.file_id == revisi.rab_file_id:
@@ -145,11 +140,12 @@ def _rujukan(db: Session, review: Review, revisi: Revisi, pemilik_ids: list) -> 
         else:
             pv = panduan.get(e.file_id)
             dokumen, judul = "PANDUAN", (f"{pv.judul} (v{pv.nomor})" if pv else "Panduan")
+            nama_acuan = pv.judul if pv else "Panduan"
         kalimat = nomor_kalimat(e.teks, r.kutipan)
         hasil.setdefault(str(r.pemilik_id), []).append({
             "id": str(r.id), "peran": r.peran, "dokumen": dokumen, "judul_dokumen": judul, "file_id": str(e.file_id),
             "halaman": e.halaman, "label_lokasi": e.label_lokasi + (f", kalimat {kalimat}" if kalimat else ""),
-            "kutipan": r.kutipan, "bbox": e.bbox,
+            "kutipan": r.kutipan, "bbox": e.bbox, "nama_acuan": nama_acuan,
             "sumber": e.sumber, "jenis": e.jenis,
         })
     return hasil
@@ -169,11 +165,17 @@ def detail_review(db: Session, review: Review, p: Pengguna) -> dict:
         "selesai_at": review.selesai_at.isoformat() if review.selesai_at else None,
         "model_info": review.model_info, "proses": info_proses(db, review),
         "usulan": {"id": str(usulan.id), "satker": usulan.satker.nama, "tahun_anggaran": usulan.tahun_anggaran,
-                   "kode_ro": usulan.kode_ro, "nama_ro": usulan.nama_ro, "diarsipkan": usulan.diarsipkan_at is not None},
+                   "kode_ro": usulan.kode_ro, "nama_ro": usulan.nama_ro, "diarsipkan": usulan.diarsipkan_at is not None,
+                   "kategori_usulan": usulan.kategori_usulan},
         "revisi": {"id": str(revisi.id), "nomor": revisi.nomor, "status": revisi.status,
-                   "tor": {"file_id": str(revisi.tor_file_id), "nama": revisi.tor_nama},
-                   "rab": {"file_id": str(revisi.rab_file_id), "nama": revisi.rab_nama}},
-        "boleh_override": "REVIEWER" in p.daftar_role and not final and revisi.status == st.MENUNGGU_VERIFIKASI,
+                   "tor": {"file_id": str(revisi.tor_file_id), "nama": revisi.tor_nama} if revisi.tor_file_id else None,
+                   "rab": {"file_id": str(revisi.rab_file_id), "nama": revisi.rab_nama} if revisi.rab_file_id else None},
+        # Sama dengan api/review.py `_wajib_dapat_diubah`: review lama (dokumen sudah diganti) hanya dapat dilihat.
+        "boleh_override": "REVIEWER" in p.daftar_role and not final and revisi.status == st.MENUNGGU_VERIFIKASI
+                          and review_terbaru(db, revisi.id).id == review.id,
+        # Tombol "Unggah Revisi" di bawah halaman Pemeriksaan: Pengusul Satker ini, revisi terbaru yang Tidak Lolos.
+        "boleh_unggah_revisi": boleh_kelola_usulan(p, usulan) and usulan.diarsipkan_at is None
+                               and usulan.revisi[-1].id == revisi.id and revisi.status == st.TIDAK_LOLOS,
     }
     if review.disalin_dari_id:
         asal = db.get(Review, review.disalin_dari_id)
@@ -181,6 +183,7 @@ def detail_review(db: Session, review: Review, p: Pengguna) -> dict:
     if review.status != "SELESAI":
         return data
 
+    # Pengusul melihat hasil AI segera; penilaian verifikator (override) & catatan baru setelah final (desain.md §7 no. 38).
     tampil_override = sebagai_reviewer or final
     nf, overrides = nilai_final_review(db, review, tampil_override)
     aktif_per_target = {}
@@ -203,6 +206,9 @@ def detail_review(db: Session, review: Review, p: Pengguna) -> dict:
     kat = db.scalar(select(HasilKategori).where(HasilKategori.review_id == review.id))
     rujukan = _rujukan(db, review, revisi, [h.id for h in hasil.values()] + [r.id for r in rek] + ([kat.id] if kat else []))
 
+    # Catatan Verifikator per item (terpisah dari status); Pengusul baru melihatnya setelah final.
+    catatan_item = {c.checklist_item_id: c for c in db.scalars(select(CatatanItem).where(CatatanItem.review_id == review.id))} \
+        if tampil_override else {}
     item = []
     for ci in isi:
         h = hasil.get(ci.item_id)
@@ -210,11 +216,19 @@ def detail_review(db: Session, review: Review, p: Pengguna) -> dict:
             continue
         iid = str(ci.item_id)
         o = aktif_per_target.get(("ITEM", iid))
+        c = catatan_item.get(ci.item_id)
+        # Review lama AI tiruan: tampilkan kalimat versi baru yang merujuk kriteria (data tersimpan tidak diubah).
+        alasan, kurang = h.alasan, h.yang_kurang
+        if ALASAN_TIRUAN_LAMA.fullmatch(alasan):
+            alasan = catatan_tiruan(ci.kriteria, "lolos") if h.terpenuhi else ""
+        if not h.terpenuhi and kurang in KURANG_TIRUAN_LAMA:
+            kurang = catatan_tiruan(ci.kriteria, "kurang" if h.ditemukan else "tidak_ditemukan")
         item.append({
             "id": iid, "kode": ci.kode, "judul": ci.judul, "kriteria": ci.kriteria, "berlaku_untuk": ci.berlaku_untuk,
             "ai_terpenuhi": h.terpenuhi, "terpenuhi": nf.item.get(iid, h.terpenuhi), "diubah": iid in nf.item_diubah,
-            "override": _override_dict(db, o) if o else None, "ditemukan": h.ditemukan, "alasan": h.alasan,
-            "yang_kurang": h.yang_kurang, "rujukan": rujukan.get(str(h.id), []),
+            "override": _override_dict(db, o) if o else None, "ditemukan": h.ditemukan, "alasan": alasan,
+            "yang_kurang": kurang, "rujukan": rujukan.get(str(h.id), []),
+            "catatan_verifikator": {"teks": c.teks, "oleh": _nama(db, c.oleh), "diubah_at": c.diubah_at.isoformat()} if c else None,
         })
     data["item"] = item
     data["label"] = {"ai": review.label_ai, "hitung": nf.label_hitung, "final": nf.label, "diubah": nf.label_diubah,
@@ -223,12 +237,24 @@ def detail_review(db: Session, review: Review, p: Pengguna) -> dict:
     per_id = {k.kategori_id: k for k in kv}
     kat_ai = per_id.get(kat.kategori_item_id) if kat else None
     kat_final = per_id.get(uuid.UUID(nf.kategori_id)) if nf.kategori_id else None
+    alasan_kat = kat.alasan if kat else None
+    if kat_ai and alasan_kat and KATEGORI_TIRUAN_LAMA.fullmatch(alasan_kat):  # review AI tiruan: kalimat terbaru (data tersimpan tidak diubah)
+        alasan_kat = alasan_kategori_tiruan(kat_ai.kode, kat_ai.nama)
     data["kategori"] = {"ai": _kategori_ringkas(kat_ai), "final": _kategori_ringkas(kat_final), "diubah": nf.kategori_diubah,
-                        "alasan": kat.alasan if kat else None, "rujukan": rujukan.get(str(kat.id), []) if kat else [],
+                        "alasan": alasan_kat, "rujukan": rujukan.get(str(kat.id), []) if kat else [],
                         "override": _override_dict(db, o) if (o := aktif_per_target.get(("KATEGORI", None))) else None,
                         "pilihan": [_kategori_ringkas(k) for k in kv]}
     kode_item = {ci.item_id: ci.kode for ci in isi}
-    data["rekomendasi"] = {d: [{"id": str(r.id), "teks": r.teks, "tidak_diperlukan": r.tidak_diperlukan,
+    per_item = {ci.item_id: ci for ci in isi}
+
+    def teks_rek(r: Rekomendasi) -> str:
+        """Rekomendasi lama AI tiruan ditampilkan dengan kalimat baru yang merujuk kriteria (data tersimpan tidak diubah)."""
+        ci, h = per_item.get(r.checklist_item_id), hasil.get(r.checklist_item_id)
+        if ci is None or not REKOMENDASI_TIRUAN_LAMA.fullmatch(r.teks):
+            return r.teks
+        return catatan_tiruan(ci.kriteria, "saran_tidak_ditemukan" if h is not None and not h.ditemukan else "saran_kurang")
+
+    data["rekomendasi"] = {d: [{"id": str(r.id), "teks": teks_rek(r), "tidak_diperlukan": r.tidak_diperlukan,
                                 "item_kode": kode_item.get(r.checklist_item_id), "rujukan": rujukan.get(str(r.id), [])}
                                for r in rek if r.dokumen == d] for d in ("TOR", "RAB")}
     if tampil_override:

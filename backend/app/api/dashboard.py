@@ -52,7 +52,7 @@ def dashboard(db: Session = Depends(sesi_db), p: Pengguna = Depends(wajib_role(P
         if ("PENGUSUL" in roles and u.satker_id == p.satker_id and r.status in (st.DRAF, st.GAGAL, st.TIDAK_LOLOS)) or \
            ("REVIEWER" in roles and r.status == st.MENUNGGU_VERIFIKASI):
             perlu.append(u)
-    perlu.sort(key=lambda u: u.updated_at)
+    perlu.sort(key=lambda u: u.updated_date)
     data = {"total": len(baris), "per_status": per_status, "per_kategori": per_kategori,
             "per_satker": sorted(per_satker.values(), key=lambda s: s["satker"]),
             "perlu_tindakan": [baris_usulan(db, u, p) for u in perlu[:20]]}

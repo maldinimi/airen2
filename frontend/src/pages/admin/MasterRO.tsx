@@ -12,7 +12,7 @@ import { api } from "../../api";
 import { Aksi, HalamanDetail, HalamanForm, type Jejak, LencanaAktif, PilihBawah, TD, barisJejak, th, usePesanSukses } from "../../components/Kelola";
 import { FormFilter, type NilaiFilter, OPSI_STATUS, Paginasi, ThUrut, cocok, lolosJejak, lolosStatus, usePaginasi, useUrut } from "../../components/TabelData";
 import { waktuAngka } from "../../format";
-import { Input, Judul, Kartu, Kolom, Konfirmasi, Kosong, Memuat, Peringatan, Saklar, Tombol, cx } from "../../ui";
+import { Input, Judul, Kartu, Kolom, Konfirmasi, Kosong, Memuat, Peringatan, Saklar, TanggalJam, Tombol, cx } from "../../ui";
 
 type Tingkat = "PROGRAM" | "KEGIATAN" | "KRO" | "RO";
 // Kolom datar tabel `master_ro` (dikirim backend apa adanya; kosong untuk jenjang di bawah data ini).
@@ -315,7 +315,8 @@ export default function KelolaMasterRO() {
                   if (c.jenis === "status") return <td key={c.k} className={cx(TD, "whitespace-nowrap")}><LencanaAktif aktif={x.aktif} /></td>;
                   // Diinput Oleh & Tanggal Input: gaya sama dengan tabel Checklist.
                   if (c.jenis === "oleh" || c.jenis === "tanggal")
-                    return <td key={c.k} className={cx(TD, "whitespace-nowrap text-slate-600", c.jenis === "oleh" ? "min-w-[9rem]" : "min-w-[9.5rem]")}>{nilai(x, c)}</td>;
+                    return <td key={c.k} className={cx(TD, "whitespace-nowrap text-slate-600", c.jenis === "oleh" ? "min-w-[9rem]" : "min-w-[9.5rem]")}>
+                      {c.jenis === "tanggal" ? <TanggalJam iso={x.diubah_at} /> : nilai(x, c)}</td>;
                   const milik = c.t === x.tingkat;  // kolom milik baris ini sendiri (bukan induknya)
                   return (
                     <td key={c.k} className={cx(TD, c.jenis === "kode" ? "whitespace-nowrap" : "min-w-[12rem]",

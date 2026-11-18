@@ -27,6 +27,18 @@ NAMA_STATUS = {
 }
 
 
+def ajukan_ulang_oleh_reviewer(revisi) -> None:
+    """Reviewer mengganti dokumen revisi terakhir lewat Edit Usulan (desain.md §7 no. 43): revisi yang SAMA kembali ke DRAF
+    lalu diajukan ulang (review baru; review lama tetap tersimpan), sehingga tidak menambah baris Histori Dokumen. Di luar
+    tabel TRANSISI karena hanya jalur khusus Reviewer ini yang boleh membuka kembali revisi yang sudah direview.
+
+    Error: `Galat` 409 bila revisi masih antre/diproses AI.
+    """
+    if revisi.status in (ANTRE, DIPROSES_AI):
+        raise Galat(409, "Usulan sedang diproses AI; dokumen belum dapat diganti.")
+    revisi.status = DRAF
+
+
 def pindah_status(revisi, ke: str) -> None:
     """Ubah status revisi bila transisinya sah.
 

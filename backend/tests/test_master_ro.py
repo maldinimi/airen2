@@ -1,5 +1,6 @@
 """Uji menu Master RO: CRUD berjenjang Program → Kegiatan → KRO → RO, aturan induk & kode, hapus, dan hak akses
-(khusus Reviewer), format kode sesuai SEB No. 6/2025, referensi KRO Lampiran II, dan seed Renja TA 2026 revisi."""
+(khusus Reviewer), format kode sesuai SEB No. 6/2025, dan referensi KRO Lampiran II.
+Master RO tidak di-seed (data Renja hanya dari input/impor menu ini), jadi tiap uji mulai dari tabel kosong."""
 import pytest
 from sqlalchemy import text
 
@@ -7,14 +8,6 @@ from app.db import engine
 
 # Kolom Renja Unit Eselon I/II & Prioritas tidak disimpan di master_ro (database mengikuti tabel daftar).
 _DIHAPUS = ("kode_eselon1", "unit_eselon1", "kode_eselon2", "unit_eselon2", "prioritas")
-
-
-@pytest.fixture(autouse=True)
-def _master_ro_kosong(request, db_bersih):
-    """Seed mengisi Master RO dari Renja TA 2026 revisi; uji CRUD memakai tabel kosong agar kode contoh tidak bentrok."""
-    if "seed" not in request.node.name:
-        with engine.begin() as c:
-            c.execute(text("DELETE FROM master_ro"))
 
 
 def test_master_ro_crud_berjenjang(klien):
@@ -152,18 +145,6 @@ def test_master_ro_referensi_kro(klien):
         if pn:
             assert {"kode": pn, "nama": nama, "satuan": satuan, "pn": True} in ref.json()
     assert klien("pengusul").get("/api/master-ro/referensi-kro").status_code == 403
-
-
-def test_master_ro_seed_renja(klien):
-    """Seed mengisi Master RO dari `app/data_master_ro.py` (opsional, tidak di-commit; tanpa berkas = Master RO kosong);
-    bila berkas diisi, semua baris masuk tanpa kolom unit & prioritas."""
-    from app.seed import baris_master_ro
-
-    daftar = klien("reviewer").get("/api/master-ro").json()
-    assert len(daftar) == len(baris_master_ro())
-    assert not any(k in d for d in daftar for k in (*_DIHAPUS, "kode_unit", "unit"))
-    assert all(d["nama"].startswith("Program ") for d in daftar if d["tingkat"] == "PROGRAM")
-    assert all(d["diubah_oleh"] == "reviewer" for d in daftar)
 
 
 def test_master_ro_tanpa_kolom_unit_prioritas(klien):

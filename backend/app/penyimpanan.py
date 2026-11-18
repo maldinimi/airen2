@@ -9,12 +9,12 @@ import tempfile
 
 import pypdfium2 as pdfium
 from fastapi import UploadFile
-from sqlalchemy import select
+from sqlalchemy import delete, or_, select
 from sqlalchemy.orm import Session
 
 from app.galat import Galat
 from app.konfigurasi import konfigurasi
-from app.model import File
+from app.model import Chunk, Elemen, File, Halaman, Job, Panduan, PanduanHistori, ReviewPanduan, Revisi, Rujukan
 
 POTONGAN = 1024 * 1024
 
@@ -98,3 +98,33 @@ def simpan_unggahan(db: Session, unggahan: UploadFile) -> tuple[File, str]:
 
 def path_absolut(f: File) -> str:
     return os.path.join(folder_file(), f.path)
+
+
+def hapus_file_tak_terpakai(db: Session, file_ids) -> list[str]:
+    """Hapus PERMANEN baris `file` beserta hasil ekstraksinya (halaman, elemen, chunk, rujukan ke elemennya, job) untuk file
+    yang tidak lagi dipakai TOR/RAB revisi mana pun maupun panduan (terkini, riwayat, salinan review). File identik (SHA sama)
+    dipakai bersama, jadi file yang masih dipakai dibiarkan. Kembalikan path PDF yang harus dihapus SETELAH commit
+    (`hapus_berkas`), agar PDF tetap ada bila transaksi gagal."""
+    path = []
+    for fid in {f for f in file_ids if f}:
+        if any(db.scalar(select(kolom).where(kolom == fid).limit(1)) for kolom in (
+                Panduan.file_id, PanduanHistori.file_id, ReviewPanduan.file_id)) or db.scalar(
+                select(Revisi.id).where(or_(Revisi.tor_file_id == fid, Revisi.rab_file_id == fid)).limit(1)):
+            continue
+        db.execute(delete(Rujukan).where(Rujukan.elemen_id.in_(select(Elemen.id).where(Elemen.file_id == fid))))
+        for tabel in (Chunk, Elemen, Halaman):
+            db.execute(delete(tabel).where(tabel.file_id == fid))
+        db.execute(delete(Job).where(Job.ref_id == fid))
+        f = db.get(File, fid)
+        path.append(path_absolut(f))
+        db.delete(f)
+    return path
+
+
+def hapus_berkas(daftar: list[str]) -> None:
+    """Hapus PDF di disk (dipanggil setelah commit)."""
+    for p in daftar:
+        try:
+            os.remove(p)
+        except FileNotFoundError:
+            pass

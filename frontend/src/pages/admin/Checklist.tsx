@@ -11,7 +11,7 @@ import { TOMBOL_IKON } from "../../components/Kelola";
 import { FormFilter, type NilaiFilter, OPSI_STATUS, Paginasi, ThUrut, cocok, lolosJejak, lolosStatus, usePaginasi, useUrut } from "../../components/TabelData";
 import { waktuAngka } from "../../format";
 import type { ItemChecklist } from "../../types";
-import { AreaTeks, Dialog, Input, Judul, Kartu, Kolom, Kosong, Lencana, Memuat, Peringatan, Pilih, Saklar, Tombol, cx } from "../../ui";
+import { AreaTeks, Dialog, Input, Judul, Kartu, Kolom, Kosong, Lencana, Memuat, Peringatan, Pilih, Saklar, TanggalJam, Tombol, cx } from "../../ui";
 
 const BERLAKU = { TOR: "TOR", RAB: "RAB", "TOR & RAB": "TOR & RAB" };
 const ENDPOINT = "/api/checklist";
@@ -195,11 +195,11 @@ function TabelChecklist({ item, kelola, sibuk, ubah, hapus, lihat }: {
               <tr key={i.kode} className="align-middle transition-colors hover:bg-slate-50">
                 <td className="whitespace-nowrap px-3 py-2.5 text-center font-medium text-slate-900">{i.kode}</td>
                 <td className="min-w-[12rem] px-3 py-2.5 text-slate-900">{i.judul}</td>
-                <td className="min-w-[20rem] px-3 py-2.5 text-slate-600">{i.kriteria}</td>
+                <td className="min-w-[20rem] px-3 py-2.5 text-justify text-slate-600">{i.kriteria}</td>
                 <td className="px-3 py-2.5 text-center"><LencanaBerlaku b={i.berlaku_untuk} /></td>
                 <td className="px-3 py-2.5 text-center"><LencanaStatus aktif={i.aktif !== false} /></td>
                 <td className="min-w-[9rem] whitespace-nowrap px-3 py-2.5 text-center text-slate-600">{i.diubah_oleh ?? "Sistem"}</td>
-                <td className="min-w-[9.5rem] whitespace-nowrap px-3 py-2.5 text-center text-slate-600">{waktuAngka(i.diubah_at)}</td>
+                <td className="min-w-[9.5rem] whitespace-nowrap px-3 py-2.5 text-center text-slate-600"><TanggalJam iso={i.diubah_at} /></td>
                 <td className="whitespace-nowrap px-3 py-2 text-center">
                   <button type="button" className={cx(tombol, "text-emerald-600 hover:bg-emerald-50 hover:text-emerald-700")} title="Detail" aria-label={`Detail ${i.kode}`} onClick={() => lihat(i.id!)}><Eye className="size-4" /></button>
                   {kelola && <>
@@ -294,12 +294,12 @@ function DetailItem({ i, tutup }: { i: ItemChecklist; tutup: () => void }) {
                 </thead>
                 <tbody className="divide-y divide-slate-100">{q.data!.slice(1).map((r) => (
                   <tr key={r.id} className="align-middle">
-                    <td className="whitespace-nowrap px-3 py-2.5 text-center text-slate-500">{waktuAngka(r.diubah_at)}</td>
+                    <td className="whitespace-nowrap px-3 py-2.5 text-center text-slate-500"><TanggalJam iso={r.diubah_at} /></td>
                     <td className="whitespace-nowrap px-3 py-2.5 text-center text-slate-700">{r.diubah_oleh ?? "Sistem"}</td>
                     <td className="px-3 py-2.5 text-center"><LencanaStatus aktif={r.aktif} /></td>
                     <td className="whitespace-nowrap px-3 py-2.5 text-center font-medium text-slate-900">{r.kode}</td>
                     <td className="min-w-[12rem] px-3 py-2.5 text-slate-800">{r.judul}</td>
-                    <td className="min-w-[20rem] whitespace-pre-line px-3 py-2.5 text-slate-700">{r.kriteria}</td>
+                    <td className="min-w-[20rem] whitespace-pre-line px-3 py-2.5 text-justify text-slate-700">{r.kriteria}</td>
                     <td className="px-3 py-2.5 text-center"><LencanaBerlaku b={r.berlaku_untuk} /></td>
                   </tr>))}</tbody>
               </table>

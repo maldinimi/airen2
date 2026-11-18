@@ -9,7 +9,7 @@ import hashlib
 import json
 
 
-def fingerprint(sha_tor: str, sha_rab: str, checklist: str, kategori: list, panduan_versi_ids, model_info: dict) -> str:
+def fingerprint(sha_tor: str | None, sha_rab: str | None, checklist: str, kategori: list, panduan_versi_ids, model_info: dict) -> str:
     """`kategori` = isi salinan kategori review (id, kode, nama, definisi), urutan stabil."""
     data = {
         "tor": sha_tor, "rab": sha_rab, "checklist": checklist, "kategori": kategori,

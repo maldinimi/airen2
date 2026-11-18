@@ -1,37 +1,24 @@
-/** Potongan UI untuk baris usulan: ringkasan checklist (A4), status proses, dan tombol aksi per role/status (A3). */
-import * as Pop from "@radix-ui/react-popover";
+/** Potongan UI untuk baris usulan: tautan dokumen, status proses, dan ikon aksi Detail/Edit/Hapus (desain.md §7 no. 36). */
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Check, History, Send, Upload, X } from "lucide-react";
+import { Eye, FileText, Pencil, Trash2 } from "lucide-react";
+import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { api } from "../api";
 import { useAuth } from "../auth";
-import type { BarisUsulan, Proses, RingkasChecklist } from "../types";
-import { Lencana, Peringatan, Progres, Tombol, cx } from "../ui";
+import type { BarisUsulan, Dok, Proses } from "../types";
+import { KonfirmasiYakin, Peringatan, Progres, cx } from "../ui";
 
-export function RingkasanChecklist({ c }: { c: RingkasChecklist | null }) {
-  if (!c) return <span className="text-slate-400">—</span>;
+/** TOR/RAB yang diunggah; klik membuka isi PDF. Dokumen yang tidak diunggah tidak ditampilkan. */
+export function TautanDokumen({ tor, rab }: { tor: Dok | null; rab: Dok | null }) {
   return (
-    <Pop.Root>
-      <Pop.Trigger className={cx("rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset hover:opacity-80",
-        c.terpenuhi === c.total ? "bg-emerald-50 text-emerald-700 ring-emerald-300" : "bg-red-50 text-red-700 ring-red-300")}>
-        {c.terpenuhi}/{c.total} terpenuhi
-      </Pop.Trigger>
-      <Pop.Portal>
-        <Pop.Content sideOffset={6} className="z-50 w-80 rounded-xl border border-slate-200 bg-white p-3 shadow-xl">
-          <div className="mb-2 text-xs font-medium text-slate-500">{c.final ? "Hasil final" : "Hasil AI — belum diverifikasi reviewer"}</div>
-          <ul className="max-h-72 space-y-1.5 overflow-y-auto">
-            {c.item.map((i) => (
-              <li key={i.kode} className="flex gap-2 text-sm">
-                {i.terpenuhi ? <Check className="mt-0.5 size-4 shrink-0 text-emerald-600" aria-label="Terpenuhi" />
-                  : <X className="mt-0.5 size-4 shrink-0 text-red-600" aria-label="Tidak terpenuhi" />}
-                <span><span className="font-medium">{i.kode}</span> {i.judul}</span>
-              </li>
-            ))}
-          </ul>
-          <Pop.Arrow className="fill-white" />
-        </Pop.Content>
-      </Pop.Portal>
-    </Pop.Root>
+    <div className="space-y-1">
+      {([["TOR", tor], ["RAB", rab]] as const).map(([jenis, d]) => d && (
+        <Link key={jenis} to={`/pdf/${d.file_id}?judul=${encodeURIComponent(`${jenis} — ${d.nama}`)}`} title={d.nama}
+          className="flex max-w-56 items-center gap-1.5 text-xs text-utama-600 hover:underline">
+          <FileText className="size-3.5 shrink-0" aria-hidden /><span className="truncate"><b>{jenis}</b> · {d.nama}</span>
+        </Link>
+      ))}
+    </div>
   );
 }
 
@@ -43,48 +30,38 @@ export function InfoProses({ p }: { p: Proses | null }) {
   return <Progres persen={p.progres?.persen ?? 0} tahap={p.progres?.tahap ?? "Diproses"} />;
 }
 
+/** Satker (Pengusul Satker ini) hanya boleh mengganti dokumen lalu mengirim ulang saat pengiriman Gagal (atau masih Draf);
+ *  usulan yang sudah terkirim (menunggu verifikasi, lolos, tidak lolos) cukup dilihat — revisi lewat halaman Pemeriksaan. */
+export const bolehUbahDokumen = (u: BarisUsulan) => u.boleh_kelola && !u.diarsipkan && ["DRAF", "GAGAL"].includes(u.status);
+
+/** Aksi per role (desain.md §7 no. 38): semua = Detail; Reviewer (ROCAN) = Edit hierarki/kategori + Hapus;
+ *  Satker = Edit dokumen hanya saat Gagal/Draf; Admin = Detail saja. Hak akses tetap dicek backend. */
 export function AksiUsulan({ u }: { u: BarisUsulan }) {
   const { punya } = useAuth();
   const nav = useNavigate();
   const qc = useQueryClient();
-  const ajukan = useMutation({
-    mutationFn: () => api.post(`/api/usulan/${u.id}/ajukan`),
-    onSuccess: () => qc.invalidateQueries(),
-    onError: (e) => alert((e as Error).message),
-  });
+  const reviewer = punya("REVIEWER");
+  const [konfirmasi, setKonfirmasi] = useState(false);
   const hapus = useMutation({
     mutationFn: () => api.del(`/api/usulan/${u.id}`),
-    onSuccess: () => qc.invalidateQueries(),
-    onError: (e) => alert((e as Error).message),
+    onSuccess: () => { setKonfirmasi(false); qc.invalidateQueries(); },
   });
-  const ada_hasil = !!u.review_id && ["MENUNGGU_VERIFIKASI", "LOLOS", "TIDAK_LOLOS"].includes(u.status);
-  const pengusul = u.boleh_kelola && !u.diarsipkan;
-
+  const ubah = reviewer ? `/usulan/${u.id}/parameter` : bolehUbahDokumen(u) ? `/usulan/${u.id}/ubah` : null;
+  const tombol = "rounded-lg p-1.5 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-utama-100";
   return (
-    <div className="flex flex-wrap gap-1.5">
-      {pengusul && (u.status === "DRAF" || u.status === "GAGAL") && (
-        <>
-          <Tombol kecil memuat={ajukan.isPending} onClick={() => ajukan.mutate()}><Send className="size-3.5" />{u.status === "GAGAL" ? "Ajukan Ulang" : "Ajukan Review"}</Tombol>
-          <Tombol kecil varian="sekunder" onClick={() => nav(`/usulan/${u.id}/draf`)}>Ubah</Tombol>
-        </>
+    <div className="flex items-center justify-center">
+      <button type="button" className={cx(tombol, "text-emerald-600 hover:bg-emerald-50")} title="Detail" aria-label={`Detail ${u.kode_ro}`}
+        onClick={() => nav(`/usulan/${u.id}`)}><Eye className="size-4" /></button>
+      {ubah && (
+        <button type="button" className={cx(tombol, "text-utama-600 hover:bg-utama-50")} title="Edit" aria-label={`Edit ${u.kode_ro}`}
+          onClick={() => nav(ubah)}><Pencil className="size-4" /></button>
       )}
-      {pengusul && u.status === "DRAF" && !u.pernah_direview && (
-        <Tombol kecil varian="hantu" className="text-red-600" memuat={hapus.isPending}
-          onClick={() => confirm("Hapus usulan draf ini?") && hapus.mutate()}>Hapus</Tombol>
+      {reviewer && !["ANTRE", "DIPROSES_AI"].includes(u.status) && (
+        <button type="button" className={cx(tombol, "text-red-600 hover:bg-red-50")} title="Hapus" aria-label={`Hapus ${u.kode_ro}`}
+          onClick={() => { hapus.reset(); setKonfirmasi(true); }}><Trash2 className="size-4" /></button>
       )}
-      {ada_hasil && punya("REVIEWER") && u.status === "MENUNGGU_VERIFIKASI" && (
-        <Tombol kecil varian="ubah" onClick={() => nav(`/review/${u.review_id}`)}>Periksa Hasil</Tombol>
-      )}
-      {ada_hasil && !(punya("REVIEWER") && u.status === "MENUNGGU_VERIFIKASI") && (
-        <Tombol kecil varian="sekunder" onClick={() => nav(`/review/${u.review_id}`)}>{u.status === "MENUNGGU_VERIFIKASI" ? "Lihat Hasil AI" : "Lihat Hasil"}</Tombol>
-      )}
-      {pengusul && u.status === "TIDAK_LOLOS" && (
-        <Tombol kecil onClick={() => nav(`/usulan/${u.id}/revisi`)}><Upload className="size-3.5" />Unggah Revisi</Tombol>
-      )}
-      <Link to={`/usulan/${u.id}/riwayat`} className="inline-flex h-8 items-center gap-1 rounded-lg px-2 text-xs font-medium text-slate-600 hover:bg-slate-100">
-        <History className="size-3.5" />Riwayat
-      </Link>
-      {u.diarsipkan && <Lencana className="bg-slate-100 text-slate-600 ring-slate-300">Arsip</Lencana>}
+      <KonfirmasiYakin buka={konfirmasi} bahaya batal={() => setKonfirmasi(false)} ya={() => hapus.mutate()} memuat={hapus.isPending}
+        galat={hapus.error ? (hapus.error as Error).message : null} />
     </div>
   );
 }

@@ -12,7 +12,7 @@ import { TOMBOL_IKON } from "../../components/Kelola";
 import { FormFilter, type NilaiFilter, OPSI_STATUS, Paginasi, ThUrut, cocok, lolosJejak, lolosStatus, usePaginasi, useUrut } from "../../components/TabelData";
 import { waktuAngka } from "../../format";
 import type { ItemKategori } from "../../types";
-import { AreaTeks, Input, Judul, Kartu, Kolom, Konfirmasi, Kosong, Lencana, Memuat, Peringatan, Ringkasan, Saklar, Tombol, cx } from "../../ui";
+import { AreaTeks, Input, Judul, Kartu, Kolom, Konfirmasi, Kosong, Lencana, Memuat, Peringatan, Ringkasan, Saklar, TanggalJam, Tombol, cx } from "../../ui";
 
 const ENDPOINT = "/api/kategori";
 const DASAR = "/kelola/kategori";
@@ -108,9 +108,9 @@ export default function KelolaKategori() {
                   <td className="whitespace-nowrap px-3 py-2.5 text-center font-medium text-slate-900">{k.kode}</td>
                   <td className="min-w-[12rem] whitespace-nowrap py-2.5 pl-6 pr-3 text-left text-slate-900">{k.nama}</td>
                   <td className="whitespace-nowrap px-3 py-2.5 text-center"><LencanaAktif aktif={k.aktif} /></td>
-                  <td className="min-w-[24rem] px-3 py-2.5 text-left text-slate-600">{k.definisi}</td>
+                  <td className="min-w-[24rem] px-3 py-2.5 text-justify text-slate-600">{k.definisi}</td>
                   <td className="min-w-[9rem] whitespace-nowrap px-3 py-2.5 text-center text-slate-600">{k.diubah_oleh ?? "Sistem"}</td>
-                  <td className="min-w-[9.5rem] whitespace-nowrap px-3 py-2.5 text-center text-slate-600">{waktuAngka(k.diubah_at)}</td>
+                  <td className="min-w-[9.5rem] whitespace-nowrap px-3 py-2.5 text-center text-slate-600"><TanggalJam iso={k.diubah_at} /></td>
                   <td className="whitespace-nowrap px-3 py-2 text-center">
                     <button type="button" className={cx(tombol, "text-emerald-600 hover:bg-emerald-50 hover:text-emerald-700")} title="Detail" aria-label={`Detail ${k.kode}`} onClick={() => nav(`${DASAR}/${k.id}`)}><Eye className="size-4" /></button>
                     {kelola && <>
@@ -232,11 +232,11 @@ export function KategoriDetail() {
                 </thead>
                 <tbody className="divide-y divide-slate-100">{r.data!.map((h) => (
                   <tr key={h.id} className="align-middle">
-                    <td className="whitespace-nowrap px-3 py-2.5 text-center text-slate-500">{waktuAngka(h.diubah_at)}</td>
+                    <td className="whitespace-nowrap px-3 py-2.5 text-center text-slate-500"><TanggalJam iso={h.diubah_at} /></td>
                     <td className="whitespace-nowrap px-3 py-2.5 text-center text-slate-700">{h.diubah_oleh ?? "Sistem"}</td>
                     <td className="whitespace-nowrap px-3 py-2.5 text-center font-medium text-slate-900">{h.kode}</td>
                     <td className="min-w-[10rem] px-3 py-2.5 text-slate-800">{h.nama}</td>
-                    <td className="min-w-[20rem] whitespace-pre-line px-3 py-2.5 text-slate-700">{h.definisi}</td>
+                    <td className="min-w-[20rem] whitespace-pre-line px-3 py-2.5 text-justify text-slate-700">{h.definisi}</td>
                     <td className="px-3 py-2.5 text-center"><LencanaAktif aktif={h.aktif} /></td>
                   </tr>))}</tbody>
               </table>

@@ -8,9 +8,9 @@ import { useAuth } from "../auth";
 import AturUrutan from "../components/AturUrutan";
 import { TOMBOL_IKON, usePesanSukses } from "../components/Kelola";
 import { FormFilter, type NilaiFilter, OPSI_STATUS, Paginasi, ThUrut, cocok, lolosJejak, lolosStatus, usePaginasi, useUrut } from "../components/TabelData";
-import { waktu, waktuAngka } from "../format";
+import { waktuAngka } from "../format";
 import type { Panduan, VersiPanduan } from "../types";
-import { Judul, Kartu, Konfirmasi, Kosong, Lencana, Memuat, Peringatan, Ringkasan, Tombol, cx } from "../ui";
+import { Judul, Kartu, Konfirmasi, Kosong, Lencana, Memuat, Peringatan, Ringkasan, TanggalJam, Tombol, cx } from "../ui";
 
 // Tombol ikon aksi tabel — sama dengan Kelola Checklist.
 const tombol = TOMBOL_IKON;
@@ -103,7 +103,7 @@ export default function PanduanPage() {
                   </td>
                   <td className="py-2.5 pl-5 pr-3 text-center"><LencanaAktif aktif={p.aktif} /></td>
                   <td className="min-w-[9rem] whitespace-nowrap px-3 py-2.5 text-center text-slate-600">{p.diubah_oleh ?? "Sistem"}</td>
-                  <td className="min-w-[9.5rem] whitespace-nowrap py-2.5 pl-5 pr-3 text-center text-slate-600">{waktuAngka(p.diubah_at)}</td>
+                  <td className="min-w-[9.5rem] whitespace-nowrap py-2.5 pl-5 pr-3 text-center text-slate-600"><TanggalJam iso={p.diubah_at} /></td>
                   <td className="whitespace-nowrap px-3 py-2 text-center">
                     <button type="button" className={cx(tombol, "text-emerald-600 hover:bg-emerald-50 hover:text-emerald-700")} title="Detail"
                       aria-label={`Detail ${v.judul}`} onClick={() => nav(`/panduan/${p.id}`)}><Eye className="size-4" /></button>
@@ -177,7 +177,7 @@ export function PanduanDetail() {
               {/* versi[0] = terkini, sudah tampil di bagian atas; riwayat hanya versi sebelumnya. */}
               <tbody className="divide-y divide-slate-100">{p.versi.slice(1).map((x) => (
                 <tr key={x.id} className="align-top">
-                  <td className="whitespace-nowrap px-3 py-2 text-slate-500">{waktu(x.dibuat_at)}</td>
+                  <td className="whitespace-nowrap px-3 py-2 text-slate-500"><TanggalJam iso={x.dibuat_at} /></td>
                   <td className="px-3 py-2">{x.dibuat_oleh ?? "sistem"}</td>
                   <td className="px-3 py-2"><LencanaAktif aktif={x.aktif} /></td>
                   <td className="px-3 py-2">{x.judul}</td>

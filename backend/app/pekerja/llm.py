@@ -27,9 +27,56 @@ class GalatLLM(Exception):
 def info_model() -> dict:
     """Dicatat di setiap review (PRD §8.2) dan masuk fingerprint."""
     k = konfigurasi()
-    return {"model": "ai-tiruan" if k.tiruan else k.llm_model, "profil": k.profil, "ai_mode": k.ai_mode,
+    # Versi AI tiruan ikut fingerprint: naikkan bila jawaban tiruan berubah agar hasil lama tidak disalin ke review baru.
+    return {"model": "ai-tiruan-7" if k.tiruan else k.llm_model, "profil": k.profil, "ai_mode": k.ai_mode,
             "prompt_versi": PROMPT_VERSI, "embedding": "hash-tiruan" if k.tiruan else k.embedding_model,
             "reranker": "leksikal-tiruan" if k.tiruan else k.reranker_model, "ekstraktor": k.ekstraktor}
+
+
+_AWAL_TIRUAN = {"lolos": "Dokumen telah menunjukkan bahwa", "kurang": "Dokumen belum sepenuhnya menunjukkan bahwa",
+                "tidak_ditemukan": "Belum ditemukan bagian dokumen yang menunjukkan bahwa",
+                "saran_kurang": "Lengkapi dokumen agar jelas menunjukkan bahwa",
+                "saran_tidak_ditemukan": "Tambahkan uraian pada dokumen yang menunjukkan bahwa"}
+
+
+def catatan_tiruan(kriteria: str, keadaan: str) -> str:
+    """Catatan/rekomendasi AI tiruan yang merujuk Kriteria Lolos item, formal dan komunikatif. `keadaan`: lolos | kurang |
+    tidak_ditemukan (Catatan AI), saran_kurang | saran_tidak_ditemukan (Rekomendasi AI).
+    Contoh kurang: "Setiap komponen biaya ... pada TOR." → "(AI tiruan) Dokumen belum sepenuhnya menunjukkan bahwa setiap
+    komponen biaya ... pada TOR." Huruf awal kriteria dikecilkan kecuali singkatan (TOR, RAB)."""
+    k = " ".join(kriteria.split()).rstrip(".")
+    if k and not k.split(" ", 1)[0].isupper():
+        k = k[0].lower() + k[1:]
+    return f"(AI tiruan) {_AWAL_TIRUAN[keadaan]} {k}."
+
+
+# Tampilan review lama AI tiruan (versi 1–4): kalimat umum yang kini diganti; hasil tersimpan tidak diubah (dipakai layanan_review).
+ALASAN_TIRUAN_LAMA = re.compile(r"\(AI tiruan\) Penilaian item .+ berdasarkan potongan dokumen yang ditemukan\.")
+REKOMENDASI_TIRUAN_LAMA = re.compile(r"\(AI tiruan\) Lengkapi dokumen sesuai kriteria item .+\.")
+KURANG_TIRUAN_LAMA = {"(AI tiruan) Rincian yang diminta kriteria belum lengkap.", "Bagian yang menjawab kriteria ini belum ada di dokumen."}
+# Semua versi lama Catatan AI kategori tiruan (kalimat umum, lalu kalimat K4 untuk semua kategori) → ditampilkan versi terbaru.
+KATEGORI_TIRUAN_LAMA = re.compile(r"\(AI tiruan\) Kategori .+", re.S)
+
+# Alasan per kategori, mengikuti definisi seed K1–K4 (PRD C1); kategori lain buatan Admin memakai kalimat umum.
+_ALASAN_KATEGORI = {
+    "K1": "RO bersifat wajib dan mengikat, ditetapkan melalui kebijakan penganggaran nasional, serta perlu terus berjalan "
+          "secara berkelanjutan. Oleh karena itu, penilaian difokuskan pada kesesuaian ruang lingkup, kejelasan kebutuhan dasar, "
+          "dan keterkaitan komponen dengan RO yang diusulkan.",
+    "K2": "RO termasuk prioritas yang ditetapkan secara resmi oleh Menteri dan/atau mendukung penguatan layanan esensial. "
+          "Oleh karena itu, RO ini dinilai secara penuh sesuai parameter penilaian substansi.",
+    "K3": "RO berkaitan dengan prioritas pembangunan nasional dan sasaran kementerian serta mendukung tugas dan fungsi Satker, "
+          "namun belum memenuhi kriteria K1 (RO Wajib) maupun K2 (RO Prioritas Strategis).",
+    "K4": "RO tidak termasuk prioritas nasional, serta tidak berkaitan dengan tugas dan fungsi Satker maupun kinerja strategis "
+          "kementerian.",
+}
+
+
+def alasan_kategori_tiruan(kode: str, nama: str) -> str:
+    """Catatan AI kategori versi AI tiruan, sesuai kategori yang dipilih (desain.md §7 no. 46)."""
+    pilihan = f"{kode} — {nama}" if nama else kode
+    alasan = _ALASAN_KATEGORI.get(kode, "isi TOR dan RAB paling sesuai dengan definisi kategori ini dibandingkan kategori lain "
+                                        "yang berlaku.")
+    return f"(AI tiruan) Kategori {pilihan} dipilih karena {alasan}"
 
 
 class KlienLLM:
@@ -92,11 +139,12 @@ class LLMTiruan:
         if tugas == "nilai_item":
             if not dok:
                 return {"ditemukan": False, "terpenuhi": False, "alasan": "(AI tiruan) Tidak ditemukan bagian dokumen yang relevan.",
-                        "yang_kurang": "Bagian yang menjawab kriteria ini belum ada di dokumen.", "bukti": [], "dasar_panduan": []}
+                        "yang_kurang": catatan_tiruan(k.get("kriteria", ""), "tidak_ditemukan"), "bukti": [], "dasar_panduan": []}
             ok = self._h(k.get("kode"), dok[0][1]) % 3 != 0
             return {"ditemukan": True, "terpenuhi": ok,
-                    "alasan": f"(AI tiruan) Penilaian item {k.get('kode')} berdasarkan potongan dokumen yang ditemukan.",
-                    "yang_kurang": "" if ok else "(AI tiruan) Rincian yang diminta kriteria belum lengkap.",
+                    # Lolos → alasan dari kriteria; tidak lolos → cukup kekurangannya (permintaan pengguna).
+                    "alasan": catatan_tiruan(k.get("kriteria", ""), "lolos") if ok else "",
+                    "yang_kurang": "" if ok else catatan_tiruan(k.get("kriteria", ""), "kurang"),
                     "bukti": self._rujuk(dok, 2), "dasar_panduan": self._rujuk(pdn, 1)}
         if tugas == "sapuan":
             return {"ada": False, "bukti": []}
@@ -106,13 +154,15 @@ class LLMTiruan:
                  "bukti": self._rujuk(dok, 1)}]
             return {"ringkasan": "(AI tiruan) Pemeriksaan keselarasan RAB–TOR.", "temuan": temuan}
         if tugas == "rekomendasi":
-            return {"rekomendasi": [{"teks": f"(AI tiruan) Lengkapi dokumen sesuai kriteria item {kode}.", "kode_item": kode,
-                                     "dasar_panduan": self._rujuk(pdn, 1)} for kode in k.get("kode_item", [])] or
+            kriteria, ditemukan = k.get("kriteria", {}), k.get("ditemukan", {})
+            return {"rekomendasi": [{"teks": catatan_tiruan(kriteria.get(kode, ""), "saran_kurang" if ditemukan.get(kode, True) else "saran_tidak_ditemukan"),
+                                     "kode_item": kode, "dasar_panduan": self._rujuk(pdn, 1)} for kode in k.get("kode_item", [])] or
                     [{"teks": "(AI tiruan) Selaraskan komponen biaya dengan kegiatan.", "kode_item": "", "dasar_panduan": []}]}
         if tugas == "kategori":
             kode = k.get("kode", ["K3"])
-            return {"kode": kode[self._h(dok[0][1] if dok else "") % len(kode)], "bukti": self._rujuk(dok, 1),
-                    "alasan": "(AI tiruan) Kategori dipilih berdasarkan definisi kategori yang aktif.", "dasar_panduan": self._rujuk(pdn, 1)}
+            pilih = kode[self._h(dok[0][1] if dok else "") % len(kode)]
+            return {"kode": pilih, "bukti": self._rujuk(dok, 1),
+                    "alasan": alasan_kategori_tiruan(pilih, k.get("nama", {}).get(pilih, "")), "dasar_panduan": self._rujuk(pdn, 1)}
         if tugas == "gambar":
             return {"deskripsi": f"(AI tiruan) Gambar/diagram pada halaman {k.get('halaman', '?')}."}
         raise GalatLLM(f"tugas tidak dikenal: {tugas}")

@@ -312,8 +312,9 @@ def _baca_lembar(isi: bytes) -> tuple[tuple | None, list[tuple[int, tuple]]]:
 
 
 @router.post("/impor")
-async def impor(request: Request, file: UploadFile = File(...), db: Session = Depends(sesi_db),
-                p: Pengguna = Depends(wajib_role(REVIEWER))) -> dict:
+# Sengaja bukan async: baca Excel + ribuan query berjalan di threadpool, tidak membekukan worker uvicorn.
+def impor(request: Request, file: UploadFile = File(...), db: Session = Depends(sesi_db),
+          p: Pengguna = Depends(wajib_role(REVIEWER))) -> dict:
     """Impor Master RO dari file Excel (.xlsx) berkolom kode_program, program, kode_kegiatan, kegiatan, kode_kro, kro,
     kode_ro, ro (lembar pertama; baris pertama yang tidak kosong = judul kolom).
 
@@ -327,7 +328,7 @@ async def impor(request: Request, file: UploadFile = File(...), db: Session = De
     Error: 400 file bukan .xlsx / kolom kurang / tidak ada data / ada baris tidak valid; 403; 409; 413 file terlalu besar."""
     if not (file.filename or "").lower().endswith(".xlsx"):
         raise Galat(400, "File harus berformat Excel (.xlsx).")
-    isi = await file.read(MAKS_BYTE_IMPOR + 1)
+    isi = file.file.read(MAKS_BYTE_IMPOR + 1)
     if len(isi) > MAKS_BYTE_IMPOR:
         raise Galat(413, f"File terlalu besar (maksimal {MAKS_BYTE_IMPOR // (1024 * 1024)} MB).")
     baris_judul, data = _baca_lembar(isi)  # data = (nomor baris di Excel, isi); baris kosong dilewati

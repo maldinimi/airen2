@@ -32,7 +32,7 @@ def boleh_lihat_usulan(p: Pengguna, u: Usulan) -> bool:
 
 
 def boleh_kelola_usulan(p: Pengguna, u: Usulan) -> bool:
-    """Membuat revisi, mengajukan review, menghapus draf, mengarsipkan: Pengusul Satker yang sama."""
+    """Membuat revisi, mengajukan review, menghapus draf: Pengusul Satker yang sama."""
     return PENGUSUL in p.daftar_role and p.satker_id is not None and u.satker_id == p.satker_id
 
 

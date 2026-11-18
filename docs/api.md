@@ -26,24 +26,25 @@ Hak akses selalu dicek di backend:
 
 | Metode | Path | Role | Keterangan |
 | --- | --- | --- | --- |
-| GET | `/usulan` | login | Filter: `satker_id, tahun, status, kategori, q, arsip, halaman, per_halaman`. Respons `{total, data: BarisUsulan[]}` |
-| POST | `/usulan` | Pengusul | multipart: `tahun_anggaran, kode_ro, nama_ro, tor(PDF), rab(PDF), ajukan(bool)` |
+| GET | `/usulan` | Pengusul, Reviewer | Filter: `satker` (nama Satuan Kerja), `q` (kode/nama RO), `dokumen` (nama file TOR/RAB revisi terbaru), `status`, `tanggal` (YYYY-MM-DD, tanggal pengajuan WIB), `tahun`, serta `satker_id, kategori`. Urut: `urut` = `satker\|rincian\|dokumen\|status\|tanggal`, `arah` = `asc\|desc` (tanpa `urut` = perubahan terbaru dulu). Paging: `halaman, per_halaman` (bawaan 10; `halaman` melebihi jumlah halaman → halaman terakhir). Respons `{total, halaman, per_halaman, data: BarisUsulan[]}` |
+| POST | `/usulan` | Pengusul | multipart: `program, kegiatan, kro, ro` (kode per tingkat dari `/usulan/opsi/pengajuan`), `kategori_id` (kategori Aktif), `tahun_anggaran` (pilihan di bilah atas; tahun berjalan ±2), `tor` dan `rab` (PDF, **keduanya wajib**), `ajukan(bool)`. 400 bila tahun di luar rentang, hierarki/kategori tidak valid, atau TOR/RAB kosong |
+| GET | `/usulan/opsi/pengajuan` | Pengusul, Reviewer | `{hierarki: Program[{kode, nama, kegiatan[{…, kro[{…, ro[]}]}]}], kategori: [{id, kode, nama, deskripsi}]}` (kategori Aktif) |
 | GET | `/usulan/{id}` | login + Satker | Satu `BarisUsulan` |
-| PUT | `/usulan/{id}/draf` | Pengusul Satker | multipart opsional `tahun_anggaran, kode_ro, nama_ro, tor, rab, ajukan`; hanya status DRAF/GAGAL |
+| PUT | `/usulan/{id}/draf` | Pengusul Satker | multipart `tor` dan/atau `rab`, `ajukan`; hanya status DRAF/GAGAL. Hierarki & kategori tidak dapat diubah (salah input → hapus lalu ajukan ulang) |
 | POST | `/usulan/{id}/revisi` | Pengusul Satker | multipart `tor` dan/atau `rab`, `ajukan`; hanya setelah TIDAK LOLOS |
 | POST | `/usulan/{id}/ajukan` | Pengusul Satker | Ajukan review revisi terbaru (DRAF atau ulang setelah GAGAL) |
-| DELETE | `/usulan/{id}` | Pengusul Satker | Hanya bila belum pernah diajukan review (409 bila pernah) |
-| POST | `/usulan/{id}/arsip` | Pengusul Satker | `{arsip: bool}` |
-| GET | `/usulan/{id}/riwayat` | login + Satker | `{usulan, revisi[] (+review[]), perbandingan{kolom, baris}}` |
+| DELETE | `/usulan/{id}` | Reviewer | Hapus **permanen** dari database (status apa pun selain antre/diproses AI): revisi, review, hasil AI, rujukan, override, catatan, salinan acuan, job, serta file PDF TOR/RAB beserta hasil ekstraksinya bila tidak dipakai usulan/panduan lain. 403 bukan Reviewer (termasuk Admin & Pengusul); 409 saat antre/diproses AI |
+| PUT | `/usulan/{id}` | Reviewer | multipart `program, kegiatan, kro, ro, kategori_id`, `tor`?, `rab`? — betulkan hierarki anggaran & kategori; TOR/RAB pengganti dipasang di revisi terakhir yang sama (tanpa revisi baru) lalu langsung diajukan review AI ulang (review lama tetap tersimpan). 400 pilihan tidak valid / bukan PDF; 409 dokumen diganti saat masih antre/diproses AI |
+| GET | `/usulan/{id}/riwayat` | login + Satker | `{usulan, revisi[] (+review[])}` untuk Detail Usulan (Histori Dokumen) |
 | GET | `/usulan/opsi/filter` | Pengusul, Reviewer | Pilihan dropdown filter |
 
 `BarisUsulan` berisi:
 
 - identitas: `id, satker, tahun_anggaran, kode_ro, nama_ro`;
 - revisi terbaru: `revisi_id, revisi_nomor, status`, dokumen `tor{file_id,nama}`, `rab{…}`;
-- hasil: `kategori_final{kode,nama}`, `checklist{terpenuhi,total,item[],final}`;
+- hasil: `kategori_final{kode,nama}`, `hierarki`, `kategori_usulan`, `dibuat_at`;
 - proses: `proses{status, progres, posisi_antrean, menunggu_kapasitas, error_pesan, trace_id}`;
-- status lain: `updated_at, diarsipkan, pernah_direview, review_id, boleh_kelola`.
+- status lain: `diarsipkan, review_id, boleh_kelola`.
 
 ## Review (Modul E)
 
@@ -52,9 +53,13 @@ Hak akses selalu dicek di backend:
 | GET | `/review/{id}` | login + Satker | Detail review; Pengusul tidak melihat override/catatan sebelum final |
 | GET | `/revisi/{id}/review` | login + Satker | Review terbaru suatu revisi |
 | POST | `/review/{id}/override` | Reviewer | `{target: ITEM\|LABEL\|KATEGORI, checklist_item_id?, nilai, alasan}`. Nilai: `TERPENUHI/TIDAK_TERPENUHI`, `LOLOS/TIDAK_LOLOS`, atau id kategori dari `kategori.pilihan` review tersebut |
+
+> ITEM = Status Verifikator. Halaman Pemeriksaan menyimpan status & Catatan Verifikator per item sekaligus lewat `PUT /review/{id}/keputusan`/`finalkan` (`item[]`); catatan dikirim per item sebagai `catatan_verifikator` (`{teks, oleh, diubah_at}` atau `null`). `BarisUsulan` memuat `hierarki`, `kategori_usulan`, `dibuat_at`; `tor`/`rab` bisa `null` (usulan lama). `GET /review/{id}` untuk Pengusul sebelum final: hasil AI lengkap, tetapi tanpa override (`override: null`, `diubah: false`), `catatan_verifikator: null`, dan `catatan: []`. Tambahan: `boleh_unggah_revisi` (Pengusul Satker ini, revisi terbaru Tidak Lolos) dan `rujukan[].nama_acuan` (Nama Acuan panduan tanpa versi; `null` untuk TOR/RAB).
+
 | POST | `/override/{id}/batal` | Reviewer | Batalkan override (sebelum final) |
 | PUT | `/review/{id}/catatan` | Reviewer | `{dokumen: TOR\|RAB\|UMUM, teks}`; teks kosong = hapus |
-| POST | `/review/{id}/finalkan` | Reviewer | Kunci hasil, salin nilai final, ubah status revisi |
+| PUT | `/review/{id}/keputusan` | Reviewer | Simpan Sebagai Draf `{label?, catatan, item?: [{checklist_item_id, nilai: TERPENUHI\|TIDAK_TERPENUHI, catatan}], kategori_id?, catatan_kategori?}`: kategori = override KATEGORI bila berbeda dari rekomendasi AI (dibatalkan bila sama), catatan kategori = catatan reviewer dokumen `KATEGORI`; status item = override ITEM (dibuat hanya bila berbeda dari override aktif), catatan item di `catatan_item` (kosong = hapus), catatan akhir = catatan UMUM, label = override LABEL bila berbeda dari label hitungan. 400 item bukan milik review; 409 bila sudah final |
+| POST | `/review/{id}/finalkan` | Reviewer | Body opsional `{label?, catatan?}` (disimpan seperti draf, lalu dikunci). Tanpa body: nilai final saat ini. Salin nilai final, ubah status revisi. Override, catatan, keputusan, dan finalkan hanya untuk review **terbaru** revisi itu: review lama (dokumen sudah diganti lewat Edit Usulan Reviewer) → 409 |
 
 Detail review berisi:
 

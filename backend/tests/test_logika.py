@@ -11,6 +11,7 @@ from app import status as st
 from app.galat import Galat
 from app.migrasi import konfigurasi_alembic
 from app.nilai_final import LOLOS, TERPENUHI, TIDAK_LOLOS, TIDAK_TERPENUHI, hitung_label, hitung_nilai_final
+from app.pekerja.llm import catatan_tiruan
 from app.pekerja.rujukan import cocokkan_kutipan, nomor_kalimat, verifikasi
 from app.pekerja.sidik import fingerprint
 
@@ -98,6 +99,14 @@ def test_transisi_tidak_sah(dari, ke):
         st.pindah_status(R(dari), ke)
 
 
+def test_ajukan_ulang_oleh_reviewer():
+    r = R(st.LOLOS)
+    st.ajukan_ulang_oleh_reviewer(r)
+    assert r.status == st.DRAF
+    with pytest.raises(Galat):
+        st.ajukan_ulang_oleh_reviewer(R(st.DIPROSES_AI))
+
+
 def test_aturan_status_alur():
     assert st.BOLEH_REVISI_BARU == {st.TIDAK_LOLOS}
     assert st.MENUNGGU_VERIFIKASI not in st.BOLEH_UBAH_DOKUMEN and st.DIPROSES_AI not in st.BOLEH_UBAH_DOKUMEN
@@ -156,3 +165,15 @@ def test_rantai_migrasi_utuh():
     """Semua file migrasi dapat dimuat dan hanya ada satu head. Tes lain membuat skema dengan create_all, sehingga
     induk migrasi yang hilang hanya ketahuan di sini, bukan saat `make up` gagal."""
     assert len(ScriptDirectory.from_config(konfigurasi_alembic()).get_heads()) == 1
+
+
+def test_catatan_ai_tiruan_mengikuti_kriteria():
+    kriteria = "Setiap komponen biaya pada RAB memiliki dasar kegiatan pada TOR."
+    assert catatan_tiruan(kriteria, "lolos") == \
+        "(AI tiruan) Dokumen telah menunjukkan bahwa setiap komponen biaya pada RAB memiliki dasar kegiatan pada TOR."
+    assert catatan_tiruan(kriteria, "kurang") == \
+        "(AI tiruan) Dokumen belum sepenuhnya menunjukkan bahwa setiap komponen biaya pada RAB memiliki dasar kegiatan pada TOR."
+    assert catatan_tiruan("TOR menjelaskan  metode pelaksanaan.", "tidak_ditemukan") == \
+        "(AI tiruan) Belum ditemukan bagian dokumen yang menunjukkan bahwa TOR menjelaskan metode pelaksanaan."
+    assert catatan_tiruan(kriteria, "saran_kurang") == \
+        "(AI tiruan) Lengkapi dokumen agar jelas menunjukkan bahwa setiap komponen biaya pada RAB memiliki dasar kegiatan pada TOR."

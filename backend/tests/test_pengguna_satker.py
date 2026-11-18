@@ -8,6 +8,16 @@ from sqlalchemy import text
 from app.db import SessionLokal
 
 
+def test_ganti_password_mencabut_sesi_lain(klien):
+    """Ganti password sendiri: sesi di perangkat lain berakhir (401), sesi yang dipakai tetap berlaku."""
+    a, b = klien("pengusul"), klien("pengusul")
+    r = a.post("/api/auth/ganti-password", json={"password_lama": "Contoh!2026", "password_baru": "SandiBaru!2026x"})
+    assert r.status_code == 200, r.text
+    assert a.get("/api/auth/saya").status_code == 200
+    assert b.get("/api/auth/saya").status_code == 401
+    klien("pengusul", "SandiBaru!2026x")
+
+
 def test_hapus_pengguna_dan_satker(klien):
     admin, reviewer = klien("admin", "GantiSegera!2026"), klien("reviewer")
     s = reviewer.post("/api/satker", json={"nama": "Satker Hapus", "unit_kerja": "UK Uji"}).json()
