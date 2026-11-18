@@ -1,5 +1,5 @@
 """Tabel usulan: kolom jejak seperti kategori/panduan — `created_by`, `created_date`, `updated_by`, `updated_date` tepat
-setelah `id`, menggantikan `created_at`/`updated_at` (desain.md §7 no. 30).
+setelah `id`, menggantikan `created_at`/`updated_at` (desain.md §7 no. 37).
 
 PostgreSQL tidak dapat menyisipkan kolom di tengah, sehingga tabel dibuat ulang dengan urutan baru dan datanya disalin
 dalam satu transaksi (pola yang sama dengan pembuatan ulang tabel panduan, §7 no. 17). Baris lama: `created_date` =

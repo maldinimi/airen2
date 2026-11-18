@@ -103,9 +103,28 @@ RAB_CONTOH = [["Komponen", "Volume", "Satuan", "Harga Satuan"],
               ["Paket rapat", "20", "OK", "450.000"]]
 
 
+# Data menu Master RO untuk uji usulan: (kode_program, program, kode_kegiatan, kegiatan, kode_kro, kro, kode_ro, ro).
+_P, _G = ("059.WA", "Program Dukungan Manajemen"), ("4490", "Pengelolaan Keuangan, BMN dan Umum BAKTI")
+_EBA, _EBD = ("EBA", "Layanan Dukungan Manajemen Internal"), ("EBD", "Layanan Manajemen Kinerja Internal")
+MASTER_RO_UJI = [(*_P, "", "", "", "", "", ""), (*_P, *_G, "", "", "", ""), (*_P, *_G, *_EBA, "", ""), (*_P, *_G, *_EBD, "", ""),
+                 (*_P, *_G, *_EBA, "994", "Layanan Perkantoran"), (*_P, *_G, *_EBA, "962", "Layanan Umum")]
+
+
+def isi_master_ro() -> None:
+    """Isi menu Master RO dengan jalur uji (bila belum ada): Pengajuan Baru memilih hierarki dari Master RO."""
+    from sqlalchemy import select
+    from app.model import MasterRO
+    kolom = ("kode_program", "program", "kode_kegiatan", "kegiatan", "kode_kro", "kro", "kode_ro", "ro")
+    with SessionLokal() as db:
+        if db.scalar(select(MasterRO.id).limit(1)) is None:
+            db.add_all(MasterRO(**dict(zip(kolom, b))) for b in MASTER_RO_UJI)
+            db.commit()
+
+
 def isian(c, kode_kategori: str = "K1") -> dict:
-    """Pilihan form Pengajuan yang sah: hierarki dari app/data_rka.py (Renja 2026) + kategori Aktif + tahun berjalan (WIB)."""
+    """Pilihan form Pengajuan yang sah: hierarki dari Master RO (jalur uji) + kategori Aktif + tahun berjalan (WIB)."""
     from app.api.usulan import tahun_berjalan
+    isi_master_ro()
     k = next(k for k in c.get("/api/usulan/opsi/pengajuan").json()["kategori"] if k["kode"] == kode_kategori)
     return {"program": "059.WA", "kegiatan": "4490", "kro": "EBA", "ro": "994", "kategori_id": k["id"],
             "tahun_anggaran": tahun_berjalan()}

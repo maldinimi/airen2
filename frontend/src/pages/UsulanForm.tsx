@@ -1,4 +1,4 @@
-/** Form usulan (desain.md §7 no. 29 & 31):
+/** Form usulan (desain.md §7 no. 36 & 38):
  *  - `baru` (`/usulan/baru`, Pengusul): A. Hierarki anggaran RKA-K/L bertingkat, B. Kategori + Deskripsi otomatis,
  *    C. PDF TOR dan RAB (keduanya wajib).
  *  - `ubah` (`/usulan/:id/ubah`, Pengusul): hanya PDF TOR dan/atau RAB pengganti — Gagal = kirim ulang, Tidak Lolos = revisi.
@@ -24,8 +24,9 @@ type Pilihan = { program: string; kegiatan: string; kro: string; ro: string };
 type Mode = "baru" | "ubah" | "parameter";
 
 const KOSONG: Pilihan = { program: "", kegiatan: "", kro: "", ro: "" };
-// Hierarki tersimpan memakai kode lengkap (4490.EBA.994); form memakai kode per tingkat seperti pohon dari server.
-const akhir = (kode: string) => kode.split(".").pop() ?? "";
+// Hierarki tersimpan memakai kode KRO/RO lengkap dari Kegiatan (4490.EBA.994); form memakai kode per jenjang seperti Master RO.
+// Awalan induk dilepas (bukan dipotong di titik terakhir) karena kode Master RO berupa teks bebas yang boleh memuat titik.
+const lepasAwalan = (kode: string, induk: string) => (kode.startsWith(`${induk}.`) ? kode.slice(induk.length + 1) : kode);
 
 export default function UsulanForm({ mode }: { mode: Mode }) {
   const { id } = useParams();
@@ -43,7 +44,8 @@ function Isi({ mode, opsi, u }: { mode: Mode; opsi?: Opsi; u?: BarisUsulan }) {
   const { tahun } = useOutletContext<KonteksLayout>();  // Tahun Anggaran pilihan di bilah atas
   const revisi = mode === "ubah" && u?.status === "TIDAK_LOLOS";
   const h = mode === "parameter" ? u?.hierarki : null;
-  const [pilih, setPilih] = useState<Pilihan>(h ? { program: h.program.kode, kegiatan: h.kegiatan.kode, kro: akhir(h.kro.kode), ro: akhir(h.ro.kode) } : KOSONG);
+  const [pilih, setPilih] = useState<Pilihan>(h ? { program: h.program.kode, kegiatan: h.kegiatan.kode, kro: lepasAwalan(h.kro.kode, h.kegiatan.kode),
+    ro: lepasAwalan(h.ro.kode, h.kro.kode) } : KOSONG);
   const [kategoriId, setKategoriId] = useState(mode === "parameter" ? u?.kategori_usulan?.id ?? "" : "");
   const [tor, setTor] = useState<File | null>(null);
   const [rab, setRab] = useState<File | null>(null);
@@ -136,6 +138,8 @@ function Isi({ mode, opsi, u }: { mode: Mode; opsi?: Opsi; u?: BarisUsulan }) {
         {opsi && (
           <>
             <Bagian judul="A. Parameter Hierarki Anggaran RKA-K/L">
+              {opsi.hierarki.length === 0 && (
+                <Peringatan jenis="warn">Belum ada data Master RO yang Aktif. Hubungi Reviewer untuk mengisi menu Master RO.</Peringatan>)}
               {dropdown("program", "Program", opsi.hierarki, (x) => x.kode)}
               {dropdown("kegiatan", "Kegiatan", program?.kegiatan, (x) => x.kode)}
               {dropdown("kro", "Klasifikasi Rincian Output (KRO)", kegiatan?.kro, (x) => `${pilih.kegiatan}.${x.kode}`)}

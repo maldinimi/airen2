@@ -1,4 +1,4 @@
-"""Menu Usulan direvisi (desain.md §7 no. 29): usulan menyimpan salinan hierarki anggaran RKA-K/L dan kategori pilihan
+"""Menu Usulan direvisi (desain.md §7 no. 36): usulan menyimpan salinan hierarki anggaran RKA-K/L dan kategori pilihan
 Pengusul; TOR dan RAB pada revisi masing-masing opsional (minimal satu).
 
 Usulan lama tidak punya hierarki/kategori (NULL, ditampilkan "—").

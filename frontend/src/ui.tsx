@@ -1,12 +1,19 @@
 /** Komponen UI bersama (gaya shadcn/ui di atas Radix + Tailwind). */
 import * as D from "@radix-ui/react-dialog";
-import * as Pop from "@radix-ui/react-popover";
-import { AlertTriangle, ArrowDown, ArrowUp, ArrowUpDown, Check, ChevronLeft, ChevronRight, CircleCheck, Loader2, X } from "lucide-react";
+import { AlertTriangle, ChevronLeft, ChevronRight, CircleCheck, Loader2, X } from "lucide-react";
 import { type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode, type SelectHTMLAttributes,
   type TextareaHTMLAttributes, forwardRef } from "react";
+import { waktuAngka } from "./format";
 import type { StatusRevisi } from "./types";
 
 export const cx = (...k: (string | false | null | undefined)[]) => k.filter(Boolean).join(" ");
+
+/** Sel tanggal di tabel (Usulan, Panduan, Checklist): tanggal (dd/mm/yyyy) di atas, jam di bawahnya dengan huruf lebih kecil.
+ *  Kosong → "—". */
+export function TanggalJam({ iso }: { iso?: string | null }) {
+  const [tgl, jam] = waktuAngka(iso).split(" ");
+  return <><div>{tgl}</div>{jam && <div className="text-xs text-slate-500">{jam}</div>}</>;
+}
 
 type Varian = "utama" | "lembut" | "sekunder" | "bahaya" | "hantu" | "ubah";
 const gayaTombol: Record<Varian, string> = {
@@ -27,7 +34,7 @@ export const Tombol = forwardRef<HTMLButtonElement, ButtonHTMLAttributes<HTMLBut
     </button>
   ));
 
-const gayaInput = "w-full rounded-lg border border-slate-300 bg-white px-3 text-sm shadow-sm placeholder:text-slate-400 focus:border-utama-500 focus:outline-none focus:ring-2 focus:ring-utama-100 disabled:bg-slate-100";
+export const gayaInput = "w-full rounded-lg border border-slate-300 bg-white px-3 text-sm shadow-sm placeholder:text-slate-400 focus:border-utama-500 focus:outline-none focus:ring-2 focus:ring-utama-100 disabled:bg-slate-100";
 export const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputElement>>(({ className, ...p }, ref) =>
   <input ref={ref} {...p} className={cx(gayaInput, "h-10", className)} />);
 export const Pilih = forwardRef<HTMLSelectElement, SelectHTMLAttributes<HTMLSelectElement>>(({ className, ...p }, ref) =>
@@ -89,38 +96,6 @@ export function LencanaStatus({ status }: { status: StatusRevisi }) {
       {(status === "ANTRE" || status === "DIPROSES_AI") && <Loader2 className="size-3 animate-spin" aria-hidden />}
       {NAMA_STATUS[status]}
     </Lencana>
-  );
-}
-
-/** Urutan kolom Status (Panduan, Kategori): Default = urutan dari server; Aktif/Nonaktif = status itu di atas. */
-export type UrutStatus = "" | "aktif" | "tidak";
-const OPSI_URUT_STATUS: Record<UrutStatus, string> = { "": "Default", aktif: "Aktif", tidak: "Nonaktif" };
-
-// sort() stabil: dalam satu status, urutan dari server tetap.
-export const urutkanStatus = <T extends { aktif: boolean }>(data: T[], urut: UrutStatus): T[] =>
-  urut ? [...data].sort((a, b) => (+b.aktif - +a.aktif) * (urut === "aktif" ? 1 : -1)) : data;
-
-/** Sel judul kolom Status dengan menu urut Default/Aktif/Nonaktif. */
-export function KepalaStatus({ urut, ubah, className }: { urut: UrutStatus; ubah: (u: UrutStatus) => void; className?: string }) {
-  const Ikon = urut === "aktif" ? ArrowDown : urut === "tidak" ? ArrowUp : ArrowUpDown;
-  return (
-    <th scope="col" className={className} aria-sort={({ "": "none", aktif: "descending", tidak: "ascending" } as const)[urut]}>
-      <Pop.Root>
-        <Pop.Trigger className="inline-flex items-center gap-1 hover:text-slate-800" aria-label={`Urutkan status: ${OPSI_URUT_STATUS[urut]}`}>
-          Status<Ikon className="size-3.5" />
-        </Pop.Trigger>
-        <Pop.Portal>
-          <Pop.Content sideOffset={6} className="z-50 w-44 rounded-xl border border-slate-200 bg-white p-1 text-sm shadow-xl">
-            {(Object.entries(OPSI_URUT_STATUS) as [UrutStatus, string][]).map(([k, label]) => (
-              <Pop.Close key={k} aria-pressed={urut === k} onClick={() => ubah(k)}
-                className={cx("flex w-full items-center justify-between rounded-lg px-3 py-1.5 text-left hover:bg-slate-100", urut === k && "font-medium text-utama-700")}>
-                {label}{urut === k && <Check className="size-4" />}
-              </Pop.Close>
-            ))}
-          </Pop.Content>
-        </Pop.Portal>
-      </Pop.Root>
-    </th>
   );
 }
 
@@ -247,7 +222,7 @@ export function Progres({ persen, tahap }: { persen: number; tahap: string }) {
 }
 
 /** Saklar on/off (role=switch) dengan label status di sampingnya; lebar label tetap agar tata letak tidak bergeser. */
-/** Pop-up konfirmasi menu Usulan: cukup "Apakah Anda Yakin?" dengan tombol Tidak/Ya, tanpa ringkasan (desain.md §7 no. 31). */
+/** Pop-up konfirmasi menu Usulan: cukup "Apakah Anda Yakin?" dengan tombol Tidak/Ya, tanpa ringkasan (desain.md §7 no. 38). */
 export function KonfirmasiYakin({ buka, batal, ya, memuat, galat, bahaya }:
   { buka: boolean; batal: () => void; ya: () => void; memuat?: boolean; galat?: string | null; bahaya?: boolean }) {
   return (

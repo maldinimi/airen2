@@ -1,4 +1,4 @@
-/** Menu Usulan — halaman pertama: histori usulan (desain.md §7 no. 29 & 38). Form filter per kolom tabel (diterapkan lewat
+/** Menu Usulan — halaman pertama: histori usulan (desain.md §7 no. 36 & 45). Form filter per kolom tabel (diterapkan lewat
  *  tombol) dan urut per kolom; keduanya di URL dan diproses backend karena daftar berhalaman. Pengusul hanya melihat usulan
  *  Satker-nya (dicek backend). */
 import { useQuery } from "@tanstack/react-query";
@@ -8,10 +8,10 @@ import { Link, useOutletContext, useSearchParams } from "react-router-dom";
 import { api, qs } from "../api";
 import { useAuth } from "../auth";
 import type { KonteksLayout } from "../components/Layout";
-import { AksiUsulan, InfoProses, TanggalJam, TautanDokumen } from "../components/Usulan";
+import { AksiUsulan, InfoProses, TautanDokumen } from "../components/Usulan";
 import { waktuAngka } from "../format";
 import type { BarisUsulan, Satker, StatusRevisi } from "../types";
-import { Halaman, Input, Judul, Kartu, Kosong, LencanaStatus, Memuat, NAMA_STATUS, Peringatan, Pilih, Tombol, cx, kelasGalat } from "../ui";
+import { Halaman, Input, Judul, Kartu, Kosong, LencanaStatus, Memuat, NAMA_STATUS, Peringatan, Pilih, TanggalJam, Tombol, cx, kelasGalat } from "../ui";
 
 type Opsi = { satker: Satker[]; tahun: number[]; kategori: string[]; status: { kode: string; nama: string }[] };
 // Kunci filter (= parameter API) sesuai kolom tabel, kecuali No & Aksi.
@@ -54,8 +54,8 @@ export default function UsulanList() {
 
   return (
     <div>
-      {/* Pengusul hanya melihat usulan Satker-nya (dibatasi backend); Reviewer/Admin melihat semua Satker. */}
-      <Judul judul="Usulan" sub={punya("REVIEWER", "ADMIN") ? "Histori usulan seluruh Satuan Kerja."
+      {/* Pengusul hanya melihat usulan Satker-nya (dibatasi backend); Reviewer melihat semua Satker. */}
+      <Judul judul="Usulan" sub={punya("REVIEWER") ? "Histori usulan seluruh Satuan Kerja."
         : `Histori usulan ${pengguna?.satker?.nama ?? "Satuan Kerja Anda"}.`}
         aksi={punya("PENGUSUL") && <Link to="/usulan/baru"><Tombol><Plus className="size-4" />Pengajuan Baru</Tombol></Link>} />
       <FormFilter key={JSON.stringify(terpasang)} terpasang={terpasang} terapkan={terapkan} status={opsi.data?.status ?? []}

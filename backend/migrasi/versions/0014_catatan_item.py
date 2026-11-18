@@ -1,5 +1,5 @@
 """Tabel catatan_item: Catatan Verifikator per item checklist, terpisah dari Status Verifikator (override ITEM) agar dapat
-diisi sebelum status dipilih (desain.md §7 no. 32).
+diisi sebelum status dipilih (desain.md §7 no. 39).
 
 Catatan yang sudah tersimpan sebagai alasan override ITEM aktif disalin ke tabel baru (satu per item, yang terbaru),
 sehingga tetap tampil di kolom Catatan Verifikator. Override-nya sendiri tidak diubah.

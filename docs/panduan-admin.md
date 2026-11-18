@@ -77,7 +77,7 @@ docker compose run --rm api python -m app.migrasi revisi "tambah kolom x"
 
 ## Kapasitas GPU
 
-- **Dashboard Admin** menampilkan antrean, node aktif, rata-rata menit per review, dan perkiraan waktu selesai.
+- **Info antrean** (antrean, node aktif, rata-rata menit per review, perkiraan waktu selesai) tampil di Dashboard bagi akun yang ber-role Admin **dan** Pengusul/Reviewer. Akun Admin murni tidak memiliki Dashboard; pantau node lewat menu **Node AI** atau beri akun operasional role tambahan.
 - **Menambah node**: lihat docs/instalasi-offline.md §4. Tidak ada perubahan kode.
 - **Paralelisme dalam satu node**: `ITEM_PARALEL` (item dinilai bersamaan) dan `LLM_MAKS_PARALEL` (batch vLLM).
 

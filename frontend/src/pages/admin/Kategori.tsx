@@ -1,16 +1,18 @@
-/** Kelola Kategori (Modul C): tabel kategori (urutan diatur Admin lewat Atur Urutan); tambah/edit/detail di halaman tersendiri, hapus permanen. Isi terbaru ada
+/** Kelola Kategori (Modul C): tabel kategori (urutan diatur Reviewer lewat Atur Urutan); tambah/edit/detail di halaman tersendiri, hapus permanen. Isi terbaru ada
  *  di tabel kategori, isi sebelum tiap perubahan dicatat backend di kategori_histori. Review menyimpan salinan kategori yang
  *  dipakai, sehingga edit/hapus tidak mengubah review lama (C4). */
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, Eye, ListOrdered, Pencil, Plus, Trash2 } from "lucide-react";
-import { type FormEvent, useEffect, useState } from "react";
+import { type FormEvent, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { api } from "../../api";
+import { useAuth } from "../../auth";
 import AturUrutan from "../../components/AturUrutan";
+import { TOMBOL_IKON } from "../../components/Kelola";
+import { FormFilter, type NilaiFilter, OPSI_STATUS, Paginasi, ThUrut, cocok, lolosJejak, lolosStatus, usePaginasi, useUrut } from "../../components/TabelData";
 import { waktuAngka } from "../../format";
 import type { ItemKategori } from "../../types";
-import { AreaTeks, Input, Judul, Kartu, KepalaStatus, Kolom, Konfirmasi, Kosong, Lencana, Memuat, Peringatan, Ringkasan, Saklar, Tombol,
-  type UrutStatus, cx, urutkanStatus } from "../../ui";
+import { AreaTeks, Input, Judul, Kartu, Kolom, Konfirmasi, Kosong, Lencana, Memuat, Peringatan, Ringkasan, Saklar, TanggalJam, Tombol, cx } from "../../ui";
 
 const ENDPOINT = "/api/kategori";
 const DASAR = "/kelola/kategori";
@@ -26,6 +28,8 @@ const Kembali = ({ ke = DASAR, teks = "Kembali" }: { ke?: string; teks?: string 
 
 export default function KelolaKategori() {
   const nav = useNavigate();
+  // Reviewer mengelola; Pengusul membuka halaman ini hanya untuk melihat (backend menolak perubahan dari non-Reviewer).
+  const kelola = useAuth().punya("REVIEWER");
   const qc = useQueryClient();
   const q = useQuery(kueri);
   const [hapus, setHapus] = useState<ItemKategori | null>(null);
@@ -34,15 +38,23 @@ export default function KelolaKategori() {
   const jumlahHistori = useQuery({ ...riwayat(hapus?.id ?? ""), enabled: !!hapus });
   const [atur, setAtur] = useState(false);
   const [sukses, setSukses] = useState<string | null>(null);
-  const [urut, setUrut] = useState<UrutStatus>("");
+  const [f, setF] = useState<NilaiFilter>({});
   useEffect(() => { if (!sukses) return; const t = setTimeout(() => setSukses(null), 4000); return () => clearTimeout(t); }, [sukses]);
+  const item = q.data?.item ?? [];
+  // Default = urutan yang diatur Reviewer (no_urut dari server); klik judul kolom mengurutkan tampilan saja.
+  // Satu filter per kolom tabel (urut kolom); penginput kosong tampil "Sistem" seperti di tabel.
+  const lolos = useMemo(() => item.filter((k) => cocok(f.kode, k.kode) && cocok(f.cari, k.nama) && lolosStatus(f.status, k.aktif)
+    && cocok(f.deskripsi, k.definisi) && lolosJejak(f, k)), [item, f]);
+  const { baris, urut, klik } = useUrut<ItemKategori, "kode" | "nama" | "aktif" | "definisi" | "diubah_oleh" | "diubah_at">(lolos, {
+    kode: (k) => k.kode, nama: (k) => k.nama, aktif: (k) => +!k.aktif, definisi: (k) => k.definisi,
+    diubah_oleh: (k) => k.diubah_oleh ?? "Sistem", diubah_at: (k) => k.diubah_at,
+  });
+  // Paginasi di browser seperti Satuan Kerja & Master RO (bawaan 20 baris); kembali ke halaman 1 setiap filter/urutan berubah.
+  const pg = usePaginasi(baris, [f, urut], 20);
 
   if (q.isLoading) return <Memuat />;
   if (q.error) return <Peringatan>{(q.error as Error).message}</Peringatan>;
-  const item = q.data!.item;
-  const baris = urutkanStatus(item, urut);  // Default = urutan yang diatur Admin (no_urut dari server)
-  if (atur) return <AturUrutan judul="Atur Urutan Kategori" endpoint={ENDPOINT} item={item.map((k) => ({ id: k.id, kode: k.kode, judul: k.nama }))}
-    sub="Seret baris atau gunakan tombol naik/turun, lalu klik Simpan Urutan. Urutan ini dipakai di tabel kategori; kategori baru otomatis ditempatkan setelah kode sebelumnya."
+  if (atur && kelola) return <AturUrutan judul="Atur Urutan Kategori" endpoint={ENDPOINT} item={item.map((k) => ({ id: k.id, kode: k.kode, judul: k.nama }))}
     tutup={() => setAtur(false)} disimpan={() => { setSukses("Urutan berhasil disimpan."); setAtur(false); }} />;
 
   const yaHapus = async () => {
@@ -55,36 +67,56 @@ export default function KelolaKategori() {
     } catch (e) { setGalat((e as Error).message); }
     finally { setMemuat(false); }
   };
-  const tombol = "rounded-lg p-1.5 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-utama-100";
+  const tombol = TOMBOL_IKON;
 
   return (
     <div className="w-full">
-      <Judul judul="Kelola Kategori"
-        sub="AI memakai daftar kategori terbaru saat review dimulai. Setiap tambah dan perubahan tercatat di Kategori Histori; review lama tetap menampilkan kategori saat itu."
-        aksi={<>
+      <Judul judul="Kategori"
+        aksi={kelola && <>
           <Tombol varian="sekunder" onClick={() => setAtur(true)} disabled={item.length < 2}><ListOrdered className="size-4" />Atur Urutan</Tombol>
           <Tombol onClick={() => nav(`${DASAR}/tambah`)}><Plus className="size-4" />Tambah Kategori</Tombol>
         </>} />
       {sukses && <div className="mb-3"><Peringatan jenis="sukses">{sukses}</Peringatan></div>}
-      {item.length === 0 ? <Kosong>Belum ada kategori.</Kosong> : (
+      {item.length > 0 && (
+        <FormFilter judul="Kategori" nilai={f} terapkan={setF} bidang={[
+          { jenis: "teks", kunci: "kode", label: "Kode", placeholder: "Cari kode, mis. K1…" },
+          { jenis: "teks", kunci: "cari", label: "Kategori", placeholder: "Cari kategori…" },
+          { jenis: "pilih", kunci: "status", label: "Status", semua: "Semua Status", opsi: OPSI_STATUS, kecil: true },
+          { jenis: "teks", kunci: "deskripsi", label: "Deskripsi", placeholder: "Cari deskripsi…" },
+          { jenis: "teks", kunci: "oleh", label: "Diinput Oleh", placeholder: "Cari nama penginput…" },
+          { jenis: "tanggal", kunci: "tanggal", label: "Tanggal Input", kecil: true },
+        ]} />
+      )}
+      {item.length === 0 ? <Kosong>Belum ada kategori.</Kosong> : baris.length === 0 ? <Kosong>Tidak ada kategori yang cocok dengan filter.</Kosong> : (
         <Kartu className="overflow-x-auto">
-          <table className="w-full min-w-[54rem] text-sm">
+          <table className="w-full min-w-[72rem] text-sm">
             <thead className="bg-slate-100 text-xs font-semibold text-slate-700">
-              <tr>{["Kode", "Kategori", "Status", "Deskripsi", "Aksi"].map((h) => h === "Status"
-                ? <KepalaStatus key={h} urut={urut} ubah={setUrut} className="whitespace-nowrap px-3 py-2.5 text-center" />
-                : <th key={h} scope="col" className="whitespace-nowrap px-3 py-2.5 text-center">{h}</th>)}</tr>
+              <tr>
+                <ThUrut label="Kode" kolom="kode" urut={urut} klik={klik} />
+                <ThUrut label="Kategori" kolom="nama" urut={urut} klik={klik} />
+                <ThUrut label="Status" kolom="aktif" urut={urut} klik={klik} />
+                <ThUrut label="Deskripsi" kolom="definisi" urut={urut} klik={klik} />
+                {/* Diinput Oleh & Tanggal Input (tanggal + jam) sama dengan tabel Checklist. */}
+                <ThUrut label="Diinput Oleh" kolom="diubah_oleh" urut={urut} klik={klik} />
+                <ThUrut label="Tanggal Input" kolom="diubah_at" urut={urut} klik={klik} />
+                <th scope="col" className="whitespace-nowrap px-3 py-2.5 text-center">Aksi</th>
+              </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {baris.map((k) => (
+              {pg.tampil.map((k) => (
                 <tr key={k.id} className="align-middle transition-colors hover:bg-slate-50">
                   <td className="whitespace-nowrap px-3 py-2.5 text-center font-medium text-slate-900">{k.kode}</td>
-                  <td className="min-w-[12rem] px-3 py-2.5 text-slate-900">{k.nama}</td>
+                  <td className="min-w-[12rem] whitespace-nowrap py-2.5 pl-6 pr-3 text-left text-slate-900">{k.nama}</td>
                   <td className="whitespace-nowrap px-3 py-2.5 text-center"><LencanaAktif aktif={k.aktif} /></td>
-                  <td className="min-w-[24rem] px-3 py-2.5 text-slate-600">{k.definisi}</td>
+                  <td className="min-w-[24rem] px-3 py-2.5 text-justify text-slate-600">{k.definisi}</td>
+                  <td className="min-w-[9rem] whitespace-nowrap px-3 py-2.5 text-center text-slate-600">{k.diubah_oleh ?? "Sistem"}</td>
+                  <td className="min-w-[9.5rem] whitespace-nowrap px-3 py-2.5 text-center text-slate-600"><TanggalJam iso={k.diubah_at} /></td>
                   <td className="whitespace-nowrap px-3 py-2 text-center">
                     <button type="button" className={cx(tombol, "text-emerald-600 hover:bg-emerald-50 hover:text-emerald-700")} title="Detail" aria-label={`Detail ${k.kode}`} onClick={() => nav(`${DASAR}/${k.id}`)}><Eye className="size-4" /></button>
-                    <button type="button" className={cx(tombol, "text-utama-600 hover:bg-utama-50 hover:text-utama-700")} title="Edit" aria-label={`Edit ${k.kode}`} onClick={() => nav(`${DASAR}/${k.id}/ubah`)}><Pencil className="size-4" /></button>
-                    <button type="button" className={cx(tombol, "text-red-600 hover:bg-red-50 hover:text-red-700")} title="Hapus" aria-label={`Hapus ${k.kode}`} onClick={() => { setGalat(null); setHapus(k); }}><Trash2 className="size-4" /></button>
+                    {kelola && <>
+                      <button type="button" className={cx(tombol, "text-utama-600 hover:bg-utama-50 hover:text-utama-700")} title="Edit" aria-label={`Edit ${k.kode}`} onClick={() => nav(`${DASAR}/${k.id}/ubah`)}><Pencil className="size-4" /></button>
+                      <button type="button" className={cx(tombol, "text-red-600 hover:bg-red-50 hover:text-red-700")} title="Hapus" aria-label={`Hapus ${k.kode}`} onClick={() => { setGalat(null); setHapus(k); }}><Trash2 className="size-4" /></button>
+                    </>}
                   </td>
                 </tr>
               ))}
@@ -92,6 +124,7 @@ export default function KelolaKategori() {
           </table>
         </Kartu>
       )}
+      {baris.length > 0 && <Paginasi {...pg} />}
       {hapus && (
         <Konfirmasi buka bahaya judul="Hapus kategori secara permanen?" teksYa="Ya, hapus" teksBatal="Batal" memuat={memuat} galat={galat}
           batal={() => setHapus(null)} ya={yaHapus}
@@ -137,10 +170,9 @@ function IsiForm({ k }: { k?: ItemKategori }) {
   };
 
   return (
-    <div className="max-w-3xl">
+    <div className="w-full">
       <Kembali />
-      <Judul judul={k ? `Edit Kategori ${k.kode}` : "Tambah Kategori"}
-        sub="Perubahan dipakai AI mulai review berikutnya; review yang sudah berjalan tidak terpengaruh." />
+      <Judul judul={k ? `Edit Kategori ${k.kode}` : "Tambah Kategori"} />
       <Kartu className="p-5">
         <form className="space-y-4" onSubmit={cek}>
           {galat && <Peringatan>{galat}</Peringatan>}
@@ -181,7 +213,7 @@ export function KategoriDetail() {
     <div className="w-full space-y-4">
       <div>
         <Kembali teks="Kategori" />
-        <Judul judul={`Detail Kategori ${k.kode}`} sub={k.nama} />
+        <Judul judul={`Detail Kategori ${k.kode}`} />
       </div>
       <Kartu className="space-y-5 p-5">
         <Ringkasan baris={[
@@ -200,11 +232,11 @@ export function KategoriDetail() {
                 </thead>
                 <tbody className="divide-y divide-slate-100">{r.data!.map((h) => (
                   <tr key={h.id} className="align-middle">
-                    <td className="whitespace-nowrap px-3 py-2.5 text-center text-slate-500">{waktuAngka(h.diubah_at)}</td>
+                    <td className="whitespace-nowrap px-3 py-2.5 text-center text-slate-500"><TanggalJam iso={h.diubah_at} /></td>
                     <td className="whitespace-nowrap px-3 py-2.5 text-center text-slate-700">{h.diubah_oleh ?? "Sistem"}</td>
                     <td className="whitespace-nowrap px-3 py-2.5 text-center font-medium text-slate-900">{h.kode}</td>
                     <td className="min-w-[10rem] px-3 py-2.5 text-slate-800">{h.nama}</td>
-                    <td className="min-w-[20rem] whitespace-pre-line px-3 py-2.5 text-slate-700">{h.definisi}</td>
+                    <td className="min-w-[20rem] whitespace-pre-line px-3 py-2.5 text-justify text-slate-700">{h.definisi}</td>
                     <td className="px-3 py-2.5 text-center"><LencanaAktif aktif={h.aktif} /></td>
                   </tr>))}</tbody>
               </table>

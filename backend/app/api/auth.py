@@ -91,12 +91,17 @@ def saya(request: Request, db: Session = Depends(sesi_db), p: Pengguna = Depends
 @router.post("/ganti-password")
 def ganti_password(data: GantiPassword, request: Request, db: Session = Depends(sesi_db),
                    p: Pengguna = Depends(pengguna_saat_ini)) -> dict:
-    """Ganti password sendiri. Error: 400 password lama salah / password baru lemah."""
+    """Ganti password sendiri; sesi lain milik pengguna ini dicabut, sesi yang sedang dipakai tetap.
+
+    Error: 400 password lama salah / password baru lemah."""
     if not cek_password(p.password_hash, data.password_lama):
         raise Galat(400, "Password lama salah.")
     if pesan := validasi_password(data.password_baru):
         raise Galat(400, pesan)
     p.password_hash = hash_password(data.password_baru)
+    # Sesi yang dicuri/lupa logout di perangkat lain tidak boleh tetap berlaku setelah password diganti.
+    db.query(Sesi).filter(Sesi.pengguna_id == p.id,
+                          Sesi.token_hash != hash_token(request.cookies.get(NAMA_COOKIE))).delete()
     catat(db, request, "GANTI_PASSWORD", "pengguna", p.id)
     db.commit()
     return {"ok": True}

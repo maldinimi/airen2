@@ -33,7 +33,7 @@ def _ambil_review(db: Session, review_id: uuid.UUID, p: Pengguna, kunci: bool = 
 def _wajib_dapat_diubah(db: Session, review: Review, revisi: Revisi) -> None:
     """Override/catatan hanya sebelum final (O5, O7), saat hasil AI tersedia, dan hanya pada review terbaru revisi itu.
     Review lama tersisa bila Reviewer mengganti dokumen lewat Edit Usulan (revisi yang sama direview ulang, desain.md §7
-    no. 36); memfinalkannya akan menetapkan status revisi dari dokumen yang sudah diganti."""
+    no. 43); memfinalkannya akan menetapkan status revisi dari dokumen yang sudah diganti."""
     if review.difinalkan_at is not None:
         raise Galat(409, "Review sudah difinalkan dan terkunci. Perubahan hanya melalui revisi baru dari Pengusul.")
     if review_terbaru(db, revisi.id).id != review.id:
@@ -71,7 +71,7 @@ def override(review_id: uuid.UUID, data: OverrideMasuk, request: Request, db: Se
     """Override status item / label / kategori. Hasil AI tidak diubah; override disimpan terpisah (O2).
 
     ITEM = penilaian verifikator per item: Status & Catatan Verifikator (catatan opsional, nilai boleh sama dengan AI
-    sebagai konfirmasi; desain.md §7 no. 29). LABEL/KATEGORI: alasan wajib & nilai harus berbeda.
+    sebagai konfirmasi; desain.md §7 no. 36). LABEL/KATEGORI: alasan wajib & nilai harus berbeda.
     `nilai_sebelum` = nilai final saat ini (bisa nilai AI atau override sebelumnya) — tercatat untuk O4.
     Error: 400 alasan kosong / nilai tidak valid / nilai sama; 409 review sudah final.
     """
@@ -179,7 +179,7 @@ class KeputusanMasuk(BaseModel):
 
 
 def _simpan_kategori(db: Session, request: Request, review: Review, data: KeputusanMasuk, p: Pengguna) -> None:
-    """Kategori pilihan verifikator (tabel Kategori, desain.md §7 no. 37): override KATEGORI bila berbeda dari rekomendasi AI
+    """Kategori pilihan verifikator (tabel Kategori, desain.md §7 no. 44): override KATEGORI bila berbeda dari rekomendasi AI
     (dibatalkan bila sama), catatannya sebagai catatan reviewer "KATEGORI". Error: 400 kategori bukan milik review ini."""
     if data.kategori_id is not None:
         if db.get(ReviewKategori, (review.id, data.kategori_id)) is None:
@@ -198,7 +198,7 @@ def _simpan_kategori(db: Session, request: Request, review: Review, data: Keputu
 
 
 def _simpan_item(db: Session, review: Review, daftar: list[ItemKeputusan], p: Pengguna) -> None:
-    """Status & Catatan Verifikator per item dari halaman Pemeriksaan (desain.md §7 no. 33). Status disimpan sebagai override
+    """Status & Catatan Verifikator per item dari halaman Pemeriksaan (desain.md §7 no. 40). Status disimpan sebagai override
     ITEM hanya bila berbeda dari override aktif (hasil AI tidak diubah, O2); catatan di `catatan_item` (kosong = hapus).
     Error: 400 item tidak termasuk review ini."""
     if not daftar:
@@ -249,7 +249,7 @@ def _simpan_keputusan(db: Session, request: Request, review: Review, data: Keput
 def simpan_keputusan(review_id: uuid.UUID, data: KeputusanMasuk, request: Request, db: Session = Depends(sesi_db),
                      p: Pengguna = Depends(wajib_role(REVIEWER))) -> dict:
     """Tombol "Simpan Sebagai Draf": simpan status & catatan per item serta Keputusan Akhir tanpa memfinalkan. Penilaian
-    yang belum disimpan hanya ada di halaman (hilang bila dimuat ulang), desain.md §7 no. 33.
+    yang belum disimpan hanya ada di halaman (hilang bila dimuat ulang), desain.md §7 no. 40.
     Error: 409 review sudah final / belum siap diverifikasi."""
     review, revisi = _ambil_review(db, review_id, p, kunci=True)
     _wajib_dapat_diubah(db, review, revisi)

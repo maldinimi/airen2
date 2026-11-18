@@ -32,7 +32,52 @@ def _fk(tabel: str, nullable: bool = False, index: bool = True) -> Mapped:
     return mapped_column(UUID(as_uuid=True), ForeignKey(f"{tabel}.id"), nullable=nullable, index=index)
 
 
+# ---------------------------------------------------------------- master RO
+class MasterRO(Base):
+    """Master RO: Program → Kegiatan → KRO → RO, dikelola Reviewer. Bentuk tabel DATAR seperti `satker` (permintaan
+    pemilik produk): kolomnya sama dengan tabel di layar, sehingga `select * from master_ro` terbaca langsung.
+
+    - Satu baris = satu data beserta kode & nama induk-induknya. Jenis baris = jenjang terdalam yang terisi
+      (mis. baris KRO: kolom Program, Kegiatan, KRO terisi; kolom RO kosong ''). Kosong disimpan '' (bukan NULL)
+      agar UNIQUE berlaku, sama seperti `satker`.
+    - Induk sebuah baris = baris dengan kode jenjang di atasnya sama dan jenjang miliknya kosong; induk wajib ada &
+      Aktif saat menambah (dijaga backend). Mengubah kode/nama/induk sebuah baris ikut memperbarui baris turunannya,
+      agar satu Program/Kegiatan/KRO tidak tercatat dengan dua nama berbeda (seperti Unit Kerja di `satker`).
+    - Kode unik per induk: kombinasi (kode_program, kode_kegiatan, kode_kro, kode_ro) unik, sebab kode KRO/RO
+      berulang di induk yang berbeda (mis. RO 001 ada di banyak KRO).
+    - Kolom = kolom tabel Master RO di layar (kode & nama tiap jenjang, Status). Unit Eselon I/II dan Prioritas dari
+      Laporan Renja tidak disimpan (permintaan pemilik produk: database mengikuti tabel daftar).
+    """
+    __tablename__ = "master_ro"
+    __table_args__ = (
+        UniqueConstraint("kode_program", "kode_kegiatan", "kode_kro", "kode_ro", name="uq_master_ro_kode"),
+        CheckConstraint("kode_program <> '' AND program <> ''", name="ck_master_ro_program"),
+        # Kode & nama satu jenjang selalu terisi bersama atau kosong bersama.
+        CheckConstraint("(kode_kegiatan = '') = (kegiatan = '') AND (kode_kro = '') = (kro = '') AND (kode_ro = '') = (ro = '')",
+                        name="ck_master_ro_kode_nama"),
+        # Jenjang tidak boleh melompat: KRO butuh Kegiatan, RO butuh KRO.
+        CheckConstraint("(kode_kro = '' OR kode_kegiatan <> '') AND (kode_ro = '' OR kode_kro <> '')", name="ck_master_ro_jenjang"),
+        # Kode = teks bebas (tanpa CHECK format huruf/angka; permintaan pemilik produk).
+        # Dipakai CLUSTER agar urutan fisik (pgAdmin "View Data" tanpa ORDER BY) sama dengan tabel di layar: terbaru
+        # ditambahkan paling atas, data yang dibuat bersamaan berjenjang (migrasi 0020, api/master_ro.py).
+        Index("ix_master_ro_created_date", text("created_date DESC"), "kode_program", "kode_kegiatan", "kode_kro", "kode_ro"),
+    )
+    id: Mapped[uuid.UUID] = _id()
+    kode_program: Mapped[str] = mapped_column(String(50))
+    program: Mapped[str] = mapped_column(String(255))
+    kode_kegiatan: Mapped[str] = mapped_column(String(50), server_default="")
+    kegiatan: Mapped[str] = mapped_column(String(255), server_default="")
+    kode_kro: Mapped[str] = mapped_column(String(50), server_default="")
+    kro: Mapped[str] = mapped_column(String(255), server_default="")
+    kode_ro: Mapped[str] = mapped_column(String(50), server_default="")
+    ro: Mapped[str] = mapped_column(String(255), server_default="")
+    aktif: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
+    updated_by: Mapped[uuid.UUID | None] = _fk("pengguna", nullable=True, index=False)
+    updated_date: Mapped[datetime] = _dibuat()
+    created_by: Mapped[uuid.UUID | None] = _fk("pengguna", nullable=True, index=False)
+    created_date: Mapped[datetime] = _dibuat()
 # ---------------------------------------------------------------- pengguna & akses
+
 class Satker(Base):
     """Satuan Kerja = UKE II (Eselon II) beserta Unit Kerja induknya = UKE I (Eselon I), mengikuti dokumen
     "Data Satker dan Unit Kerja" (app/data_satker.py). Kolom = yang tampil di menu Satker."""
@@ -41,25 +86,27 @@ class Satker(Base):
     # Semua isian opsional; kosong disimpan '' (bukan NULL) agar halaman lain yang menampilkan nama Satker tidak
     # menampilkan "null", dan agar keunikan tetap berlaku untuk isian kosong.
     # Format kode seperti dokumen: UKE I = NN (01), UKE II = NN.NN (01.04) dan diawali kode UKE I-nya.
-    __table_args__ = (UniqueConstraint("unit_kerja", "nama", name="uq_satker_unit_kerja_nama"),
+    __table_args__ = (UniqueConstraint("unit_kerja", "satuan_kerja", name="uq_satker_unit_kerja_nama"),
                       Index("ux_satker_kode_uke2", "kode_uke2", unique=True, postgresql_where=text("kode_uke2 <> ''")),
                       CheckConstraint("kode_uke1 = '' OR kode_uke1 ~ '^[0-9]{2}$'", name="ck_satker_kode_uke1_format"),
                       CheckConstraint("kode_uke2 = '' OR kode_uke2 ~ '^[0-9]{2}\\.[0-9]{2}$'", name="ck_satker_kode_uke2_format"),
                       CheckConstraint("kode_uke1 = '' OR kode_uke2 = '' OR left(kode_uke2, 2) = kode_uke1",
                                       name="ck_satker_kode_uke2_induk"))
     id: Mapped[uuid.UUID] = _id()
-    # pengguna.satker_id → satker dan satker.*_by → pengguna saling merujuk: FK ini dibuat setelah kedua tabel ada.
-    created_by: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("pengguna.id", use_alter=True, name="satker_created_by_fkey"))
-    create_date: Mapped[datetime] = _dibuat()
-    update_by: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("pengguna.id", use_alter=True, name="satker_update_by_fkey"))
-    update_date: Mapped[datetime] = _dibuat()
     kode_uke1: Mapped[str] = mapped_column(String(10), server_default="")  # Kode UKE I, mis. 01
     unit_kerja: Mapped[str] = mapped_column(String(255), server_default="")  # UKE I / Unit Kerja (Eselon I)
     kode_uke2: Mapped[str] = mapped_column(String(10), server_default="")  # Kode UKE II, mis. 01.04
-    nama: Mapped[str] = mapped_column(String(255), server_default="")  # UKE II / Satuan Kerja (Eselon II)
+    # Kolom database bernama `satuan_kerja` (permintaan pemilik produk); atribut Python & field API tetap `nama` agar kode lain
+    # dan frontend tidak berubah (pola sama dengan kategori.kategori ↔ API `nama`).
+    nama: Mapped[str] = mapped_column("satuan_kerja", String(255), server_default="")  # UKE II / Satuan Kerja (Eselon II)
     aktif: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")  # Nonaktif: tak bisa dipilih pengguna
+    # pengguna.satker_id → satker dan satker.*_by → pengguna saling merujuk: FK ini dibuat setelah kedua tabel ada.
+    updated_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("pengguna.id", use_alter=True, name="satker_updated_by_fkey"))
+    updated_date: Mapped[datetime] = _dibuat()
+    created_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("pengguna.id", use_alter=True, name="satker_created_by_fkey"))
+    created_date: Mapped[datetime] = _dibuat()
 
     @property
     def kode(self) -> str:
@@ -74,16 +121,16 @@ class Pengguna(Base):
                       Index("ux_pengguna_username_lower", func.lower(text("username")), unique=True))
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4,
                                           server_default=func.gen_random_uuid())
-    # Jejak seperti checklist_item: NULL = dibuat sistem (seed). update_* diisi saat data akun diubah, bukan saat login.
-    created_by: Mapped[uuid.UUID | None] = _fk("pengguna", nullable=True, index=False)
-    create_date: Mapped[datetime] = _dibuat()
-    update_by: Mapped[uuid.UUID | None] = _fk("pengguna", nullable=True, index=False)
-    update_date: Mapped[datetime] = _dibuat()
     username: Mapped[str] = mapped_column(String(100))  # unik lewat ux_pengguna_username_lower
     password_hash: Mapped[str] = mapped_column("password", String(255))
     satker_id: Mapped[uuid.UUID | None] = _fk("satker", nullable=True)
     aktif: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Jejak seperti checklist_item: NULL = dibuat sistem (seed). updated_* diisi saat data akun diubah, bukan saat login.
+    updated_by: Mapped[uuid.UUID | None] = _fk("pengguna", nullable=True, index=False)
+    updated_date: Mapped[datetime] = _dibuat()
+    created_by: Mapped[uuid.UUID | None] = _fk("pengguna", nullable=True, index=False)
+    created_date: Mapped[datetime] = _dibuat()
     roles: Mapped[list["PenggunaRole"]] = relationship(cascade="all, delete-orphan", lazy="selectin")
     satker: Mapped[Satker | None] = relationship(lazy="joined", foreign_keys=[satker_id])
 
@@ -177,7 +224,7 @@ class Chunk(Base):
 class Usulan(Base):
     __tablename__ = "usulan"
     id: Mapped[uuid.UUID] = _id()
-    # Nama & urutan kolom jejak seperti kategori/panduan, permintaan pemilik produk (desain.md §7 no. 30).
+    # Nama & urutan kolom jejak seperti kategori/panduan, permintaan pemilik produk (desain.md §7 no. 37).
     created_by: Mapped[uuid.UUID | None] = _fk("pengguna", nullable=True, index=False)  # pembuat usulan
     created_date: Mapped[datetime] = _dibuat()
     updated_by: Mapped[uuid.UUID | None] = _fk("pengguna", nullable=True, index=False)  # pengubah terakhir
@@ -188,7 +235,7 @@ class Usulan(Base):
     nama_ro: Mapped[str] = mapped_column(String(500))
     dibuat_oleh: Mapped[uuid.UUID] = _fk("pengguna", index=False)
     diarsipkan_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    # Salinan pilihan Pengusul saat mengajukan (app/data_rka.py & tabel kategori), tetap walau sumbernya berubah/dihapus.
+    # Salinan pilihan Pengusul saat mengajukan (menu Master RO & tabel kategori), tetap walau sumbernya berubah/dihapus.
     hierarki: Mapped[dict | None] = mapped_column(JSONB)  # {program, kegiatan, kro, ro: {kode, nama}}; NULL = usulan lama
     kategori_usulan: Mapped[dict | None] = mapped_column(JSONB)  # {id, kode, nama, deskripsi}
     satker: Mapped[Satker] = relationship(lazy="joined")
@@ -218,10 +265,6 @@ class ChecklistItem(Base):
     """Isi TERBARU satu item checklist (satu baris per item). Isi sebelum setiap ubah disimpan di `checklist_histori`."""
     __tablename__ = "checklist_item"
     id: Mapped[uuid.UUID] = _id()
-    created_by: Mapped[uuid.UUID | None] = _fk("pengguna", nullable=True, index=False)
-    create_date: Mapped[datetime] = _dibuat()
-    update_by: Mapped[uuid.UUID | None] = _fk("pengguna", nullable=True, index=False)
-    update_date: Mapped[datetime] = _dibuat()
     no_urut: Mapped[int] = mapped_column(Integer, index=True)  # dipakai CLUSTER (app/checklist.py:urut_ulang)
     kode: Mapped[str] = mapped_column(String(50), unique=True)
     checklist: Mapped[str] = mapped_column(String(500))
@@ -229,6 +272,10 @@ class ChecklistItem(Base):
     berlaku_untuk: Mapped[str] = mapped_column(String(10))  # TOR | RAB | TOR & RAB
     # Item nonaktif tidak dinilai AI dan tidak dihitung dalam label.
     aktif: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true", nullable=False)
+    updated_by: Mapped[uuid.UUID | None] = _fk("pengguna", nullable=True, index=False)
+    updated_date: Mapped[datetime] = _dibuat()
+    created_by: Mapped[uuid.UUID | None] = _fk("pengguna", nullable=True, index=False)
+    created_date: Mapped[datetime] = _dibuat()
 
 
 class ChecklistHistory(Base):
@@ -237,12 +284,8 @@ class ChecklistHistory(Base):
     Isi checklist review disusun ulang dari kedua tabel (app/checklist.py)."""
     __tablename__ = "checklist_histori"
     # Dipakai CLUSTER agar baris terbaru tersimpan paling atas (pgAdmin "All Rows" tanpa ORDER BY), lihat master.py.
-    __table_args__ = (Index("ix_checklist_histori_update_date", text("update_date DESC")),)
+    __table_args__ = (Index("ix_checklist_histori_updated_date", text("updated_date DESC")),)
     id: Mapped[uuid.UUID] = _id()
-    created_by: Mapped[uuid.UUID | None] = _fk("pengguna", nullable=True, index=False)
-    create_date: Mapped[datetime] = _dibuat()
-    update_by: Mapped[uuid.UUID | None] = _fk("pengguna", nullable=True, index=False)
-    update_date: Mapped[datetime] = _dibuat()
     checklist_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("checklist_item.id", ondelete="CASCADE"), index=True)
     no_urut: Mapped[int] = mapped_column(Integer)
     kode: Mapped[str] = mapped_column(String(50))
@@ -251,25 +294,29 @@ class ChecklistHistory(Base):
     berlaku_untuk: Mapped[str] = mapped_column(String(10))  # TOR | RAB | TOR & RAB
     # Item nonaktif tidak dinilai AI dan tidak dihitung dalam label.
     aktif: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true", nullable=False)
+    updated_by: Mapped[uuid.UUID | None] = _fk("pengguna", nullable=True, index=False)
+    updated_date: Mapped[datetime] = _dibuat()
+    created_by: Mapped[uuid.UUID | None] = _fk("pengguna", nullable=True, index=False)
+    created_date: Mapped[datetime] = _dibuat()
 
 
 class Kategori(Base):
     """Isi TERBARU satu kategori (satu baris per kategori). Versi sebelum tiap perubahan ada di `kategori_histori`;
     review memakai salinan di `review_kategori`, sehingga kategori boleh diubah/dihapus permanen (C4).
-    Nama & urutan kolom ditetapkan pemilik produk (desain.md §7 no. 24)."""
+    Nama kolom ditetapkan pemilik produk (desain.md §7 no. 24); urutan kolom mengikuti tabel Kategori di layar (§7 no. 32)."""
     __tablename__ = "kategori"
     id: Mapped[uuid.UUID] = _id()
-    created_by: Mapped[uuid.UUID | None] = _fk("pengguna", nullable=True, index=False)
-    created_date: Mapped[datetime] = _dibuat()
-    updated_by: Mapped[uuid.UUID | None] = _fk("pengguna", nullable=True, index=False)  # penginput versi terkini
-    updated_date: Mapped[datetime] = _dibuat()
-    # Nonaktif = tetap tampil, tetapi tidak dipakai review berikutnya (sama dengan panduan).
-    aktif: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
+    # Urutan tampil (Atur Urutan); dipakai CLUSTER (urut_ulang).
+    no_urut: Mapped[int] = mapped_column(Integer, index=True)
     kode: Mapped[str] = mapped_column(String(20), unique=True)
     kategori: Mapped[str] = mapped_column(String(255))
+    # Nonaktif = tetap tampil, tetapi tidak dipakai review berikutnya (sama dengan panduan).
+    aktif: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
     deskripsi: Mapped[str] = mapped_column(Text)  # definisi yang dipakai AI (C2)
-    # Kolom terakhir agar database lama (ditambah migrasi 0003) dan baru berurutan kolom sama; dipakai CLUSTER (urut_ulang).
-    no_urut: Mapped[int] = mapped_column(Integer, index=True)
+    updated_by: Mapped[uuid.UUID | None] = _fk("pengguna", nullable=True, index=False)  # penginput versi terkini
+    updated_date: Mapped[datetime] = _dibuat()
+    created_by: Mapped[uuid.UUID | None] = _fk("pengguna", nullable=True, index=False)
+    created_date: Mapped[datetime] = _dibuat()
 
 
 class KategoriHistori(Base):
@@ -278,32 +325,37 @@ class KategoriHistori(Base):
     penginput & waktu versi ini. `kategori_id` → kategori asalnya (ikut terhapus bila kategori dihapus)."""
     __tablename__ = "kategori_histori"
     id: Mapped[uuid.UUID] = _id()
-    created_by: Mapped[uuid.UUID | None] = _fk("pengguna", nullable=True, index=False)
-    created_date: Mapped[datetime] = _dibuat()
-    updated_by: Mapped[uuid.UUID | None] = _fk("pengguna", nullable=True, index=False)
-    updated_date: Mapped[datetime] = _dibuat()
     kategori_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("kategori.id", ondelete="CASCADE"), index=True)
+    kode: Mapped[str] = mapped_column(String(20))
     kategori: Mapped[str] = mapped_column(String(255))
     aktif: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")  # status saat versi itu
-    kode: Mapped[str] = mapped_column(String(20))
     deskripsi: Mapped[str] = mapped_column(Text)
+    updated_by: Mapped[uuid.UUID | None] = _fk("pengguna", nullable=True, index=False)
+    updated_date: Mapped[datetime] = _dibuat()
+    created_by: Mapped[uuid.UUID | None] = _fk("pengguna", nullable=True, index=False)
+    created_date: Mapped[datetime] = _dibuat()
 
 
 class Panduan(Base):
     """Panduan beserta isi versi TERKINI (panduan = Nama Acuan, deskripsi, file, status). Versi sebelumnya ada di `panduan_histori`.
-    Nama & urutan kolom ditetapkan pemilik produk (desain.md §7 no. 17)."""
+    Nama kolom ditetapkan pemilik produk (desain.md §7 no. 17); urutan kolom mengikuti kolom tabel Panduan di layar
+    (Nama Acuan, Nama Dokumen, Deskripsi, Status, Diinput Oleh, Tanggal Input — §7 no. 31)."""
     __tablename__ = "panduan"
     id: Mapped[uuid.UUID] = _id()
-    created_by: Mapped[uuid.UUID | None] = _fk("pengguna", nullable=True, index=False)  # pengunggah pertama (versi 1)
-    created_date: Mapped[datetime] = _dibuat()
-    updated_by: Mapped[uuid.UUID | None] = _fk("pengguna", nullable=True, index=False)  # yang menginput versi terkini
-    updated_date: Mapped[datetime] = _dibuat()  # waktu input versi terkini
+    # Urutan tampil di daftar Panduan, diatur Reviewer lewat Atur Urutan (migrasi 0019); dipakai CLUSTER.
+    no_urut: Mapped[int] = mapped_column(Integer, index=True, default=0)
     panduan: Mapped[str] = mapped_column(String(500))
+    # Kolom database `nama_dokumen` (label layar "Nama Dokumen", migrasi 0018); atribut Python & field API tetap
+    # `nama_file` agar kode review (pekerja/review.py) tidak perlu diubah.
+    nama_file: Mapped[str] = mapped_column("nama_dokumen", String(255))
+    file_id: Mapped[uuid.UUID] = _fk("file", index=False)
+    deskripsi: Mapped[str | None] = mapped_column(Text)
     # Nonaktif = tetap tampil, tetapi tidak dipakai review berikutnya.
     aktif: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
-    file_id: Mapped[uuid.UUID] = _fk("file", index=False)
-    nama_file: Mapped[str] = mapped_column(String(255))
-    deskripsi: Mapped[str | None] = mapped_column(Text)
+    updated_by: Mapped[uuid.UUID | None] = _fk("pengguna", nullable=True, index=False)  # yang menginput versi terkini
+    updated_date: Mapped[datetime] = _dibuat()  # waktu input versi terkini
+    created_by: Mapped[uuid.UUID | None] = _fk("pengguna", nullable=True, index=False)  # pengunggah pertama (versi 1)
+    created_date: Mapped[datetime] = _dibuat()
     pengubah: Mapped[Pengguna | None] = relationship(foreign_keys=[updated_by], lazy="joined")
     file: Mapped[File] = relationship(lazy="joined")
     versi: Mapped[list["PanduanHistori"]] = relationship(order_by="PanduanHistori.updated_date", lazy="selectin")  # riwayat saja
@@ -318,19 +370,21 @@ class Panduan(Base):
 class PanduanHistori(Base):
     """Riwayat (Panduan Histori): salinan utuh baris `panduan` SEBELUM tiap perubahan — created_by/created_date tetap
     milik pengunggah pertama, updated_by/updated_date = penginput & waktu versi itu. Versi terkini ada di `panduan`.
-    Baris tidak pernah diubah. Status pemrosesan mengikuti `file.status_ekstraksi`."""
+    Baris tidak pernah diubah. Status pemrosesan mengikuti `file.status_ekstraksi`. Urutan kolom = `panduan` (§7 no. 31)."""
     __tablename__ = "panduan_histori"
     id: Mapped[uuid.UUID] = _id()
-    created_by: Mapped[uuid.UUID | None] = _fk("pengguna", nullable=True, index=False)
-    created_date: Mapped[datetime] = _dibuat()
-    updated_by: Mapped[uuid.UUID | None] = _fk("pengguna", nullable=True, index=False)
-    updated_date: Mapped[datetime] = _dibuat()
     panduan_id: Mapped[uuid.UUID] = _fk("panduan")
     panduan: Mapped[str] = mapped_column(String(500))
-    aktif: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")  # status saat versi dibuat
+    # Kolom database `nama_dokumen` (label layar "Nama Dokumen", migrasi 0018); atribut Python & field API tetap
+    # `nama_file` agar kode review (pekerja/review.py) tidak perlu diubah.
+    nama_file: Mapped[str] = mapped_column("nama_dokumen", String(255))
     file_id: Mapped[uuid.UUID] = _fk("file", index=False)
-    nama_file: Mapped[str] = mapped_column(String(255))
     deskripsi: Mapped[str | None] = mapped_column(Text)
+    aktif: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")  # status saat versi dibuat
+    updated_by: Mapped[uuid.UUID | None] = _fk("pengguna", nullable=True, index=False)
+    updated_date: Mapped[datetime] = _dibuat()
+    created_by: Mapped[uuid.UUID | None] = _fk("pengguna", nullable=True, index=False)
+    created_date: Mapped[datetime] = _dibuat()
     file: Mapped[File] = relationship(lazy="joined")
     pengubah: Mapped[Pengguna | None] = relationship(foreign_keys=[updated_by], lazy="joined")
 
@@ -457,7 +511,7 @@ class CatatanReviewer(Base):
 
 class CatatanItem(Base):
     """Catatan Verifikator per item checklist (halaman Pemeriksaan), terpisah dari Status Verifikator (override ITEM) agar
-    dapat diisi kapan saja, sebelum status dipilih (desain.md §7 no. 32). Disembunyikan dari Pengusul sebelum final."""
+    dapat diisi kapan saja, sebelum status dipilih (desain.md §7 no. 39). Disembunyikan dari Pengusul sebelum final."""
     __tablename__ = "catatan_item"
     __table_args__ = (UniqueConstraint("review_id", "checklist_item_id"),)
     id: Mapped[uuid.UUID] = _id()

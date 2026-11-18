@@ -1,11 +1,10 @@
-/** Potongan UI untuk baris usulan: tautan dokumen, status proses, dan ikon aksi Detail/Edit/Hapus (desain.md §7 no. 29). */
+/** Potongan UI untuk baris usulan: tautan dokumen, status proses, dan ikon aksi Detail/Edit/Hapus (desain.md §7 no. 36). */
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Eye, FileText, Pencil, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { api } from "../api";
 import { useAuth } from "../auth";
-import { waktuAngka } from "../format";
 import type { BarisUsulan, Dok, Proses } from "../types";
 import { KonfirmasiYakin, Peringatan, Progres, cx } from "../ui";
 
@@ -23,12 +22,6 @@ export function TautanDokumen({ tor, rab }: { tor: Dok | null; rab: Dok | null }
   );
 }
 
-/** Sel tanggal di tabel menu Usulan: tanggal (dd/mm/yyyy) di atas, jam di bawahnya dengan huruf lebih kecil. Kosong → "—". */
-export function TanggalJam({ iso }: { iso?: string | null }) {
-  const [tgl, jam] = waktuAngka(iso).split(" ");
-  return <><div>{tgl}</div>{jam && <div className="text-xs text-slate-500">{jam}</div>}</>;
-}
-
 export function InfoProses({ p }: { p: Proses | null }) {
   if (!p) return null;
   if (p.status === "GAGAL") return <Peringatan>{p.error_pesan ?? "Review AI gagal."}</Peringatan>;
@@ -41,7 +34,7 @@ export function InfoProses({ p }: { p: Proses | null }) {
  *  usulan yang sudah terkirim (menunggu verifikasi, lolos, tidak lolos) cukup dilihat — revisi lewat halaman Pemeriksaan. */
 export const bolehUbahDokumen = (u: BarisUsulan) => u.boleh_kelola && !u.diarsipkan && ["DRAF", "GAGAL"].includes(u.status);
 
-/** Aksi per role (desain.md §7 no. 31): semua = Detail; Reviewer (ROCAN) = Edit hierarki/kategori + Hapus;
+/** Aksi per role (desain.md §7 no. 38): semua = Detail; Reviewer (ROCAN) = Edit hierarki/kategori + Hapus;
  *  Satker = Edit dokumen hanya saat Gagal/Draf; Admin = Detail saja. Hak akses tetap dicek backend. */
 export function AksiUsulan({ u }: { u: BarisUsulan }) {
   const { punya } = useAuth();

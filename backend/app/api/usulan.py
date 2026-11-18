@@ -4,8 +4,7 @@ from datetime import date, datetime, timedelta, timezone
 from typing import Literal
 
 from fastapi import APIRouter, Depends, File as FormFile, Form, Query, Request, UploadFile
-from pydantic import BaseModel
-from sqlalchemy import delete, exists, func, or_, select, update
+from sqlalchemy import delete, exists, func, or_, select, tuple_, update
 from sqlalchemy.orm import Session, aliased
 
 from app import status as st
@@ -16,9 +15,8 @@ from app.db import sesi_db
 from app.galat import Galat
 from app.layanan_review import ajukan_review, info_proses, review_terbaru
 from app.checklist import kunci_kode
-from app.data_rka import cari_ro, pohon
-from app.model import (CatatanItem, CatatanReviewer, Elemen, HasilItem, HasilKategori, Job, Kategori, Override, Pengguna, Rekomendasi, Review,
-                       ReviewKategori, ReviewPanduan, Revisi, Rujukan, Satker, Usulan)
+from app.model import (CatatanItem, CatatanReviewer, Elemen, HasilItem, HasilKategori, Job, Kategori, MasterRO, Override, Pengguna,
+                       Rekomendasi, Review, ReviewKategori, ReviewPanduan, Revisi, Rujukan, Satker, Usulan)
 from app.penyimpanan import hapus_berkas, hapus_file_tak_terpakai, simpan_unggahan
 
 router = APIRouter(prefix="/api/usulan", tags=["usulan"])
@@ -70,13 +68,13 @@ def baris_usulan(db: Session, u: Usulan, p: Pengguna) -> dict:
 
 
 @router.get("")
-def daftar(db: Session = Depends(sesi_db), p: Pengguna = Depends(pengguna_saat_ini),
+def daftar(db: Session = Depends(sesi_db), p: Pengguna = Depends(wajib_role(PENGUSUL, REVIEWER)),
            satker_id: uuid.UUID | None = None, tahun: int | None = None, status: str | None = None,
-           kategori: str | None = None, q: str | None = None, arsip: bool = False,
+           kategori: str | None = None, q: str | None = None,
            satker: str | None = None, dokumen: str | None = None, tanggal: date | None = None,
            urut: Literal["satker", "rincian", "dokumen", "status", "tanggal"] | None = None, arah: Literal["asc", "desc"] = "asc",
            halaman: int = Query(1, ge=1), per_halaman: int = Query(10, ge=1, le=100)) -> dict:
-    """Daftar usulan dengan filter A5 dan filter per kolom tabel (desain.md §7 no. 38): `satker` (nama Satuan Kerja), `q`
+    """Daftar usulan dengan filter A5 dan filter per kolom tabel (desain.md §7 no. 45): `satker` (nama Satuan Kerja), `q`
     (kode/nama RO), `dokumen` (nama file TOR/RAB revisi terbaru), `status`, `tanggal` (tanggal pengajuan, WIB). `urut` + `arah`
     mengurutkan per kolom; tanpa `urut` = perubahan terbaru dulu. Pengusul otomatis dibatasi ke Satker-nya."""
     kueri = (select(Usulan).join(Revisi, (Revisi.usulan_id == Usulan.id) & (Revisi.nomor == revisi_terbaru()))
@@ -103,7 +101,7 @@ def daftar(db: Session = Depends(sesi_db), p: Pengguna = Depends(pengguna_saat_i
         kueri = kueri.where(or_(Revisi.tor_nama.ilike(pola), Revisi.rab_nama.ilike(pola)))
     if tanggal:
         kueri = kueri.where(func.date(func.timezone("Asia/Jakarta", Usulan.created_date)) == tanggal)
-    kueri = kueri.where(Usulan.diarsipkan_at.is_not(None) if arsip else Usulan.diarsipkan_at.is_(None))
+    kueri = kueri.where(Usulan.diarsipkan_at.is_(None))  # fitur arsip dihapus (desain.md §7 no. 50); arsip lama tetap tersembunyi
     total = db.scalar(select(func.count()).select_from(kueri.subquery()))
     # Halaman di luar jangkauan (mis. ganti Tahun Anggaran di halaman 2, atau baris terakhir dihapus) → halaman terakhir.
     halaman = min(halaman, max(1, -(-total // per_halaman)))
@@ -114,12 +112,54 @@ def daftar(db: Session = Depends(sesi_db), p: Pengguna = Depends(pengguna_saat_i
     return {"total": total, "halaman": halaman, "per_halaman": per_halaman, "data": [baris_usulan(db, u, p) for u in baris]}
 
 
+# Jenjang Master RO: (kolom kode, kolom nama, nama daftar anak di pohon form Pengajuan).
+JENJANG = (("kode_program", "program", "kegiatan"), ("kode_kegiatan", "kegiatan", "kro"), ("kode_kro", "kro", "ro"),
+           ("kode_ro", "ro", None))
+
+
+def _pohon(db: Session) -> list[dict]:
+    """Pohon Program → Kegiatan → KRO → RO dari menu Master RO untuk form Pengajuan. Hanya data Aktif yang induknya juga
+    Aktif (Nonaktif tidak dapat dipilih). Kode per jenjang apa adanya, mis. KRO "EBA", RO "994"."""
+    akar: dict[str, dict] = {}
+    # Urut kode: baris induk (kode jenjang bawah kosong) selalu sebelum turunannya.
+    for m in db.scalars(select(MasterRO).where(MasterRO.aktif).order_by(*(getattr(MasterRO, k) for k, _, _ in JENJANG))):
+        kode = [getattr(m, k) for k, _, _ in JENJANG if getattr(m, k)]
+        tingkat = akar
+        for k in kode[:-1]:
+            if k not in tingkat:
+                break  # induk Nonaktif/tidak ada → turunannya tidak dapat dipilih
+            tingkat = tingkat[k]["anak"]
+        else:
+            tingkat[kode[-1]] = {"kode": kode[-1], "nama": getattr(m, JENJANG[len(kode) - 1][1]), "anak": {}}
+
+    def daftar(t: dict, n: int) -> list[dict]:
+        anak = JENJANG[n][2]
+        return [{"kode": x["kode"], "nama": x["nama"], **({anak: daftar(x["anak"], n + 1)} if anak else {})} for x in t.values()]
+    return daftar(akar, 0)
+
+
+def _cari_ro(db: Session, program: str, kegiatan: str, kro: str, ro: str) -> dict | None:
+    """Salinan hierarki untuk usulan bila jalur Program/Kegiatan/KRO/RO ada di Master RO dan keempatnya Aktif, selain itu None.
+    Kode KRO & RO disimpan lengkap dari Kegiatan (mis. "4490.EBA.994"), sama dengan usulan lama."""
+    if not all((program, kegiatan, kro, ro)):
+        return None
+    jalur = [(program, "", "", ""), (program, kegiatan, "", ""), (program, kegiatan, kro, ""), (program, kegiatan, kro, ro)]
+    kunci = tuple_(*(getattr(MasterRO, k) for k, _, _ in JENJANG))
+    baris = {(m.kode_program, m.kode_kegiatan, m.kode_kro, m.kode_ro): m
+             for m in db.scalars(select(MasterRO).where(MasterRO.aktif, kunci.in_(jalur)))}
+    if len(baris) != len(jalur):
+        return None
+    m = baris[jalur[-1]]
+    return {"program": {"kode": program, "nama": m.program}, "kegiatan": {"kode": kegiatan, "nama": m.kegiatan},
+            "kro": {"kode": f"{kegiatan}.{kro}", "nama": m.kro}, "ro": {"kode": f"{kegiatan}.{kro}.{ro}", "nama": m.ro}}
+
+
 def _isian(db: Session, program: str, kegiatan: str, kro: str, ro: str, kategori_id: uuid.UUID) -> tuple[dict, dict]:
-    """Validasi pilihan form Pengajuan (hierarki RKA-K/L & kategori Aktif). Kembalikan salinan (hierarki, kategori).
-    Error: 400 bila jalur hierarki tidak ada atau kategori tidak Aktif."""
-    hierarki = cari_ro(program, kegiatan, kro, ro)
+    """Validasi pilihan form Pengajuan (hierarki dari Master RO & kategori Aktif). Kembalikan salinan (hierarki, kategori).
+    Error: 400 bila jalur hierarki tidak ada/Nonaktif di Master RO atau kategori tidak Aktif."""
+    hierarki = _cari_ro(db, program, kegiatan, kro, ro)
     if hierarki is None:
-        raise Galat(400, "Program, Kegiatan, KRO, dan RO wajib dipilih dari daftar.")
+        raise Galat(400, "Program, Kegiatan, KRO, dan RO wajib dipilih dari daftar Master RO yang Aktif.")
     k = db.get(Kategori, kategori_id)
     if k is None or not k.aktif:
         raise Galat(400, "Kategori wajib dipilih dari kategori yang Aktif.")
@@ -158,10 +198,11 @@ def _hapus_file_lepas(db: Session, file_ids) -> list[str]:
 
 
 @router.get("/opsi/pengajuan")
-def opsi_pengajuan(db: Session = Depends(sesi_db), _: Pengguna = Depends(pengguna_saat_ini)) -> dict:
-    """Pilihan form Pengajuan Baru: pohon Program → Kegiatan → KRO → RO dan kategori Aktif (urutan Kelola Kategori)."""
+def opsi_pengajuan(db: Session = Depends(sesi_db), _: Pengguna = Depends(wajib_role(PENGUSUL, REVIEWER))) -> dict:
+    """Pilihan form Pengajuan Baru: pohon Program → Kegiatan → KRO → RO dari menu Master RO (Aktif) dan kategori Aktif
+    (urutan Kelola Kategori)."""
     kategori = db.scalars(select(Kategori).where(Kategori.aktif).order_by(Kategori.no_urut, Kategori.kode))
-    return {"hierarki": pohon(),
+    return {"hierarki": _pohon(db),
             "kategori": [{"id": str(k.id), "kode": k.kode, "nama": k.kategori, "deskripsi": k.deskripsi} for k in kategori]}
 
 
@@ -170,8 +211,8 @@ def buat(request: Request, db: Session = Depends(sesi_db), p: Pengguna = Depends
          program: str = Form(...), kegiatan: str = Form(...), kro: str = Form(...), ro: str = Form(...),
          kategori_id: uuid.UUID = Form(...), tahun_anggaran: int = Form(...), tor: UploadFile | None = FormFile(None),
          rab: UploadFile | None = FormFile(None), ajukan: bool = Form(False)) -> dict:
-    """Pengajuan Baru — Satker = Satker pengusul; TOR dan RAB wajib keduanya (desain.md §7 no. 31). `tahun_anggaran` = pilihan
-    Tahun Anggaran di bilah atas (tahun berjalan ±2, desain.md §7 no. 34). `ajukan=true` langsung mengajukan review.
+    """Pengajuan Baru — Satker = Satker pengusul; TOR dan RAB wajib keduanya (desain.md §7 no. 38). `tahun_anggaran` = pilihan
+    Tahun Anggaran di bilah atas (tahun berjalan ±2, desain.md §7 no. 41). `ajukan=true` langsung mengajukan review.
 
     Error: 400 bila akun belum punya Satker / tahun di luar rentang / pilihan tidak valid / TOR atau RAB kosong / file bukan
     PDF; 413 file terlalu besar.
@@ -225,7 +266,7 @@ def ubah_parameter(usulan_id: uuid.UUID, request: Request, db: Session = Depends
                    program: str = Form(...), kegiatan: str = Form(...), kro: str = Form(...), ro: str = Form(...),
                    kategori_id: uuid.UUID = Form(...), tor: UploadFile | None = FormFile(None),
                    rab: UploadFile | None = FormFile(None)) -> dict:
-    """Edit usulan oleh Reviewer (ROCAN), desain.md §7 no. 31, 33 & 36: membetulkan hierarki anggaran & kategori usulan, dan
+    """Edit usulan oleh Reviewer (ROCAN), desain.md §7 no. 38, 40 & 43: membetulkan hierarki anggaran & kategori usulan, dan
     (opsional) mengganti TOR dan/atau RAB. Dokumen pengganti dipasang di **revisi terakhir yang sama** (tidak menambah baris
     Histori Dokumen), lalu revisi itu langsung direview AI ulang; review lama tetap tersimpan (hasil AI tidak ditimpa).
 
@@ -265,7 +306,7 @@ def ubah_draf(usulan_id: uuid.UUID, request: Request, db: Session = Depends(sesi
               p: Pengguna = Depends(wajib_role(PENGUSUL)), tor: UploadFile | None = FormFile(None),
               rab: UploadFile | None = FormFile(None), ajukan: bool = Form(False)) -> dict:
     """Ganti PDF TOR dan/atau RAB revisi terbaru selama masih DRAF atau GAGAL (belum ada hasil AI). Hierarki & kategori
-    tidak dapat diubah: bila salah input, Satker menghapus usulan lalu mengajukan ulang (desain.md §7 no. 29).
+    tidak dapat diubah: bila salah input, Satker menghapus usulan lalu mengajukan ulang (desain.md §7 no. 36).
 
     Error: 409 bila revisi sedang/sudah direview (dokumen terkunci, PRD §5).
     """
@@ -327,7 +368,7 @@ def ajukan(usulan_id: uuid.UUID, request: Request, db: Session = Depends(sesi_db
 def hapus(usulan_id: uuid.UUID, request: Request, db: Session = Depends(sesi_db),
           p: Pengguna = Depends(wajib_role(REVIEWER))) -> dict:
     """Hapus PERMANEN usulan dari database, apa pun statusnya (lolos, tidak lolos, menunggu verifikasi, gagal) — khusus Reviewer
-    (ROCAN), desain.md §7 no. 31 & 35: revisi, review, hasil AI, rujukan, override, catatan, salinan acuan, job, serta file PDF
+    (ROCAN), desain.md §7 no. 38 & 42: revisi, review, hasil AI, rujukan, override, catatan, salinan acuan, job, serta file PDF
     TOR/RAB beserta hasil ekstraksinya bila tidak dipakai usulan/panduan lain. Jejak penghapusan (tanpa isi dokumen) tercatat
     di Audit Log.
 
@@ -363,29 +404,12 @@ def hapus(usulan_id: uuid.UUID, request: Request, db: Session = Depends(sesi_db)
     return {"ok": True}
 
 
-class Arsip(BaseModel):
-    arsip: bool
-
-
-@router.post("/{usulan_id}/arsip")
-def arsipkan(usulan_id: uuid.UUID, data: Arsip, request: Request, db: Session = Depends(sesi_db),
-             p: Pengguna = Depends(pengguna_saat_ini)) -> dict:
-    """Arsipkan / keluarkan dari arsip. Boleh oleh Pengusul Satker tersebut atau Admin."""
-    u = _ambil(db, usulan_id, p)
-    pastikan(boleh_kelola_usulan(p, u) or "ADMIN" in p.daftar_role)
-    if u.revisi[-1].status in (st.ANTRE, st.DIPROSES_AI):
-        raise Galat(409, "Usulan sedang diproses AI dan belum dapat diarsipkan.")
-    u.diarsipkan_at = datetime.now(timezone.utc) if data.arsip else None
-    u.updated_by = p.id
-    catat(db, request, "ARSIP_USULAN" if data.arsip else "BUKA_ARSIP_USULAN", "usulan", u.id)
-    db.commit()
-    return baris_usulan(db, u, p)
 
 
 @router.get("/{usulan_id}/riwayat")
 def riwayat(usulan_id: uuid.UUID, db: Session = Depends(sesi_db), p: Pengguna = Depends(pengguna_saat_ini)) -> dict:
     """Detail Usulan + Histori Dokumen: semua revisi beserta review-nya (urut naik). Perbandingan checklist antar-revisi
-    dihapus bersama halaman Riwayat (desain.md §7 no. 32)."""
+    dihapus bersama halaman Riwayat (desain.md §7 no. 39)."""
     u = _ambil(db, usulan_id, p)
     revisi_data = []
     for idx, r in enumerate(u.revisi):
@@ -413,13 +437,13 @@ def riwayat(usulan_id: uuid.UUID, db: Session = Depends(sesi_db), p: Pengguna = 
     return {"usulan": baris_usulan(db, u, p), "revisi": revisi_data}
 
 
-# Pilihan filter status di halaman Usulan (permintaan pemilik produk, desain.md §7 no. 39). Status lain (Draf, Antre,
+# Pilihan filter status di halaman Usulan (permintaan pemilik produk, desain.md §7 no. 46). Status lain (Draf, Antre,
 # Diproses AI, Gagal) tetap tampil dengan "Semua Status".
 FILTER_STATUS = {st.LOLOS: "Lolos", st.MENUNGGU_VERIFIKASI: "Menunggu Reviewer", st.TIDAK_LOLOS: "Tidak Lolos"}
 
 
 @router.get("/opsi/filter")
-def opsi_filter(db: Session = Depends(sesi_db), p: Pengguna = Depends(pengguna_saat_ini)) -> dict:
+def opsi_filter(db: Session = Depends(sesi_db), p: Pengguna = Depends(wajib_role(PENGUSUL, REVIEWER))) -> dict:
     """Pilihan untuk dropdown filter (Satker, tahun, kategori)."""
     kueri_satker = select(Satker).order_by(Satker.nama)
     if not boleh_lihat_semua(p):

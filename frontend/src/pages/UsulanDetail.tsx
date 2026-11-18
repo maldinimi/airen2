@@ -1,4 +1,4 @@
-/** Detail usulan (`/usulan/:id`, desain.md §7 no. 29 & 31): parameter hierarki anggaran + Histori Dokumen per revisi (urut naik).
+/** Detail usulan (`/usulan/:id`, desain.md §7 no. 36 & 38): parameter hierarki anggaran + Histori Dokumen per revisi (urut naik).
  *  Aksi per revisi → halaman Pemeriksaan: Reviewer "Review" bila menunggu verifikasi, Pengusul "Revisi" bila revisi
  *  terbaru Tidak Lolos (tombol Unggah Revisi ada di bawah halaman Pemeriksaan), selain itu ikon mata (Detail). */
 import { useQuery } from "@tanstack/react-query";
@@ -6,10 +6,10 @@ import { ArrowLeft, Eye, Pencil } from "lucide-react";
 import { Link, useParams } from "react-router-dom";
 import { api } from "../api";
 import { useAuth } from "../auth";
-import { InfoProses, TanggalJam, TautanDokumen, bolehUbahDokumen } from "../components/Usulan";
+import { InfoProses, TautanDokumen, bolehUbahDokumen } from "../components/Usulan";
 import { waktuAngka } from "../format";
 import type { BarisUsulan, Dok, StatusRevisi } from "../types";
-import { Judul, Kartu, Kosong, LencanaStatus, Memuat, Peringatan, Ringkasan, Tombol } from "../ui";
+import { Judul, Kartu, Kosong, LencanaStatus, Memuat, Peringatan, Ringkasan, TanggalJam, Tombol } from "../ui";
 
 type Revisi = { id: string; nomor: number; status: StatusRevisi; dibuat_at: string; tor: Dok | null; rab: Dok | null;
   review: { id: string; status: string; difinalkan_at: string | null }[] };

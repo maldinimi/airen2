@@ -32,7 +32,7 @@ def review_terbaru(db: Session, revisi_id) -> Review | None:
 
 def ajukan_review(db: Session, request: Request | None, revisi: Revisi, p: Pengguna, oleh_reviewer: bool = False) -> Review:
     """Pengusul menekan "Ajukan Review": revisi → ANTRE, buat review + job antrean. `oleh_reviewer` = revisi dokumen yang
-    diunggah Reviewer lewat Edit Usulan (hak Reviewer sudah dicek pemanggil, desain.md §7 no. 33).
+    diunggah Reviewer lewat Edit Usulan (hak Reviewer sudah dicek pemanggil, desain.md §7 no. 40).
 
     Versi checklist/kategori/panduan dikunci saat job mulai diproses (desain §4.7).
     Error: 403 bukan Pengusul Satker ini; 409 status tidak mengizinkan; 400 checklist/kategori belum ada.
@@ -183,7 +183,7 @@ def detail_review(db: Session, review: Review, p: Pengguna) -> dict:
     if review.status != "SELESAI":
         return data
 
-    # Pengusul melihat hasil AI segera; penilaian verifikator (override) & catatan baru setelah final (desain.md §7 no. 31).
+    # Pengusul melihat hasil AI segera; penilaian verifikator (override) & catatan baru setelah final (desain.md §7 no. 38).
     tampil_override = sebagai_reviewer or final
     nf, overrides = nilai_final_review(db, review, tampil_override)
     aktif_per_target = {}

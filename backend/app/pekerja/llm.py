@@ -72,7 +72,7 @@ _ALASAN_KATEGORI = {
 
 
 def alasan_kategori_tiruan(kode: str, nama: str) -> str:
-    """Catatan AI kategori versi AI tiruan, sesuai kategori yang dipilih (desain.md §7 no. 39)."""
+    """Catatan AI kategori versi AI tiruan, sesuai kategori yang dipilih (desain.md §7 no. 46)."""
     pilihan = f"{kode} — {nama}" if nama else kode
     alasan = _ALASAN_KATEGORI.get(kode, "isi TOR dan RAB paling sesuai dengan definisi kategori ini dibandingkan kategori lain "
                                         "yang berlaku.")

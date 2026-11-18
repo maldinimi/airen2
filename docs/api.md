@@ -9,7 +9,8 @@
 Hak akses selalu dicek di backend:
 
 - **Pengusul** hanya dapat mengakses usulan Satker-nya.
-- **Reviewer** dan **Admin** dapat mengakses seluruh usulan.
+- **Reviewer** dapat mengakses seluruh usulan serta mengelola Panduan, Checklist, Kategori, Satuan Kerja, dan Master RO.
+- **Admin** hanya mengelola Pengguna, Node AI, dan Audit Log; Dashboard dan Usulan (termasuk file TOR/RAB) ditolak.
 - **Unduhan file** diperiksa per file.
 
 ## Auth
@@ -25,18 +26,17 @@ Hak akses selalu dicek di backend:
 
 | Metode | Path | Role | Keterangan |
 | --- | --- | --- | --- |
-| GET | `/usulan` | login | Filter: `satker` (nama Satuan Kerja), `q` (kode/nama RO), `dokumen` (nama file TOR/RAB revisi terbaru), `status`, `tanggal` (YYYY-MM-DD, tanggal pengajuan WIB), `tahun`, serta `satker_id, kategori, arsip`. Urut: `urut` = `satker\|rincian\|dokumen\|status\|tanggal`, `arah` = `asc\|desc` (tanpa `urut` = perubahan terbaru dulu). Paging: `halaman, per_halaman` (bawaan 10; `halaman` melebihi jumlah halaman → halaman terakhir). Respons `{total, halaman, per_halaman, data: BarisUsulan[]}` |
+| GET | `/usulan` | Pengusul, Reviewer | Filter: `satker` (nama Satuan Kerja), `q` (kode/nama RO), `dokumen` (nama file TOR/RAB revisi terbaru), `status`, `tanggal` (YYYY-MM-DD, tanggal pengajuan WIB), `tahun`, serta `satker_id, kategori`. Urut: `urut` = `satker\|rincian\|dokumen\|status\|tanggal`, `arah` = `asc\|desc` (tanpa `urut` = perubahan terbaru dulu). Paging: `halaman, per_halaman` (bawaan 10; `halaman` melebihi jumlah halaman → halaman terakhir). Respons `{total, halaman, per_halaman, data: BarisUsulan[]}` |
 | POST | `/usulan` | Pengusul | multipart: `program, kegiatan, kro, ro` (kode per tingkat dari `/usulan/opsi/pengajuan`), `kategori_id` (kategori Aktif), `tahun_anggaran` (pilihan di bilah atas; tahun berjalan ±2), `tor` dan `rab` (PDF, **keduanya wajib**), `ajukan(bool)`. 400 bila tahun di luar rentang, hierarki/kategori tidak valid, atau TOR/RAB kosong |
-| GET | `/usulan/opsi/pengajuan` | login | `{hierarki: Program[{kode, nama, kegiatan[{…, kro[{…, ro[]}]}]}], kategori: [{id, kode, nama, deskripsi}]}` (kategori Aktif) |
+| GET | `/usulan/opsi/pengajuan` | Pengusul, Reviewer | `{hierarki: Program[{kode, nama, kegiatan[{…, kro[{…, ro[]}]}]}], kategori: [{id, kode, nama, deskripsi}]}` (kategori Aktif) |
 | GET | `/usulan/{id}` | login + Satker | Satu `BarisUsulan` |
 | PUT | `/usulan/{id}/draf` | Pengusul Satker | multipart `tor` dan/atau `rab`, `ajukan`; hanya status DRAF/GAGAL. Hierarki & kategori tidak dapat diubah (salah input → hapus lalu ajukan ulang) |
 | POST | `/usulan/{id}/revisi` | Pengusul Satker | multipart `tor` dan/atau `rab`, `ajukan`; hanya setelah TIDAK LOLOS |
 | POST | `/usulan/{id}/ajukan` | Pengusul Satker | Ajukan review revisi terbaru (DRAF atau ulang setelah GAGAL) |
 | DELETE | `/usulan/{id}` | Reviewer | Hapus **permanen** dari database (status apa pun selain antre/diproses AI): revisi, review, hasil AI, rujukan, override, catatan, salinan acuan, job, serta file PDF TOR/RAB beserta hasil ekstraksinya bila tidak dipakai usulan/panduan lain. 403 bukan Reviewer (termasuk Admin & Pengusul); 409 saat antre/diproses AI |
 | PUT | `/usulan/{id}` | Reviewer | multipart `program, kegiatan, kro, ro, kategori_id`, `tor`?, `rab`? — betulkan hierarki anggaran & kategori; TOR/RAB pengganti dipasang di revisi terakhir yang sama (tanpa revisi baru) lalu langsung diajukan review AI ulang (review lama tetap tersimpan). 400 pilihan tidak valid / bukan PDF; 409 dokumen diganti saat masih antre/diproses AI |
-| POST | `/usulan/{id}/arsip` | Pengusul Satker / Admin | `{arsip: bool}` |
 | GET | `/usulan/{id}/riwayat` | login + Satker | `{usulan, revisi[] (+review[])}` untuk Detail Usulan (Histori Dokumen) |
-| GET | `/usulan/opsi/filter` | login | Pilihan dropdown filter |
+| GET | `/usulan/opsi/filter` | Pengusul, Reviewer | Pilihan dropdown filter |
 
 `BarisUsulan` berisi:
 
@@ -78,43 +78,59 @@ Setiap `rujukan` berisi `{peran (bukti_dokumen|dasar_panduan), dokumen (TOR|RAB|
 
 | Metode | Path | Role | Keterangan |
 | --- | --- | --- | --- |
-| GET | `/checklist` | login | Isi terbaru `{item: [{id, urutan, kode, judul, kriteria, berlaku_untuk, aktif, diubah_oleh, diubah_at}]}` |
-| POST | `/checklist/item` | Admin | Tambah item `{kode, judul, kriteria, berlaku_untuk: TOR\|RAB\|TOR & RAB, aktif?}` (disimpan ke kolom `checklist`). `kode` wajib, maks. 50 karakter, dijadikan kapital, unik → 400 bila bentrok; `judul` maks. 500 karakter |
-| PUT | `/checklist/item/{id}` | Admin | Ubah item (isian sama, kode boleh diganti). Isi baru dicatat ke `checklist_histori` (terhubung lewat `checklist_id`). 400 bila tidak ada item aktif tersisa; 404 item tidak ada |
-| DELETE | `/checklist/item/{id}` | Admin | Hapus item beserta riwayatnya secara permanen (ikut hilang dari tampilan review lama) |
-| PUT | `/checklist/urutan` | Admin | Atur urutan `{id: [semua id item sesuai urutan baru]}` → `no_urut` 1..n (tidak membuat riwayat). 400 bila daftar tidak memuat tepat semua item |
-| GET | `/checklist/item/{id}/riwayat` | login | Semua versi item dari `checklist_histori`, terbaru dulu (baris pertama = isi saat ini; format sama dengan item `/checklist`) |
-| GET | `/kategori` | Admin | Isi terbaru `{item: [{id, kode, nama, definisi, aktif, diubah_oleh, diubah_at}]}`, urut `no_urut` yang diatur Admin |
-| POST | `/kategori` | Admin | Tambah `{kode, nama, definisi, aktif?}` (bawaan Aktif), ditaruh setelah kategori berkode sebelumnya. `kode` wajib, maks. 20 karakter, dijadikan kapital, unik → 400 bila bentrok; `nama` maks. 255 karakter |
-| PUT | `/kategori/urutan` | Admin | Atur urutan `{id: [semua id kategori sesuai urutan baru]}` → `no_urut` 1..n (tidak membuat riwayat). 400 bila daftar tidak memuat tepat semua kategori |
-| PUT | `/kategori/{id}` | Admin | Ubah kategori (isian sama, kode boleh diganti). Isi **sebelum** diubah disalin ke `kategori_histori`; tanpa perubahan = tidak menambah riwayat. 400 bila menonaktifkan kategori Aktif terakhir; 404 kategori tidak ada |
-| DELETE | `/kategori/{id}` | Admin | Hapus kategori beserta riwayatnya secara permanen; review lama tidak berubah (salinan di `review_kategori`). 400 bila tidak ada kategori Aktif tersisa |
-| GET | `/kategori/{id}/riwayat` | Admin | Versi sebelum tiap perubahan dari `kategori_histori`, terbaru dulu (isi saat ini tidak termasuk; kosong bila belum pernah diubah) |
+| GET | `/checklist` | Reviewer, Pengusul | Isi terbaru `{item: [{id, urutan, kode, judul, kriteria, berlaku_untuk, aktif, diubah_oleh, diubah_at}]}` |
+| POST | `/checklist/item` | Reviewer | Tambah item `{kode, judul, kriteria, berlaku_untuk: TOR\|RAB\|TOR & RAB, aktif?}` (disimpan ke kolom `checklist`). `kode` wajib, maks. 50 karakter, dijadikan kapital, unik → 400 bila bentrok; `judul` maks. 500 karakter |
+| PUT | `/checklist/item/{id}` | Reviewer | Ubah item (isian sama, kode boleh diganti). Isi baru dicatat ke `checklist_histori` (terhubung lewat `checklist_id`). 400 bila tidak ada item aktif tersisa; 404 item tidak ada |
+| DELETE | `/checklist/item/{id}` | Reviewer | Hapus item beserta riwayatnya secara permanen (ikut hilang dari tampilan review lama) |
+| PUT | `/checklist/urutan` | Reviewer | Atur urutan `{id: [semua id item sesuai urutan baru]}` → `no_urut` 1..n (tidak membuat riwayat). 400 bila daftar tidak memuat tepat semua item |
+| GET | `/checklist/item/{id}/riwayat` | Reviewer, Pengusul | Semua versi item dari `checklist_histori`, terbaru dulu (baris pertama = isi saat ini; format sama dengan item `/checklist`) |
+| GET | `/kategori` | Reviewer, Pengusul (lihat saja) | Isi terbaru `{item: [{id, kode, nama, definisi, aktif, diubah_oleh, diubah_at}]}`, urut `no_urut` yang diatur Reviewer |
+| POST | `/kategori` | Reviewer | Tambah `{kode, nama, definisi, aktif?}` (bawaan Aktif), ditaruh setelah kategori berkode sebelumnya. `kode` wajib, maks. 20 karakter, dijadikan kapital, unik → 400 bila bentrok; `nama` maks. 255 karakter |
+| PUT | `/kategori/urutan` | Reviewer | Atur urutan `{id: [semua id kategori sesuai urutan baru]}` → `no_urut` 1..n (tidak membuat riwayat). 400 bila daftar tidak memuat tepat semua kategori |
+| PUT | `/kategori/{id}` | Reviewer | Ubah kategori (isian sama, kode boleh diganti). Isi **sebelum** diubah disalin ke `kategori_histori`; tanpa perubahan = tidak menambah riwayat. 400 bila menonaktifkan kategori Aktif terakhir; 404 kategori tidak ada |
+| DELETE | `/kategori/{id}` | Reviewer | Hapus kategori beserta riwayatnya secara permanen; review lama tidak berubah (salinan di `review_kategori`). 400 bila tidak ada kategori Aktif tersisa |
+| GET | `/kategori/{id}/riwayat` | Reviewer, Pengusul (lihat saja) | Versi sebelum tiap perubahan dari `kategori_histori`, terbaru dulu (isi saat ini tidak termasuk; kosong bila belum pernah diubah) |
 
 ## Panduan (Modul D)
 
 | Metode | Path | Role | Keterangan |
 | --- | --- | --- | --- |
-| GET | `/panduan` | login | Daftar panduan yang tidak dihapus + versi + `status_proses` (BELUM/DIPROSES/SIAP/GAGAL) |
-| POST | `/panduan` | Admin | multipart `file, judul, deskripsi?, aktif?` (default `true`) |
-| PUT | `/panduan/{id}` | Admin | multipart `judul, deskripsi?, aktif?`. Ubah nama/deskripsi/status → versi panduan baru; file tidak dapat diganti (unggah panduan baru) (status dicatat per versi) (Nonaktif = tidak dipakai review berikutnya). Tanpa perubahan = tidak membuat versi |
-| DELETE | `/panduan/{id}` | Admin | Hapus **permanen**: panduan, semua versi, dan file + ekstraksinya (bila tidak dipakai data lain). Review lama kehilangan catatan & rujukan panduan ini. 409 bila dipakai review yang berjalan / file sedang diproses |
-| POST | `/panduan/{id}/proses-ulang` | Admin | Ulangi pemrosesan yang GAGAL |
+| GET | `/panduan` | Reviewer, Pengusul | Daftar panduan yang tidak dihapus + versi + `status_proses` (BELUM/DIPROSES/SIAP/GAGAL), urut `urutan` (no_urut) |
+| PUT | `/panduan/urutan` | Reviewer | `{id: [semua id panduan sesuai urutan baru]}`. Hanya urutan yang berubah (tanpa versi baru, Diinput Oleh/Tanggal Input tetap). Panduan baru ditaruh di akhir; setelah hapus, urutan dirapatkan. 400 bila daftar tidak memuat tepat semua panduan |
+| POST | `/panduan` | Reviewer | multipart `file, judul, deskripsi?, aktif?` (default `true`) |
+| PUT | `/panduan/{id}` | Reviewer | multipart `judul, deskripsi?, aktif?`. Ubah nama/deskripsi/status → versi panduan baru; file tidak dapat diganti (unggah panduan baru) (status dicatat per versi) (Nonaktif = tidak dipakai review berikutnya). Tanpa perubahan = tidak membuat versi |
+| DELETE | `/panduan/{id}` | Reviewer | Hapus **permanen**: panduan, semua versi, dan file + ekstraksinya (bila tidak dipakai data lain). Review lama kehilangan catatan & rujukan panduan ini. 409 bila dipakai review yang berjalan / file sedang diproses |
+| POST | `/panduan/{id}/proses-ulang` | Reviewer | Ulangi pemrosesan yang GAGAL |
+
+## Master RO
+
+Data berjenjang Program → Kegiatan → KRO → RO. Di database berupa satu tabel datar `master_ro` seperti `satker` (`kode_program, program, kode_kegiatan, kegiatan, kode_kro, kro, kode_ro, ro, aktif`); API menyajikannya per data (`tingkat` = jenjang terdalam yang terisi, `induk_id` = id baris induk). Khusus **Reviewer** (403 untuk role lain).
+
+| Metode | Path | Role | Keterangan |
+| --- | --- | --- | --- |
+| GET | `/master-ro` | Reviewer | Semua baris `[{id, tingkat (PROGRAM\|KEGIATAN\|KRO\|RO), kode, kode_lengkap, nama, aktif, kode_program, program, kode_kegiatan, kegiatan, kode_kro, kro, kode_ro, ro, induk_id, induk{kode, nama}, jumlah_turunan, dibuat_oleh, dibuat_at, diubah_oleh, diubah_at}]` (`kode_program` … `ro` = kolom datar tabel, kosong untuk jenjang di bawah data itu; `kode_lengkap` = kode Program sampai baris itu dipisah titik, mis. `WA.1234.EBA.994`), urut data yang paling baru ditambahkan (`dibuat_at`) paling atas; data yang dibuat bersamaan (seed/satu kali impor) urut berjenjang: Program diikuti Kegiatan-nya, lalu KRO, lalu RO |
+| POST | `/master-ro` | Reviewer | `{tingkat, induk_id?, kode, nama, aktif?}`. `induk_id` wajib kecuali Program dan harus tingkat tepat di atasnya serta Aktif. `kode` wajib, teks bebas maks. 50 karakter (disimpan apa adanya, tanpa batasan huruf/angka), unik di antara saudara (tingkat + induk sama); `nama` wajib, maks. 255 karakter; nama Program diawali "Program"; nama RO unik dalam satu KRO (tanpa membedakan huruf besar/kecil). 400 bila tidak valid / bentrok |
+| GET | `/master-ro/referensi-kro` | Reviewer | Daftar KRO Lampiran II SEB No. 6/2025 untuk saran di form: `[{kode, nama, satuan, pn}]` (kode PN menjadi baris sendiri, `pn=true`), urut kode |
+| POST | `/master-ro/impor` | Reviewer | Multipart `file` (.xlsx, maks. 5 MB, maks. 5000 baris data; file dibaca bertahap dan hanya sampai baris ke-50.000 termasuk baris kosong serta 100 kolom pertama, agar file terkompresi berisi jutaan baris tidak menghabiskan memori server). Lembar pertama; baris pertama yang tidak kosong = judul kolom `kode_program, program, kode_kegiatan, kegiatan, kode_kro, kro, kode_ro, ro` (urutan bebas). Tiap baris = satu data beserta induknya; jenjang yang belum ada dibuat (Aktif, aturan sama dengan POST `/master-ro`), yang sudah ada dipakai (nama harus sama). Isi sel disimpan apa adanya (kode teks bebas; sel angka `1` tersimpan `1`, jadi kode seperti `001` ditulis sebagai teks di Excel). Semua-atau-tidak: ada baris salah → 400 berisi daftar kesalahan per nomor baris Excel, tidak ada yang tersimpan. Output `{baris, dibuat: {PROGRAM, KEGIATAN, KRO, RO}, total_dibuat, sudah_ada}`. 400 file bukan .xlsx / kolom kurang / tanpa data; 409 data berubah bersamaan; 413 file terlalu besar |
+| PUT | `/master-ro/{id}` | Reviewer | Isian sama; `tingkat` tidak dapat diubah (400). Perubahan kode/nama/induk ikut diterapkan ke semua baris turunannya. Induk Nonaktif yang sudah dipakai boleh dipertahankan. Tanpa perubahan = jejak tidak berubah. 404 bila tidak ada |
+| DELETE | `/master-ro/{id}` | Reviewer | Hapus permanen. 409 bila masih punya turunan; 404 bila tidak ada |
+
+Setiap tambah/ubah/hapus tercatat di audit log (`MASTER_RO_TAMBAH`, `MASTER_RO_UBAH`, `MASTER_RO_HAPUS`).
 
 ## File, Dashboard, Administrasi
 
 | Metode | Path | Role | Keterangan |
 | --- | --- | --- | --- |
-| GET | `/file/{file_id}` | login + hak | PDF inline. Panduan: semua pengguna. TOR/RAB: sesuai hak usulan. 404 bila tidak berhak |
+| GET | `/file/{file_id}` | login + hak | PDF inline. Panduan: Reviewer & Pengusul (sama dengan `GET /panduan`; Admin 404). TOR/RAB: sesuai hak usulan. 404 bila tidak berhak |
 | GET | `/internal/file/{sha}` | token node | `Authorization: Bearer <token node>`; untuk node AI jarak jauh |
-| GET | `/dashboard` | login | `per_status, per_kategori, per_satker, perlu_tindakan[]`, + `antrean` untuk Admin |
+| GET | `/dashboard` | Pengusul, Reviewer | `per_status, per_kategori, per_satker, perlu_tindakan[]`, + `antrean` bila pengguna juga ber-role Admin |
 | GET/POST | `/pengguna` | Admin | `{username, roles[], satker_id?, aktif, password}` (tanpa nama; nama tampilan = username) |
 | PUT | `/pengguna/{id}` | Admin | Ubah; `password` diisi = reset (sesi dicabut) |
 | DELETE | `/pengguna/{id}` | Admin | Hapus permanen. 400 untuk akun sendiri; 409 bila sudah punya riwayat (usulan, review, audit log, …) — nonaktifkan saja |
-| GET | `/satker` | Admin | Daftar Satker (+ jejak dibuat/diubah) |
-| GET | `/satker/referensi` | Admin | Daftar resmi UKE I/UKE II dari dokumen "Data Satker dan Unit Kerja" `{kode_uke1, unit_kerja, kode_uke2, nama}[]` — sumber pilihan form Satker |
-| POST/PUT | `/satker`, `/satker/{id}` | Admin | `{kode_uke1?, unit_kerja? (UKE I / Eselon I), kode_uke2?, nama? (UKE II / Eselon II), aktif}` — semua opsional, kosong disimpan `""`. `kode_uke1` = `NN`, `kode_uke2` = `NN.NN` diawali `kode_uke1` (400 bila salah); `aktif=false` = nonaktifkan (tidak bisa dipilih pengguna). 409 bila `kode_uke2`/`kode_uke1` sudah dipakai, atau Unit Kerja sudah ada. Respons + `dibuat_oleh, dibuat_at, diubah_oleh, diubah_at`. 400 isian terlalu panjang; 409 Satuan Kerja sama dalam satu Unit Kerja |
-| DELETE | `/satker/{id}` | Admin | Hapus permanen. 409 bila masih dipakai pengguna atau usulan |
+| GET | `/satker` | Reviewer, Admin | Daftar Satker (+ jejak dibuat/diubah). Admin memakainya untuk memilih Satker di form Pengguna |
+| GET | `/satker/referensi` | Reviewer | Daftar resmi UKE I/UKE II dari dokumen "Data Satker dan Unit Kerja" `{kode_uke1, unit_kerja, kode_uke2, nama}[]` — sumber pilihan form Satker |
+| POST/PUT | `/satker`, `/satker/{id}` | Reviewer | `{kode_uke1?, unit_kerja? (UKE I / Eselon I), kode_uke2?, nama? (UKE II / Eselon II), aktif}` — semua opsional, kosong disimpan `""`. `kode_uke1` = `NN`, `kode_uke2` = `NN.NN` diawali `kode_uke1` (400 bila salah); `aktif=false` = nonaktifkan (tidak bisa dipilih pengguna). 409 bila `kode_uke2`/`kode_uke1` sudah dipakai, atau Unit Kerja sudah ada. Respons + `dibuat_oleh, dibuat_at, diubah_oleh, diubah_at`. 400 isian terlalu panjang; 409 Satuan Kerja sama dalam satu Unit Kerja |
+| DELETE | `/satker/{id}` | Reviewer | Hapus permanen. 409 bila masih dipakai pengguna atau usulan |
 | GET/POST | `/node-ai` | Admin | POST `{nama}` → `{token}` (sekali tampil) |
 | POST | `/node-ai/{id}/cabut` | Admin | Cabut akses node |
 | GET | `/audit` | Admin | Filter `pengguna_id, aksi, entitas, dari, sampai, halaman` |

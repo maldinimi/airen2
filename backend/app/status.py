@@ -28,7 +28,7 @@ NAMA_STATUS = {
 
 
 def ajukan_ulang_oleh_reviewer(revisi) -> None:
-    """Reviewer mengganti dokumen revisi terakhir lewat Edit Usulan (desain.md §7 no. 36): revisi yang SAMA kembali ke DRAF
+    """Reviewer mengganti dokumen revisi terakhir lewat Edit Usulan (desain.md §7 no. 43): revisi yang SAMA kembali ke DRAF
     lalu diajukan ulang (review baru; review lama tetap tersimpan), sehingga tidak menambah baris Histori Dokumen. Di luar
     tabel TRANSISI karena hanya jalur khusus Reviewer ini yang boleh membuka kembali revisi yang sudah direview.
 

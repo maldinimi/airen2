@@ -31,7 +31,10 @@ export default function Unggah({ label, file, ubah, banyak, keterangan, lihat, g
 
   return (
     <div className="space-y-1.5">
-      <span className="text-sm font-medium text-slate-700">{label}</span>
+      {/* Label berakhiran " *" = wajib: bintang merah, sama dengan <Kolom wajib> di form lain. */}
+      <span className="text-sm font-medium text-slate-700">
+        {label.endsWith(" *") ? <>{label.slice(0, -2)}<span className="text-red-600"> *</span></> : label}
+      </span>
       {/* File terpilih tampil di dalam kotak, menggantikan ajakan "Seret PDF". Kotak tetap menerima seret-lepas untuk mengganti file. */}
       <div onDragOver={(e) => { e.preventDefault(); setSeret(true); }} onDragLeave={() => setSeret(false)} onDrop={lepas}
         className={cx("rounded-xl border-2 border-dashed text-sm transition-colors",

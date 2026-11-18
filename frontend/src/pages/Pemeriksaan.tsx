@@ -1,4 +1,4 @@
-/** Pemeriksaan revisi (`/review/:id`, desain.md §7 no. 29, 31–33).
+/** Pemeriksaan revisi (`/review/:id`, desain.md §7 no. 36, 38–40).
  *  - Label: AI (Lolos/Ditolak), Verifikator (Lolos/Ditolak), Jumlah Checklist (lolos menurut verifikator / total).
  *  - Checklist (tabel di layar lebar, kartu di layar kecil): hasil AI (alasan + bukti & rujukan yang dapat diklik ke PDF),
  *    Rujukan Checklist (Nama Acuan panduan), rekomendasi AI, Status & Catatan Verifikator.
