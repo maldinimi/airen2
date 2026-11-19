@@ -1,29 +1,54 @@
-/** Pemeriksaan revisi (`/review/:id`, desain.md §7 no. 36, 38–40).
- *  - Label: AI (Lolos/Ditolak), Verifikator (Lolos/Ditolak), Jumlah Checklist (lolos menurut verifikator / total).
- *  - Checklist (tabel di layar lebar, kartu di layar kecil): hasil AI (alasan + bukti & rujukan yang dapat diklik ke PDF),
- *    Rujukan Checklist (Nama Acuan panduan), rekomendasi AI, Status & Catatan Verifikator.
+/** Pemeriksaan revisi (`/review/:id`, desain.md §7 no. 36, 38–40, 51).
+ *  - Di bawah judul: Status revisi. Kanan atas: kartu AI (Lolos/Ditolak) & Verifikator (Lolos/Ditolak).
+ *  - Checklist (tabel di layar lebar, kartu di layar kecil; berhalaman, bawaan 5 baris): hasil AI (alasan + bukti & rujukan
+ *    yang dapat diklik ke PDF), Rujukan Checklist (Nama Acuan panduan), rekomendasi AI, Status & Catatan Verifikator.
+ *    Gulir atas/bawah = gulir halaman; tabel bergulir kiri/kanan dengan bilah geser yang menempel di bawah layar;
+ *    baris judul dan 3 kolom pertama dibekukan.
  *  - Pengusul melihat hasil AI segera; penilaian verifikator & Keputusan Akhir setelah final (backend tidak mengirimnya
- *    sebelum itu). Tombol "Unggah Revisi" di bawah bila revisi terbaru Tidak Lolos.
+ *    sebelum itu). Tombol "Unggah Perbaikan" di bawah bila revisi terbaru Tidak Lolos.
  *  - Reviewer: status per item bawaan = nilai AI (atau draf tersimpan), catatan per item, Keputusan Akhir. Semua penilaian
  *    hanya ada di halaman sampai "Simpan Sebagai Draf"/"Finalkan Keputusan" — muat ulang halaman kembali ke draf terakhir. */
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, CircleCheck, CircleX, Lock, Save, Upload } from "lucide-react";
-import { type ReactNode, useState } from "react";
+import { ArrowLeft, Bot, CircleCheck, CircleX, Lock, Save, Upload, UserCheck } from "lucide-react";
+import { type ReactNode, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api } from "../api";
+import { TabelGeser } from "../components/TabelData";
 import { InfoProses } from "../components/Usulan";
-import { waktu } from "../format";
+import { namaRevisi, waktu } from "../format";
 import type { DetailReview, ItemReview, Rujukan } from "../types";
-import { AreaTeks, Judul, Kartu, KonfirmasiYakin, Lencana, LencanaStatus, Memuat, Peringatan, Pilih, Tombol, cx } from "../ui";
+import { AreaTeks, Halaman, Judul, Kartu, KonfirmasiYakin, Lencana, LencanaStatus, Memuat, Peringatan, Pilih, Tombol, cx } from "../ui";
 
 const LOLOS = "TERPENUHI", TIDAK = "TIDAK_TERPENUHI";
 type Penilaian = Record<string, { lolos: boolean; catatan: string }>;
 // Status Verifikator tersimpan = override ITEM aktif (boleh sama dengan nilai AI); belum ada = null.
 const statusTersimpan = (i: ItemReview) => (i.override ? i.override.nilai_sesudah === LOLOS : null);
+// `dari=pengajuan`: PDF dibuka dari menu Pengajuan, jadi ganti Tahun Anggaran kembali ke daftar Pengajuan (components/Layout.tsx).
 const urlPdf = (fileId: string, judul: string, hlm?: number, bbox?: number[] | null) =>
-  `/pdf/${fileId}?${new URLSearchParams({ judul, ...(hlm ? { hlm: String(hlm) } : {}), ...(bbox ? { bbox: bbox.join(",") } : {}) })}`;
-const Pil = ({ kelas, children }: { kelas: string; children: ReactNode }) =>
-  <span className={cx("inline-flex items-center rounded-full px-3.5 py-1 text-sm font-semibold ring-1 ring-inset", kelas)}>{children}</span>;
+  `/pdf/${fileId}?${new URLSearchParams({ judul, ...(hlm ? { hlm: String(hlm) } : {}), ...(bbox ? { bbox: bbox.join(",") } : {}), dari: "pengajuan" })}`;
+/** Kartu ringkasan kanan atas: ikon, judul, angka, dan bilah proporsi Lolos (hijau) / Ditolak (merah) dari total item.
+ *  Tanpa `lolos` = belum ada penilaian ("Menunggu verifikasi"). */
+function Ringkas({ ikon, warna, judul, total, lolos, tolak = 0 }: {
+  ikon: ReactNode; warna: string; judul: string; total: number; lolos?: number; tolak?: number;
+}) {
+  const persen = (n: number) => `${total ? (n / total) * 100 : 0}%`;
+  return (
+    <div className="flex min-w-44 items-center gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2 shadow-sm">
+      <span className={cx("grid size-9 shrink-0 place-items-center rounded-lg", warna)} aria-hidden>{ikon}</span>
+      <div className="min-w-0 flex-1">
+        <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{judul}</div>
+        <div className="whitespace-nowrap text-sm font-medium text-slate-600">
+          {lolos === undefined ? <span className="italic text-slate-400">Menunggu verifikasi</span>
+            : <><b className="text-base text-emerald-600">{lolos}</b> Lolos <span className="text-slate-300">·</span> <b className="text-base text-red-600">{tolak}</b> Ditolak</>}
+        </div>
+        <div className="mt-1 flex h-1.5 overflow-hidden rounded-full bg-slate-100" aria-hidden>
+          {lolos !== undefined && <><div className="bg-emerald-500" style={{ width: persen(lolos) }} />
+            <div className="bg-red-400" style={{ width: persen(tolak) }} /></>}
+        </div>
+      </div>
+    </div>
+  );
+}
 const LencanaItem = ({ lolos }: { lolos: boolean | null }) => lolos === null
   ? <span className="text-slate-400">—</span> : lolos
     ? <Lencana className="bg-emerald-50 text-emerald-700 ring-emerald-300">Lolos</Lencana>
@@ -73,6 +98,19 @@ function Isi({ r, simpan }: { r: DetailReview; simpan: (d: DetailReview) => void
   const hitung = (f: (i: ItemReview) => boolean | null, nilai: boolean) => item.filter((i) => f(i) === nilai).length;
   const vLolos = hitung(statusV, true), vTolak = hitung(statusV, false);
   const catatanAkhir = r.catatan?.find((c) => c.dokumen === "UMUM");
+  // Paging di browser: semua item sudah dimuat & penilaian disimpan per item, jadi pindah halaman tidak menghapus isian.
+  const [hal, setHal] = useState(1);
+  const [per, setPer] = useState(5);
+  const awal = (hal - 1) * per;
+  const tampil = item.slice(awal, awal + per);
+  // Pindah halaman tabel: bila awal tabel sudah tergulir lewat (di balik header 64px), layar kembali ke baris pertama halaman
+  // baru agar dibaca dari atas (desain.md §7 no. 69). Bila awal tabel masih terlihat, layar tidak digeser.
+  const awalTabel = useRef<HTMLDivElement>(null);
+  const keHalaman = (h: number) => {
+    setHal(h);
+    const el = awalTabel.current;
+    if (el && el.getBoundingClientRect().top < 64) el.scrollIntoView({ block: "start" });
+  };
 
   const selStatus = (i: ItemReview) => {
     if (menilai) return <SaklarVerifikator v={penilaian[i.id]?.lolos ?? i.ai_terpenuhi} ai={i.ai_terpenuhi} kode={i.kode} ubah={(b) => ubahItem(i.id, { lolos: b })} />;
@@ -85,19 +123,39 @@ function Isi({ r, simpan }: { r: DetailReview; simpan: (d: DetailReview) => void
         onChange={(e) => ubahItem(i.id, { catatan: e.target.value })} />
     : <span className="whitespace-pre-line text-slate-700">{catatanV(i) || <span className="text-slate-400">—</span>}</span>;
 
-  const kolom: [string, string?][] = [["No"], ["Kode Checklist"], ["Checklist"], ["Kriteria Lolos"], ["Status AI"], ["Catatan AI"],
-    ["Rujukan Checklist"], ["Rekomendasi AI"], ["Status Verifikator", menilai ? "(bisa diubah)" : undefined],
-    ["Catatan Verifikator", menilai ? "(bisa diubah)" : undefined]];
-  const td = "px-3 py-2.5 align-top";
+  // [judul, keterangan, lebar (th), kelas sel]. `w-px` = kolom menyusut selebar isinya (desain.md §7 no. 55); teks panjang
+  // di kolom itu dibatasi lewat pembungkus `Pas`. Checklist, Kriteria Lolos, Catatan AI & Catatan Verifikator lebarnya tetap.
+  const kolom: [string, string | undefined, string, string?][] = [
+    ["No", undefined, "w-px", "whitespace-nowrap text-center"], ["Kode", undefined, "w-px", "text-center"],
+    ["Checklist", undefined, "w-52", "wrap-anywhere"], ["Kriteria Lolos", undefined, "w-56"],
+    ["Status AI", undefined, "w-px", "whitespace-nowrap text-center"], ["Catatan AI", undefined, "w-80"],
+    ["Rujukan Checklist", undefined, "w-px"], ["Rekomendasi AI", undefined, "w-px"],
+    ["Status Verifikator", menilai ? "(bisa diubah)" : undefined, "w-px", "whitespace-nowrap text-center"],
+    ["Catatan Verifikator", menilai ? "(bisa diubah)" : undefined, "w-56"]];
+  const td = (k: number, lain?: string) => cx("px-3 py-2.5 align-top", kolom[k][3], lain);
 
   return (
     <div className="w-full space-y-4">
       <div>
         <Link to={`/usulan/${r.usulan.id}`} className="mb-3 inline-flex items-center gap-1 text-sm text-slate-500 hover:text-slate-800">
-          <ArrowLeft className="size-4" />Detail Usulan</Link>
-        <Judul judul={`Pemeriksaan Revisi ${r.revisi.nomor}`}
-          sub={`${r.usulan.kode_ro} — ${r.usulan.nama_ro}`} />
-        <div className="flex items-center gap-2 text-sm text-slate-600">Status: <LencanaStatus status={r.revisi.status} /></div>
+          <ArrowLeft className="size-4" />Detail Pengajuan</Link>
+        {/* Kiri: judul, kode & nama RO, lalu Status. Kanan atas: kartu AI & Verifikator, selalu sejajar judul di ukuran
+            layar apa pun (tidak turun ke baris baru): judul yang mengecil dan patah baris, kartu paling lebar 60% dan boleh
+            bersusun. */}
+        <div className="flex items-start justify-between gap-4">
+          <div className="min-w-0 flex-1">
+            <Judul judul={`Pemeriksaan ${namaRevisi(r.revisi.nomor)}`} sub={<>{r.usulan.kode_ro} — {r.usulan.nama_ro}
+              <span className="mt-2 flex items-center gap-2 text-slate-600">Status: <LencanaStatus status={r.revisi.status} /></span></>} />
+          </div>
+          {ada && (
+            <div className="flex max-w-[60%] shrink-0 flex-wrap justify-end gap-2">
+              <Ringkas ikon={<Bot className="size-4" />} warna="bg-indigo-50 text-indigo-600" judul="AI" total={item.length}
+                lolos={hitung((i) => i.ai_terpenuhi, true)} tolak={hitung((i) => i.ai_terpenuhi, false)} />
+              <Ringkas ikon={<UserCheck className="size-4" />} warna="bg-cyan-50 text-cyan-700" judul="Verifikator" total={item.length}
+                {...(lihatVerifikator ? { lolos: vLolos, tolak: vTolak } : {})} />
+            </div>
+          )}
+        </div>
       </div>
 
       {!ada && (
@@ -107,21 +165,13 @@ function Isi({ r, simpan }: { r: DetailReview; simpan: (d: DetailReview) => void
         </Kartu>
       )}
 
-      {ada && (
-        <div className="flex flex-wrap items-center gap-2">
-          <Pil kelas="bg-indigo-50 text-indigo-800 ring-indigo-200">AI: {hitung((i) => i.ai_terpenuhi, true)} Lolos / {hitung((i) => i.ai_terpenuhi, false)} Ditolak</Pil>
-          <Pil kelas="bg-cyan-50 text-cyan-800 ring-cyan-200">Verifikator: {lihatVerifikator ? `${vLolos} Lolos / ${vTolak} Ditolak` : "Menunggu verifikasi"}</Pil>
-          {lihatVerifikator && <Pil kelas="bg-slate-100 text-slate-700 ring-slate-300">Jumlah Checklist: {vLolos} / {item.length}</Pil>}
-        </div>
-      )}
-
       {item.length === 0 ? <Kartu className="px-3 py-8 text-center text-sm text-slate-500">Belum ada hasil.</Kartu> : (
-        <>
+        <div ref={awalTabel} className="scroll-mt-20">
           {/* Layar kecil: kartu per item. */}
-          <div className="space-y-3 lg:hidden">{item.map((i, n) => (
+          <div className="space-y-3 lg:hidden">{tampil.map((i, n) => (
             <Kartu key={i.id} className="space-y-3 p-4 text-sm">
               <div className="flex items-start justify-between gap-2">
-                <div className="min-w-0"><span className="text-slate-500">{n + 1}. </span><span className="font-semibold text-slate-900">{i.kode}</span> — {i.judul}</div>
+                <div className="min-w-0"><span className="text-slate-500">{awal + n + 1}. </span><span className="font-semibold text-slate-900">{i.kode}</span> — {i.judul}</div>
                 <LencanaItem lolos={i.ai_terpenuhi} />
               </div>
               <Bidang label="Kriteria Lolos"><p className="whitespace-pre-line text-slate-600">{i.kriteria}</p></Bidang>
@@ -132,31 +182,36 @@ function Isi({ r, simpan }: { r: DetailReview; simpan: (d: DetailReview) => void
               <Bidang label="Catatan Verifikator">{selCatatan(i)}</Bidang>
             </Kartu>
           ))}</div>
-          {/* Layar lebar: tabel. */}
-          <Kartu className="hidden overflow-x-auto lg:block">
-            <table className="w-full min-w-[90rem] text-sm">
-              <thead className="bg-slate-100 text-xs font-semibold text-slate-700">
-                <tr>{kolom.map(([h, sub]) => (
-                  <th key={h} scope="col" className="whitespace-nowrap px-3 py-2.5 text-center">{h}
-                    {sub && <span className="block text-[10px] font-medium normal-case text-utama-600">{sub}</span>}</th>))}</tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">{item.map((i, n) => (
-                <tr key={i.id} className="hover:bg-slate-50/60">
-                  <td className={cx(td, "text-center text-slate-500")}>{n + 1}</td>
-                  <td className={cx(td, "whitespace-nowrap text-center font-medium text-slate-900")}>{i.kode}</td>
-                  <td className={cx(td, "min-w-40 text-slate-900")}>{i.judul}</td>
-                  <td className={cx(td, "min-w-56 whitespace-pre-line text-slate-600")}>{i.kriteria}</td>
-                  <td className={cx(td, "text-center")}><LencanaItem lolos={i.ai_terpenuhi} /></td>
-                  <td className={cx(td, "min-w-72")}><CatatanAI i={i} /></td>
-                  <td className={cx(td, "min-w-44")}><RujukanChecklist i={i} /></td>
-                  <td className={cx(td, "min-w-56 text-slate-700")}><RekomendasiAI daftar={rekItem(i)} /></td>
-                  <td className={cx(td, "min-w-48 text-center")}>{selStatus(i)}</td>
-                  <td className={cx(td, "min-w-64")}>{selCatatan(i)}</td>
-                </tr>
-              ))}</tbody>
-            </table>
+          {/* Layar lebar: gulir atas/bawah = gulir halaman; judul kolom, 3 kolom pertama, dan bilah geser dibekukan oleh
+              TabelGeser. Lebar tabel = jumlah lebar kolom (w-max), minimal selebar kartu. Judul kolom boleh patah baris agar
+              kolom yang menyusut tidak dilebarkan oleh judulnya. */}
+          <Kartu className="hidden lg:block">
+            <TabelGeser beku={3}>
+              <table className="w-max min-w-full text-sm">
+                <thead className="bg-slate-100 text-xs font-semibold text-slate-700">
+                  <tr>{kolom.map(([h, sub, lebar]) => (
+                    <th key={h} scope="col" className={cx("px-3 py-2.5 text-center", lebar)}>{h}
+                      {sub && <span className="block text-[10px] font-medium normal-case text-utama-600">{sub}</span>}</th>))}</tr>
+                </thead>
+                <tbody>{tampil.map((i, n) => (
+                  <tr key={i.id} className="hover:bg-slate-50">
+                    <td className={td(0, "text-slate-500")}>{awal + n + 1}</td>
+                    <td className={td(1, "font-medium text-slate-900")}><Pas maks="max-w-32 wrap-anywhere">{i.kode}</Pas></td>
+                    <td className={td(2, "text-slate-900")}>{i.judul}</td>
+                    <td className={td(3, "whitespace-pre-line text-slate-600")}>{i.kriteria}</td>
+                    <td className={td(4)}><LencanaItem lolos={i.ai_terpenuhi} /></td>
+                    <td className={td(5)}><CatatanAI i={i} /></td>
+                    <td className={td(6)}><Pas maks="max-w-56"><RujukanChecklist i={i} /></Pas></td>
+                    <td className={td(7, "text-slate-700")}><Pas maks="max-w-56"><RekomendasiAI daftar={rekItem(i)} /></Pas></td>
+                    <td className={td(8)}>{selStatus(i)}</td>
+                    <td className={td(9)}>{selCatatan(i)}</td>
+                  </tr>
+                ))}</tbody>
+              </table>
+            </TabelGeser>
           </Kartu>
-        </>
+          <Halaman total={item.length} halaman={hal} per={per} ubah={keHalaman} ubahPer={(x) => { setPer(x); keHalaman(1); }} pilihan={[5, 10, 20, 50]} />
+        </div>
       )}
 
       {ada && r.kategori && <TabelKategori r={r} menilai={menilai} lihatVerifikator={lihatVerifikator} kat={kat} ubahKat={ubahKat} />}
@@ -165,12 +220,15 @@ function Isi({ r, simpan }: { r: DetailReview; simpan: (d: DetailReview) => void
       {r.final && <HasilAkhir lolos={r.label!.final === "LOLOS"} oleh={r.difinalkan_oleh} at={r.difinalkan_at} catatan={catatanAkhir?.teks} />}
       {r.boleh_unggah_revisi && (
         <div className="flex justify-end">
-          <Link to={`/usulan/${r.usulan.id}/ubah`}><Tombol><Upload className="size-4" />Unggah Revisi</Tombol></Link>
+          <Link to={`/usulan/${r.usulan.id}/ubah`}><Tombol><Upload className="size-4" />Unggah Perbaikan</Tombol></Link>
         </div>
       )}
     </div>
   );
 }
+
+/** Isi sel kolom `w-px`: selebar isinya, tetapi teks panjang patah baris setelah lebar `maks` (bukan melebarkan kolom). */
+const Pas = ({ maks, children }: { maks: string; children: ReactNode }) => <div className={cx("mx-auto w-max", maks)}>{children}</div>;
 
 const Bidang = ({ label, children }: { label: string; children: ReactNode }) => (
   <div><div className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</div>{children}</div>
@@ -193,7 +251,7 @@ function RujukanChecklist({ i }: { i: ItemReview }) {
   if (!acuan.length) return <span className="text-slate-400">—</span>;
   return (
     <ul className="space-y-1">{acuan.map((x) => (
-      <li key={x.file_id}><Link to={urlPdf(x.file_id, x.nama_acuan ?? "Panduan")} className="text-utama-600 hover:underline">{x.nama_acuan}</Link></li>))}</ul>
+      <li key={x.file_id}><Link to={urlPdf(x.file_id, x.nama_acuan ?? "Acuan")} className="text-utama-600 hover:underline">{x.nama_acuan}</Link></li>))}</ul>
   );
 }
 
@@ -224,7 +282,7 @@ function BuktiRujukan({ rujukan }: { rujukan: Rujukan[] }) {
       <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Bukti & rujukan</div>
       {rujukan.map((x) => (
         <div key={x.id} className="text-xs">
-          <Link to={urlPdf(x.file_id, `${x.dokumen === "PANDUAN" ? "Panduan" : x.dokumen} — ${x.judul_dokumen}`, x.halaman, x.bbox)}
+          <Link to={urlPdf(x.file_id, `${x.dokumen === "PANDUAN" ? "Acuan" : x.dokumen} — ${x.judul_dokumen}`, x.halaman, x.bbox)}
             className="font-medium text-utama-600 hover:underline">
             {x.peran === "dasar_panduan" ? "Dasar" : "Bukti"}: {x.dokumen === "PANDUAN" ? x.nama_acuan : x.dokumen} hlm {x.halaman}
           </Link>
@@ -261,7 +319,7 @@ function TabelKategori({ r, menilai, lihatVerifikator, kat, ubahKat }: {
         onChange={(e) => ubahKat({ catatan: e.target.value })} />
     : <span className="whitespace-pre-line text-slate-700">{(lihatVerifikator && catatanTersimpan) || <span className="text-slate-400">—</span>}</span>;
   const catatanAi = <div className="space-y-1 text-slate-700">{k.alasan && <p className="whitespace-pre-line">{k.alasan}</p>}<BuktiRujukan rujukan={k.rujukan} /></div>;
-  const kolom: [string, ReactNode][] = [["Kategori Usulan", nama(r.usulan.kategori_usulan)], ["AI", nama(k.ai)], ["Catatan AI", catatanAi],
+  const kolom: [string, ReactNode][] = [["Kategori Pengajuan", nama(r.usulan.kategori_usulan)], ["AI", nama(k.ai)], ["Catatan AI", catatanAi],
     ["Verifikator", verifikator], ["Catatan Verifikator", catatan]];
   return (
     <Kartu className="space-y-3 p-5">

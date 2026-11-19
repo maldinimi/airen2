@@ -34,10 +34,10 @@ Node AI di GPU sewaan menjalankan `worker` + `llm` saja ([docker-compose.node-ai
 
 1. Pengusul mengunggah TOR + RAB. API memvalidasi PDF (magic bytes, dapat dibuka, tidak terenkripsi, ≤100 MB), lalu menyimpannya sebagai `files/ab/cd/<sha256>.pdf`.
 2. Saat "Ajukan Review", `revisi.status` berubah menjadi `ANTRE`. Baris `review` (dengan `trace_id`) dan `job` dibuat.
-3. Worker mengambil job FIFO dan mengunci versi checklist, kategori Aktif, dan panduan. Status menjadi `DIPROSES_AI`.
+3. Worker mengambil job FIFO dan mengunci versi checklist, kategori Aktif, dan acuan. Status menjadi `DIPROSES_AI`.
 4. Hasil per item disimpan bertahap. Setelah invarian rujukan lolos, status menjadi `MENUNGGU_VERIFIKASI`.
 5. Reviewer membuat override (tabel terpisah) lalu memfinalkan. Snapshot `label_final` / `kategori_final_id` disimpan, dan status menjadi `LOLOS`/`TIDAK_LOLOS`.
-6. Revisi baru (TOR dan/atau RAB) membuat `revisi` baru; dokumen yang tidak diganti menunjuk file lama.
+6. Revisi baru (TOR dan RAB wajib) membuat `revisi` baru; file yang isinya sama dengan revisi sebelumnya dipakai ulang (per SHA).
 
 ## Alur pipeline AI
 
@@ -81,7 +81,7 @@ Lapis 2: `fingerprint = sha256(SHA TOR, SHA RAB, versi checklist, isi kategori r
 
 Tabel dan kegunaannya mengikuti desain.md §3. Ringkasannya:
 
-- **Berversi & tidak berubah**: `checklist_item` + `checklist_histori`, `kategori` + `kategori_histori`, `panduan` + `panduan_histori` (isi terbaru + riwayat). Perubahan selalu berupa baris versi baru; review menyimpan salinan kategori Aktif di `review_kategori` serta salinan panduan + nomor versinya di `review_panduan`.
+- **Berversi & tidak berubah**: `checklist_item` + `checklist_histori`, `kategori` + `kategori_histori`, `panduan` + `panduan_histori` (isi terbaru + riwayat). Perubahan selalu berupa baris versi baru; review menyimpan salinan kategori Aktif di `review_kategori` serta salinan acuan + nomor versinya di `review_panduan`.
 - **Ekstraksi per file**: `file` (unik per SHA) → `halaman`, `elemen`, `chunk` (pgvector 1024 dim + kolom `tsv` hasil `to_tsvector('indonesian')`).
 - **Review**: `review` (acuan, fingerprint, model_info, progres, label_ai, snapshot final), `hasil_item`, `hasil_kategori`, `rekomendasi`, `rujukan` (hanya `elemen_id` + kutipan), `override` (terpisah, dapat dibatalkan), `catatan_reviewer`, `review_panduan`.
 - **Operasional**: `job` (antrean), `node_ai` (detak & token node), `audit_log` (hanya tambah), `sesi`.

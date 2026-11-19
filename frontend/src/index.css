@@ -19,6 +19,36 @@
 }
 
 html, body, #root { height: 100%; }
+
+/* Jarak tepi area konten (padding <main> di Layout). Halaman digulir oleh browser; header Layout sticky setinggi --header,
+   jadi judul kolom tabel bergeser menempel tepat di bawahnya. */
+:root { --tepi: 1rem; --header: 4rem; }
+@media (width >= 40rem) { :root { --tepi: 1.5rem; } }
+
+/* Tabel bergeser (`TabelGeser` di components/TabelData.tsx, desain.md §7 no. 52). Wadah memotong isinya (overflow: clip,
+   bukan wadah gulir) sehingga judul kolom tetap bisa sticky terhadap gulir halaman. Geser kiri/kanan = tabel dipindah sejauh
+   --geser, sedangkan N kolom pertama (data-beku) dipindah balik sejauh yang sama sehingga diam. border-separate: garis ikut
+   sel yang dipindah (border-collapse tidak). */
+.tabel-geser { overflow: clip; border-radius: inherit; }
+.tabel-geser > table { position: relative; left: calc(-1 * var(--geser, 0px)); border-collapse: separate; border-spacing: 0; }
+.tabel-geser thead th { position: sticky; top: var(--header); z-index: 20; border-bottom: 1px solid var(--color-slate-200, #e2e8f0); }
+.tabel-geser tbody > tr:not(:last-child) > td { border-bottom: 1px solid var(--color-slate-100, #f1f5f9); }
+/* Sel harus berlatar agar isi yang tergeser tidak tembus. Di @layer base agar kelas latar Tailwind (@layer utilities) pada
+   baris/sel tetap menang — aturan tanpa layer selalu mengalahkan utilities, berapa pun spesifisitasnya. */
+@layer base {
+  .tabel-geser thead { background-color: var(--color-slate-100, #f1f5f9); }
+  .tabel-geser tbody tr { background-color: var(--color-white, #fff); }
+  .tabel-geser :is(thead > tr, thead th, td) { background-color: inherit; }
+}
+.tabel-geser[data-beku="1"] tr > :nth-child(-n+1), .tabel-geser[data-beku="2"] tr > :nth-child(-n+2),
+.tabel-geser[data-beku="3"] tr > :nth-child(-n+3) { translate: var(--geser, 0px) 0; }
+.tabel-geser[data-beku="1"] td:nth-child(-n+1), .tabel-geser[data-beku="2"] td:nth-child(-n+2),
+.tabel-geser[data-beku="3"] td:nth-child(-n+3) { position: relative; z-index: 10; }
+.tabel-geser[data-beku="1"] th:nth-child(-n+1), .tabel-geser[data-beku="2"] th:nth-child(-n+2),
+.tabel-geser[data-beku="3"] th:nth-child(-n+3) { z-index: 30; }
+.tabel-geser[data-beku="1"] tr > :nth-child(1), .tabel-geser[data-beku="2"] tr > :nth-child(2),
+.tabel-geser[data-beku="3"] tr > :nth-child(3) { border-right: 1px solid var(--color-slate-200, #e2e8f0); }
+.tabel-geser-bilah { position: sticky; bottom: 0; z-index: 20; overflow-x: auto; }
 body { @apply bg-slate-50 text-slate-800 antialiased; }
 
 /* Sorotan rujukan pada viewer PDF */

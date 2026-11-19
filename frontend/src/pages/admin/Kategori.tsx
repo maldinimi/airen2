@@ -9,7 +9,7 @@ import { api } from "../../api";
 import { useAuth } from "../../auth";
 import AturUrutan from "../../components/AturUrutan";
 import { TOMBOL_IKON } from "../../components/Kelola";
-import { FormFilter, type NilaiFilter, OPSI_STATUS, Paginasi, ThUrut, cocok, lolosJejak, lolosStatus, usePaginasi, useUrut } from "../../components/TabelData";
+import { FormFilter, type NilaiFilter, OPSI_STATUS, Paginasi, ThUrut, cocok, lolosJejak, lolosStatus, usePaginasi, useUrut, TabelGeser } from "../../components/TabelData";
 import { waktuAngka } from "../../format";
 import type { ItemKategori } from "../../types";
 import { AreaTeks, Input, Judul, Kartu, Kolom, Konfirmasi, Kosong, Lencana, Memuat, Peringatan, Ringkasan, Saklar, TanggalJam, Tombol, cx } from "../../ui";
@@ -88,7 +88,7 @@ export default function KelolaKategori() {
         ]} />
       )}
       {item.length === 0 ? <Kosong>Belum ada kategori.</Kosong> : baris.length === 0 ? <Kosong>Tidak ada kategori yang cocok dengan filter.</Kosong> : (
-        <Kartu className="overflow-x-auto">
+        <Kartu><TabelGeser>
           <table className="w-full min-w-[72rem] text-sm">
             <thead className="bg-slate-100 text-xs font-semibold text-slate-700">
               <tr>
@@ -121,7 +121,7 @@ export default function KelolaKategori() {
                 </tr>
               ))}
             </tbody>
-          </table>
+          </table></TabelGeser>
         </Kartu>
       )}
       {baris.length > 0 && <Paginasi {...pg} />}

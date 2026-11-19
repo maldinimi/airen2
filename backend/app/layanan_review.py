@@ -41,7 +41,7 @@ def ajukan_review(db: Session, request: Request | None, revisi: Revisi, p: Pengg
     if not oleh_reviewer:
         pastikan(boleh_kelola_usulan(p, usulan), "Hanya Pengusul dari Satker ini yang dapat mengajukan review.")
     if usulan.diarsipkan_at:
-        raise Galat(409, "Usulan diarsipkan.")
+        raise Galat(409, "Pengajuan diarsipkan.")
     if revisi.status not in st.BOLEH_AJUKAN:
         raise Galat(409, "Revisi ini sudah diajukan. Review AI hanya dijalankan sekali per revisi.")
     if db.scalar(select(ChecklistItem.id).where(ChecklistItem.aktif).limit(1)) is None:
@@ -139,8 +139,8 @@ def _rujukan(db: Session, review: Review, revisi: Revisi, pemilik_ids: list) -> 
             dokumen, judul = "RAB", revisi.rab_nama
         else:
             pv = panduan.get(e.file_id)
-            dokumen, judul = "PANDUAN", (f"{pv.judul} (v{pv.nomor})" if pv else "Panduan")
-            nama_acuan = pv.judul if pv else "Panduan"
+            dokumen, judul = "PANDUAN", (f"{pv.judul} (v{pv.nomor})" if pv else "Acuan")
+            nama_acuan = pv.judul if pv else "Acuan"
         kalimat = nomor_kalimat(e.teks, r.kutipan)
         hasil.setdefault(str(r.pemilik_id), []).append({
             "id": str(r.id), "peran": r.peran, "dokumen": dokumen, "judul_dokumen": judul, "file_id": str(e.file_id),

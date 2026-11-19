@@ -3,7 +3,7 @@ from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, Request, Response
 from pydantic import BaseModel
-from sqlalchemy import func, or_, select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.akses import NAMA_COOKIE, pengguna_saat_ini
@@ -42,15 +42,16 @@ def login(masuk: LoginMasuk, request: Request, response: Response, db: Session =
     """Login dengan username & password. Set cookie sesi HttpOnly + kembalikan token CSRF.
 
     Error: 401 kredensial salah (pesan umum, tidak membocorkan akun mana yang ada);
-    429 bila terlalu banyak percobaan gagal dari username/IP yang sama.
+    429 bila terlalu banyak percobaan gagal (lihat komentar batas di bawah).
     """
     k = konfigurasi()
     ip = request.client.host if request.client else None
     batas = datetime.now(timezone.utc) - timedelta(minutes=k.login_jendela_menit)
-    gagal = db.scalar(select(func.count()).select_from(AuditLog).where(
-        AuditLog.aksi == "LOGIN_GAGAL", AuditLog.at > batas,
-        or_(AuditLog.entitas_id == masuk.username.lower(), AuditLog.ip == ip)))
-    if gagal >= k.login_maks_gagal:
+    # Dikunci per pasangan username+IP, bukan username saja (orang lain bisa mengunci akun Reviewer dari perangkatnya) atau
+    # IP saja (satu proxy kantor = semua pengguna terkunci). Batas per IP 4× lebih longgar menahan tebakan ke banyak akun.
+    gagal_akun, gagal_ip = db.execute(select(func.count().filter(AuditLog.entitas_id == masuk.username.lower()), func.count())
+                                      .where(AuditLog.aksi == "LOGIN_GAGAL", AuditLog.at > batas, AuditLog.ip == ip)).one()
+    if gagal_akun >= k.login_maks_gagal or gagal_ip >= 4 * k.login_maks_gagal:
         raise Galat(429, f"Terlalu banyak percobaan login. Coba lagi dalam {k.login_jendela_menit} menit.")
     p = db.scalar(select(Pengguna).where(func.lower(Pengguna.username) == masuk.username.lower()))
     if p is None or not p.aktif or not cek_password(p.password_hash, masuk.password):

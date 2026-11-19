@@ -8,41 +8,41 @@
 
 Hak akses selalu dicek di backend:
 
-- **Pengusul** hanya dapat mengakses usulan Satker-nya.
-- **Reviewer** dapat mengakses seluruh usulan serta mengelola Panduan, Checklist, Kategori, Satuan Kerja, dan Master RO.
-- **Admin** hanya mengelola Pengguna, Node AI, dan Audit Log; Dashboard dan Usulan (termasuk file TOR/RAB) ditolak.
+- **Pengusul** hanya dapat mengakses pengajuan Satker-nya.
+- **Reviewer** dapat mengakses seluruh pengajuan serta mengelola Acuan, Checklist, Kategori, Satuan Kerja, dan Master RO.
+- **Admin** hanya mengelola Pengguna, Node AI, dan Audit Log; Dashboard dan Pengajuan (termasuk file TOR/RAB) ditolak.
 - **Unduhan file** diperiksa per file.
 
 ## Auth
 
 | Metode | Path | Role | Keterangan |
 | --- | --- | --- | --- |
-| POST | `/auth/login` | publik | `{username, password}` → profil + `csrf`; 429 bila ≥5 gagal/15 menit |
+| POST | `/auth/login` | publik | `{username, password}` → profil + `csrf`; 429 bila ≥5 gagal untuk username itu dari IP yang sama, atau ≥20 gagal dari IP itu, dalam 5 menit |
 | POST | `/auth/logout` | login | Hapus sesi |
 | GET | `/auth/saya` | login | Profil + `csrf` |
 | POST | `/auth/ganti-password` | login | `{password_lama, password_baru}` |
 
-## Usulan (Modul A)
+## Pengajuan (Modul A)
 
 | Metode | Path | Role | Keterangan |
 | --- | --- | --- | --- |
-| GET | `/usulan` | Pengusul, Reviewer | Filter: `satker` (nama Satuan Kerja), `q` (kode/nama RO), `dokumen` (nama file TOR/RAB revisi terbaru), `status`, `tanggal` (YYYY-MM-DD, tanggal pengajuan WIB), `tahun`, serta `satker_id, kategori`. Urut: `urut` = `satker\|rincian\|dokumen\|status\|tanggal`, `arah` = `asc\|desc` (tanpa `urut` = perubahan terbaru dulu). Paging: `halaman, per_halaman` (bawaan 10; `halaman` melebihi jumlah halaman → halaman terakhir). Respons `{total, halaman, per_halaman, data: BarisUsulan[]}` |
+| GET | `/usulan` | Pengusul, Reviewer | Filter: `satker` (nama Satuan Kerja), `q` (kode/nama RO), `dokumen` (nama file TOR/RAB revisi terbaru), `status`, `tanggal` (YYYY-MM-DD, tanggal pengajuan revisi terbaru, WIB), `tahun`, serta `satker_id, kategori`. Urut: `urut` = `satker\|rincian\|dokumen\|status\|tanggal`, `arah` = `asc\|desc` (tanpa `urut` = perubahan terbaru dulu). Paging: `halaman, per_halaman` (bawaan 10; `halaman` melebihi jumlah halaman → halaman terakhir). Respons `{total, halaman, per_halaman, data: BarisUsulan[]}` |
 | POST | `/usulan` | Pengusul | multipart: `program, kegiatan, kro, ro` (kode per tingkat dari `/usulan/opsi/pengajuan`), `kategori_id` (kategori Aktif), `tahun_anggaran` (pilihan di bilah atas; tahun berjalan ±2), `tor` dan `rab` (PDF, **keduanya wajib**), `ajukan(bool)`. 400 bila tahun di luar rentang, hierarki/kategori tidak valid, atau TOR/RAB kosong |
 | GET | `/usulan/opsi/pengajuan` | Pengusul, Reviewer | `{hierarki: Program[{kode, nama, kegiatan[{…, kro[{…, ro[]}]}]}], kategori: [{id, kode, nama, deskripsi}]}` (kategori Aktif) |
 | GET | `/usulan/{id}` | login + Satker | Satu `BarisUsulan` |
 | PUT | `/usulan/{id}/draf` | Pengusul Satker | multipart `tor` dan/atau `rab`, `ajukan`; hanya status DRAF/GAGAL. Hierarki & kategori tidak dapat diubah (salah input → hapus lalu ajukan ulang) |
-| POST | `/usulan/{id}/revisi` | Pengusul Satker | multipart `tor` dan/atau `rab`, `ajukan`; hanya setelah TIDAK LOLOS |
+| POST | `/usulan/{id}/revisi` | Pengusul Satker | multipart `tor` dan `rab` (keduanya wajib, 400 bila salah satu kosong), `ajukan`; hanya setelah TIDAK LOLOS |
 | POST | `/usulan/{id}/ajukan` | Pengusul Satker | Ajukan review revisi terbaru (DRAF atau ulang setelah GAGAL) |
 | DELETE | `/usulan/{id}` | Reviewer | Hapus **permanen** dari database (status apa pun selain antre/diproses AI): revisi, review, hasil AI, rujukan, override, catatan, salinan acuan, job, serta file PDF TOR/RAB beserta hasil ekstraksinya bila tidak dipakai usulan/panduan lain. 403 bukan Reviewer (termasuk Admin & Pengusul); 409 saat antre/diproses AI |
-| PUT | `/usulan/{id}` | Reviewer | multipart `program, kegiatan, kro, ro, kategori_id`, `tor`?, `rab`? — betulkan hierarki anggaran & kategori; TOR/RAB pengganti dipasang di revisi terakhir yang sama (tanpa revisi baru) lalu langsung diajukan review AI ulang (review lama tetap tersimpan). 400 pilihan tidak valid / bukan PDF; 409 dokumen diganti saat masih antre/diproses AI |
-| GET | `/usulan/{id}/riwayat` | login + Satker | `{usulan, revisi[] (+review[])}` untuk Detail Usulan (Histori Dokumen) |
+| PUT | `/usulan/{id}` | Reviewer | multipart `program, kegiatan, kro, ro, kategori_id`, `tor`?, `rab`? — betulkan hierarki anggaran & kategori; TOR/RAB pengganti dipasang di revisi terakhir yang sama (tanpa revisi baru) lalu langsung diajukan review AI ulang (review lama tetap tersimpan). 400 pilihan tidak valid / bukan PDF; 409 revisi terbaru sudah diverifikasi (Lolos/Tidak Lolos), atau dokumen diganti saat masih antre/diproses AI |
+| GET | `/usulan/{id}/riwayat` | login + Satker | `{usulan, revisi[] (+review[])}` untuk Detail Pengajuan (Histori Dokumen) |
 | GET | `/usulan/opsi/filter` | Pengusul, Reviewer | Pilihan dropdown filter |
 
 `BarisUsulan` berisi:
 
 - identitas: `id, satker, tahun_anggaran, kode_ro, nama_ro`;
 - revisi terbaru: `revisi_id, revisi_nomor, status`, dokumen `tor{file_id,nama}`, `rab{…}`;
-- hasil: `kategori_final{kode,nama}`, `hierarki`, `kategori_usulan`, `dibuat_at`;
+- hasil: `kategori_final{kode,nama}`, `hierarki`, `kategori_usulan`, `dibuat_at` (pengajuan dibuat), `diajukan_at` (revisi terbaru dibuat = Tanggal Pengajuan);
 - proses: `proses{status, progres, posisi_antrean, menunggu_kapasitas, error_pesan, trace_id}`;
 - status lain: `diarsipkan, review_id, boleh_kelola`.
 
@@ -51,15 +51,10 @@ Hak akses selalu dicek di backend:
 | Metode | Path | Role | Keterangan |
 | --- | --- | --- | --- |
 | GET | `/review/{id}` | login + Satker | Detail review; Pengusul tidak melihat override/catatan sebelum final |
-| GET | `/revisi/{id}/review` | login + Satker | Review terbaru suatu revisi |
-| POST | `/review/{id}/override` | Reviewer | `{target: ITEM\|LABEL\|KATEGORI, checklist_item_id?, nilai, alasan}`. Nilai: `TERPENUHI/TIDAK_TERPENUHI`, `LOLOS/TIDAK_LOLOS`, atau id kategori dari `kategori.pilihan` review tersebut |
+| PUT | `/review/{id}/keputusan` | Reviewer | Simpan Sebagai Draf `{label?, catatan?, item?: [{checklist_item_id, nilai: TERPENUHI\|TIDAK_TERPENUHI, catatan?}], kategori_id?, catatan_kategori?}` (catatan yang tidak dikirim = tidak diubah; `""` = hapus; teks yang sama tidak menambah Audit Log). Satu-satunya jalur penilaian verifikator (endpoint override/batal/catatan terpisah dihapus, desain.md §7 no. 57): kategori = override KATEGORI bila berbeda dari rekomendasi AI (dibatalkan bila sama), catatan kategori = catatan reviewer dokumen `KATEGORI`; status item = override ITEM (dibuat hanya bila berbeda dari override aktif), catatan item di `catatan_item` (kosong = hapus), catatan akhir = catatan UMUM, label = override LABEL bila berbeda dari label hitungan. 400 item bukan milik review; 409 bila sudah final |
+| POST | `/review/{id}/finalkan` | Reviewer | Body opsional `{label?, catatan?}` (disimpan seperti draf, lalu dikunci). Tanpa body: nilai final saat ini. Salin nilai final, ubah status revisi. Override, catatan, keputusan, dan finalkan hanya untuk review **terbaru** revisi itu: review lama (dokumen sudah diganti lewat Edit Pengajuan Reviewer) → 409 |
 
-> ITEM = Status Verifikator. Halaman Pemeriksaan menyimpan status & Catatan Verifikator per item sekaligus lewat `PUT /review/{id}/keputusan`/`finalkan` (`item[]`); catatan dikirim per item sebagai `catatan_verifikator` (`{teks, oleh, diubah_at}` atau `null`). `BarisUsulan` memuat `hierarki`, `kategori_usulan`, `dibuat_at`; `tor`/`rab` bisa `null` (usulan lama). `GET /review/{id}` untuk Pengusul sebelum final: hasil AI lengkap, tetapi tanpa override (`override: null`, `diubah: false`), `catatan_verifikator: null`, dan `catatan: []`. Tambahan: `boleh_unggah_revisi` (Pengusul Satker ini, revisi terbaru Tidak Lolos) dan `rujukan[].nama_acuan` (Nama Acuan panduan tanpa versi; `null` untuk TOR/RAB).
-
-| POST | `/override/{id}/batal` | Reviewer | Batalkan override (sebelum final) |
-| PUT | `/review/{id}/catatan` | Reviewer | `{dokumen: TOR\|RAB\|UMUM, teks}`; teks kosong = hapus |
-| PUT | `/review/{id}/keputusan` | Reviewer | Simpan Sebagai Draf `{label?, catatan, item?: [{checklist_item_id, nilai: TERPENUHI\|TIDAK_TERPENUHI, catatan}], kategori_id?, catatan_kategori?}`: kategori = override KATEGORI bila berbeda dari rekomendasi AI (dibatalkan bila sama), catatan kategori = catatan reviewer dokumen `KATEGORI`; status item = override ITEM (dibuat hanya bila berbeda dari override aktif), catatan item di `catatan_item` (kosong = hapus), catatan akhir = catatan UMUM, label = override LABEL bila berbeda dari label hitungan. 400 item bukan milik review; 409 bila sudah final |
-| POST | `/review/{id}/finalkan` | Reviewer | Body opsional `{label?, catatan?}` (disimpan seperti draf, lalu dikunci). Tanpa body: nilai final saat ini. Salin nilai final, ubah status revisi. Override, catatan, keputusan, dan finalkan hanya untuk review **terbaru** revisi itu: review lama (dokumen sudah diganti lewat Edit Usulan Reviewer) → 409 |
+> ITEM = Status Verifikator. Halaman Pemeriksaan menyimpan status & Catatan Verifikator per item sekaligus lewat `PUT /review/{id}/keputusan`/`finalkan` (`item[]`); catatan dikirim per item sebagai `catatan_verifikator` (`{teks, oleh, diubah_at}` atau `null`). `BarisUsulan` memuat `hierarki`, `kategori_usulan`, `dibuat_at`; `tor`/`rab` bisa `null` (pengajuan lama). `GET /review/{id}` untuk Pengusul sebelum final: hasil AI lengkap, tetapi tanpa override (`override: null`, `diubah: false`), `catatan_verifikator: null`, dan `catatan: []`. Tambahan: `boleh_unggah_revisi` (Pengusul Satker ini, revisi terbaru Tidak Lolos) dan `rujukan[].nama_acuan` (Nama Acuan tanpa versi; `null` untuk TOR/RAB).
 
 Detail review berisi:
 
@@ -91,15 +86,15 @@ Setiap `rujukan` berisi `{peran (bukti_dokumen|dasar_panduan), dokumen (TOR|RAB|
 | DELETE | `/kategori/{id}` | Reviewer | Hapus kategori beserta riwayatnya secara permanen; review lama tidak berubah (salinan di `review_kategori`). 400 bila tidak ada kategori Aktif tersisa |
 | GET | `/kategori/{id}/riwayat` | Reviewer, Pengusul (lihat saja) | Versi sebelum tiap perubahan dari `kategori_histori`, terbaru dulu (isi saat ini tidak termasuk; kosong bila belum pernah diubah) |
 
-## Panduan (Modul D)
+## Acuan (Modul D)
 
 | Metode | Path | Role | Keterangan |
 | --- | --- | --- | --- |
-| GET | `/panduan` | Reviewer, Pengusul | Daftar panduan yang tidak dihapus + versi + `status_proses` (BELUM/DIPROSES/SIAP/GAGAL), urut `urutan` (no_urut) |
-| PUT | `/panduan/urutan` | Reviewer | `{id: [semua id panduan sesuai urutan baru]}`. Hanya urutan yang berubah (tanpa versi baru, Diinput Oleh/Tanggal Input tetap). Panduan baru ditaruh di akhir; setelah hapus, urutan dirapatkan. 400 bila daftar tidak memuat tepat semua panduan |
+| GET | `/panduan` | Reviewer, Pengusul | Daftar acuan yang tidak dihapus + versi + `status_proses` (BELUM/DIPROSES/SIAP/GAGAL), urut `urutan` (no_urut) |
+| PUT | `/panduan/urutan` | Reviewer | `{id: [semua id panduan sesuai urutan baru]}`. Hanya urutan yang berubah (tanpa versi baru, Diinput Oleh/Tanggal Input tetap). Acuan baru ditaruh di akhir; setelah hapus, urutan dirapatkan. 400 bila daftar tidak memuat tepat semua acuan |
 | POST | `/panduan` | Reviewer | multipart `file, judul, deskripsi?, aktif?` (default `true`) |
-| PUT | `/panduan/{id}` | Reviewer | multipart `judul, deskripsi?, aktif?`. Ubah nama/deskripsi/status → versi panduan baru; file tidak dapat diganti (unggah panduan baru) (status dicatat per versi) (Nonaktif = tidak dipakai review berikutnya). Tanpa perubahan = tidak membuat versi |
-| DELETE | `/panduan/{id}` | Reviewer | Hapus **permanen**: panduan, semua versi, dan file + ekstraksinya (bila tidak dipakai data lain). Review lama kehilangan catatan & rujukan panduan ini. 409 bila dipakai review yang berjalan / file sedang diproses |
+| PUT | `/panduan/{id}` | Reviewer | multipart `judul, deskripsi?, aktif?`. Ubah nama/deskripsi/status → versi acuan baru; file tidak dapat diganti (unggah acuan baru) (status dicatat per versi) (Nonaktif = tidak dipakai review berikutnya). Tanpa perubahan = tidak membuat versi |
+| DELETE | `/panduan/{id}` | Reviewer | Hapus **permanen**: acuan, semua versi, dan file + ekstraksinya (bila tidak dipakai data lain). Review lama kehilangan catatan & rujukan acuan ini. 409 bila dipakai review yang berjalan / file sedang diproses |
 | POST | `/panduan/{id}/proses-ulang` | Reviewer | Ulangi pemrosesan yang GAGAL |
 
 ## Master RO
@@ -121,16 +116,17 @@ Setiap tambah/ubah/hapus tercatat di audit log (`MASTER_RO_TAMBAH`, `MASTER_RO_U
 
 | Metode | Path | Role | Keterangan |
 | --- | --- | --- | --- |
-| GET | `/file/{file_id}` | login + hak | PDF inline. Panduan: Reviewer & Pengusul (sama dengan `GET /panduan`; Admin 404). TOR/RAB: sesuai hak usulan. 404 bila tidak berhak |
+| GET | `/file/{file_id}` | login + hak | PDF inline. Acuan: Reviewer & Pengusul (sama dengan `GET /panduan`; Admin 404). TOR/RAB: sesuai hak pengajuan. 404 bila tidak berhak |
 | GET | `/internal/file/{sha}` | token node | `Authorization: Bearer <token node>`; untuk node AI jarak jauh |
-| GET | `/dashboard` | Pengusul, Reviewer | `per_status, per_kategori, per_satker, perlu_tindakan[]`, + `antrean` bila pengguna juga ber-role Admin |
+| GET | `/dashboard?tahun=` | Pengusul, Reviewer | `total, per_status`; Reviewer: `per_satker[{satker, total, lolos, tidak_lolos, menunggu}]`; Pengusul (Satker-nya): `kategori_lolos[{kode, nama, jumlah}]` (final Lolos per kategori final), `checklist_tidak_lolos[{kode, checklist, ai, verifikator, sudah_diperbaiki, belum_diperbaiki}]`; + `antrean` bila pengguna juga ber-role Admin. `tahun` (opsional) = Tahun Anggaran; tanpa = semua tahun |
+| GET | `/dashboard/tren?per=hari\|minggu\|bulan\|tahun&tahun=` | Pengusul, Reviewer | Grafik Jumlah Pengajuan: pengajuan baru (tanggal dibuat, WIB) per periode — 30 hari / 12 minggu (mulai Senin) / 12 bulan / 5 tahun terakhir, periode kosong = 0. `{per, data: [{mulai: YYYY-MM-DD, jumlah}]}` urut lama → baru; `tahun` (opsional) = hanya pengajuan Tahun Anggaran itu; Pengusul hanya Satker-nya. 422 `per` tidak dikenal |
 | GET/POST | `/pengguna` | Admin | `{username, roles[], satker_id?, aktif, password}` (tanpa nama; nama tampilan = username) |
 | PUT | `/pengguna/{id}` | Admin | Ubah; `password` diisi = reset (sesi dicabut) |
-| DELETE | `/pengguna/{id}` | Admin | Hapus permanen. 400 untuk akun sendiri; 409 bila sudah punya riwayat (usulan, review, audit log, …) — nonaktifkan saja |
+| DELETE | `/pengguna/{id}` | Admin | Hapus permanen. 400 untuk akun sendiri; 409 bila sudah punya riwayat (pengajuan, review, audit log, …) — nonaktifkan saja |
 | GET | `/satker` | Reviewer, Admin | Daftar Satker (+ jejak dibuat/diubah). Admin memakainya untuk memilih Satker di form Pengguna |
 | GET | `/satker/referensi` | Reviewer | Daftar resmi UKE I/UKE II dari dokumen "Data Satker dan Unit Kerja" `{kode_uke1, unit_kerja, kode_uke2, nama}[]` — sumber pilihan form Satker |
 | POST/PUT | `/satker`, `/satker/{id}` | Reviewer | `{kode_uke1?, unit_kerja? (UKE I / Eselon I), kode_uke2?, nama? (UKE II / Eselon II), aktif}` — semua opsional, kosong disimpan `""`. `kode_uke1` = `NN`, `kode_uke2` = `NN.NN` diawali `kode_uke1` (400 bila salah); `aktif=false` = nonaktifkan (tidak bisa dipilih pengguna). 409 bila `kode_uke2`/`kode_uke1` sudah dipakai, atau Unit Kerja sudah ada. Respons + `dibuat_oleh, dibuat_at, diubah_oleh, diubah_at`. 400 isian terlalu panjang; 409 Satuan Kerja sama dalam satu Unit Kerja |
-| DELETE | `/satker/{id}` | Reviewer | Hapus permanen. 409 bila masih dipakai pengguna atau usulan |
+| DELETE | `/satker/{id}` | Reviewer | Hapus permanen. 409 bila masih dipakai pengguna atau pengajuan |
 | GET/POST | `/node-ai` | Admin | POST `{nama}` → `{token}` (sekali tampil) |
 | POST | `/node-ai/{id}/cabut` | Admin | Cabut akses node |
 | GET | `/audit` | Admin | Filter `pengguna_id, aksi, entitas, dari, sampai, halaman` |

@@ -1,14 +1,14 @@
 # AIREN — Asisten AI Offline untuk Review TOR & RAB
 
-Aplikasi web untuk mereview dokumen TOR & RAB usulan anggaran dengan AI lokal:
+Aplikasi web untuk mereview dokumen TOR & RAB pengajuan anggaran dengan AI lokal:
 
-- **Screening 1**: menilai pemenuhan setiap item checklist, dengan bukti (halaman, lokasi, kutipan) dari TOR/RAB dan Panduan. Label LOLOS/TIDAK LOLOS **dihitung oleh kode**.
+- **Screening 1**: menilai pemenuhan setiap item checklist, dengan bukti (halaman, lokasi, kutipan) dari TOR/RAB dan Acuan. Label LOLOS/TIDAK LOLOS **dihitung oleh kode**.
 - **Screening 2**: merekomendasikan kategori K1–K4 berdasarkan definisi kategori Aktif terbaru saat review dimulai.
-- **Usulan**: Pengusul membuat **Pengajuan Baru** — hierarki anggaran RKA-K/L (Program → Kegiatan → KRO → RO, dari menu **Master RO**), kategori usulan (deskripsi otomatis), dan PDF **TOR dan RAB** (keduanya wajib) — yang langsung direview AI. Halaman Usulan berisi histori usulan; halaman Detail berisi parameter hierarki dan **Histori Dokumen** per revisi. Revisi atau penggantian dokumen cukup mengunggah PDF TOR dan/atau RAB pengganti; bila hierarki atau kategori salah input, Reviewer membetulkannya lewat **Edit** atau menghapus usulan.
-- **Reviewer (verifikator)** menilai tiap item di halaman **Pemeriksaan** (saklar Status Verifikator Lolos/Ditolak dan Catatan Verifikator yang dapat diisi kapan saja, di samping Status, Catatan — dengan bukti & rujukan yang dapat diklik ke PDF — dan Rekomendasi AI), lalu menetapkan **Keputusan Akhir** LOLOS/TIDAK LOLOS dengan catatan akhir (dapat disimpan sebagai draf). Pengusul melihat hasil AI segera, dan penilaian verifikator setelah final. Reviewer juga dapat mengedit hierarki/kategori dan menghapus usulan.
-- **Reviewer** juga mengelola Panduan, Checklist, Kategori, Satuan Kerja, dan **Master RO** (Program → Kegiatan → KRO → RO); Pengusul dapat melihat Panduan, Checklist, dan Kategori.
+- **Pengajuan**: Pengusul membuat **Pengajuan Baru** — hierarki anggaran RKA-K/L (Program → Kegiatan → KRO → RO, dari menu **Master RO**), kategori pengajuan (deskripsi otomatis), dan PDF **TOR dan RAB** (keduanya wajib) — yang langsung direview AI. Halaman Pengajuan berisi histori pengajuan; halaman Detail berisi parameter hierarki dan **Histori Dokumen** per revisi. Revisi atau penggantian dokumen cukup mengunggah PDF TOR dan/atau RAB pengganti; bila hierarki atau kategori salah input, Reviewer membetulkannya lewat **Edit** atau menghapus pengajuan.
+- **Reviewer (verifikator)** menilai tiap item di halaman **Pemeriksaan** (saklar Status Verifikator Lolos/Ditolak dan Catatan Verifikator yang dapat diisi kapan saja, di samping Status, Catatan — dengan bukti & rujukan yang dapat diklik ke PDF — dan Rekomendasi AI), lalu menetapkan **Keputusan Akhir** LOLOS/TIDAK LOLOS dengan catatan akhir (dapat disimpan sebagai draf). Pengusul melihat hasil AI segera, dan penilaian verifikator setelah final. Reviewer juga dapat mengedit hierarki/kategori dan menghapus pengajuan.
+- **Reviewer** juga mengelola Acuan, Checklist, Kategori, Satuan Kerja, dan **Master RO** (Program → Kegiatan → KRO → RO); Pengusul dapat melihat Acuan, Checklist, dan Kategori.
 - **Admin** mengelola Pengguna (termasuk reset password), Node AI, dan Audit Log.
-- **Panduan** (PDF acuan AI): Reviewer mengunggah satu PDF per form dengan Nama Acuan (maks. 500 karakter), Deskripsi, dan Status Aktif/Nonaktif; PDF dapat **dipratinjau** sebelum diunggah dan tombol **Reset** mengosongkan form. Hanya panduan **Aktif** yang sudah **Siap** dipakai review. Setiap edit (nama, deskripsi, status) tercatat di **Panduan Histori**. **Hapus bersifat permanen** setelah konfirmasi: panduan, histori, file PDF beserta hasil pemrosesannya, dan rujukannya di hasil review lama ikut terhapus dari database (PDF yang sama yang masih dipakai panduan lain atau TOR/RAB tetap disimpan; jejaknya tetap ada di audit log). Untuk sekadar berhenti memakai panduan, ubah statusnya menjadi Nonaktif.
+- **Acuan** (PDF rujukan untuk AI): Reviewer mengunggah satu PDF per form dengan Nama Acuan (maks. 500 karakter), Deskripsi, dan Status Aktif/Nonaktif; PDF dapat **dipratinjau** sebelum diunggah dan tombol **Reset** mengosongkan form. Hanya acuan **Aktif** yang sudah **Siap** dipakai review. Setiap edit (nama, deskripsi, status) tercatat di **Acuan Histori**. **Hapus bersifat permanen** setelah konfirmasi: acuan, histori, file PDF beserta hasil pemrosesannya, dan rujukannya di hasil review lama ikut terhapus dari database (PDF yang sama yang masih dipakai acuan lain atau TOR/RAB tetap disimpan; jejaknya tetap ada di audit log). Untuk sekadar berhenti memakai acuan, ubah statusnya menjadi Nonaktif.
 - **Kategori** (acuan Screening 2): Reviewer mengelola kategori satu per satu dalam tabel Kode, Kategori, Status, Deskripsi. **Tambah** dan **Edit** di halaman form (Kode unik maks. 20 karakter, Kategori maks. 255 karakter, Deskripsi; Edit juga mengatur Status Aktif/Nonaktif) dengan pop-up periksa kembali. Isi sebelum tiap edit tercatat di **Kategori Histori** (halaman Detail). **Hapus bersifat permanen** beserta historinya; minimal satu kategori Aktif harus ada. Hanya kategori Aktif yang dipakai review berikutnya. Setiap review menyimpan salinan kategori yang dipakai, sehingga hasil review lama tidak berubah dan definisinya dapat dilihat di hasil review ("Lihat kategori yang dipakai").
 
 Seluruh pemrosesan berjalan **offline** di kontainer. Satu-satunya pengecualian adalah terowongan terenkripsi ke node GPU sewaan. Acuan kebutuhan ada di [prd.md](prd.md) dan acuan teknis di [desain.md](desain.md).
@@ -36,7 +36,7 @@ Mode dev & tiruan juga membuat checklist contoh. **Master RO mulai kosong** (dat
 
 `make setup` adalah satu-satunya langkah yang membutuhkan internet (build image + unduh model). Setelah itu aplikasi berjalan tanpa internet. Saat `make up`, migrasi database dan seed (4 kategori sesuai PRD C1 + admin) berjalan otomatis. Database yang dibuat sebelum 22 Oktober 2026 tidak dapat di-upgrade dan harus dibuat ulang (lihat `docs/asumsi.md`).
 
-> Karena hapus panduan bersifat permanen, jalankan `make backup` secara berkala di production.
+> Karena hapus acuan bersifat permanen, jalankan `make backup` secara berkala di production.
 
 ### Memperbarui aplikasi yang sudah berjalan
 
@@ -47,17 +47,17 @@ Mode dev & tiruan juga membuat checklist contoh. **Master RO mulai kosong** (dat
 
    Migrasi skema berjalan otomatis setiap `make up`, sebelum `api` dan `worker` menyala.
 
-Catatan untuk pembaruan menu Panduan & Kategori (Oktober 2026):
+Catatan untuk pembaruan menu Acuan & Kategori (Oktober 2026):
 
-- Skema database kini dibuat langsung dari model; migrasi lama (`0002`–`0013`) dihapus. Database yang dibuat **sebelum 22 Oktober 2026 tidak dapat di-upgrade**. Buat ulang dengan `docker compose down -v` (hanya menghapus volume database `pgdata`; file di `./data` tetap) lalu `make up`. Data usulan dan review di database lama ikut hilang, dan backup lama tidak dapat dipulihkan ke kode ini.
+- Skema database kini dibuat langsung dari model; migrasi lama (`0002`–`0013`) dihapus. Database yang dibuat **sebelum 22 Oktober 2026 tidak dapat di-upgrade**. Buat ulang dengan `docker compose down -v` (hanya menghapus volume database `pgdata`; file di `./data` tetap) lalu `make up`. Data pengajuan dan review di database lama ikut hilang, dan backup lama tidak dapat dipulihkan ke kode ini.
 - Database yang dibuat **sejak 22 Oktober 2026** (kategori masih berupa versi daftar) dinaikkan **otomatis** saat `make up` oleh revisi `0002_kategori_per_kategori`: kategori dari versi aktif terakhir (semuanya Aktif), salinan kategori tiap review, dan id yang sama sehingga hasil review lama tetap cocok. Riwayat versi daftar lama tidak dipindah ke Kategori Histori.
-- Nama tabel & kolom berubah: panduan (`panduan_versi` → `panduan_histori`, `judul` → `panduan`, dll.; [desain.md](desain.md) §7 no. 17–19) dan kategori (`kategori_versi`/`kategori_item` → `kategori` + `kategori_histori` + `review_kategori`, `nama` → `kategori`, `definisi` → `deskripsi`; §7 no. 23–25). Query atau laporan SQL buatan sendiri yang memakai nama lama perlu disesuaikan.
-- API panduan tidak berubah. API kategori berubah: `GET /api/kategori` mengembalikan daftar kategori terbaru, endpoint versi kategori diganti tambah/ubah/hapus per kategori dan `/api/kategori/{id}/riwayat` (lihat [docs/api.md](docs/api.md)).
+- Nama tabel & kolom berubah: acuan (`panduan_versi` → `panduan_histori`, `judul` → `panduan`, dll.; [desain.md](desain.md) §7 no. 17–19) dan kategori (`kategori_versi`/`kategori_item` → `kategori` + `kategori_histori` + `review_kategori`, `nama` → `kategori`, `definisi` → `deskripsi`; §7 no. 23–25). Query atau laporan SQL buatan sendiri yang memakai nama lama perlu disesuaikan.
+- API acuan tidak berubah. API kategori berubah: `GET /api/kategori` mengembalikan daftar kategori terbaru, endpoint versi kategori diganti tambah/ubah/hapus per kategori dan `/api/kategori/{id}/riwayat` (lihat [docs/api.md](docs/api.md)).
 
-Catatan untuk pembaruan Menu Usulan (November 2026, [desain.md](desain.md) §7 no. 36):
+Catatan untuk pembaruan Menu Pengajuan (November 2026, [desain.md](desain.md) §7 no. 36):
 
 - Revisi `0013_usulan_created_updated_date` membuat ulang tabel `usulan` dengan kolom jejak `created_by`, `created_date`, `updated_by`, `updated_date` setelah `id`, menggantikan `created_at`/`updated_at` (data, indeks, dan relasi tetap); otomatis saat `make up`. Query SQL buatan sendiri yang memakai `usulan.created_at`/`updated_at` perlu disesuaikan.
-- Revisi `0012_usulan_hierarki_kategori` berjalan otomatis saat `make up`: menambah `usulan.hierarki` dan `usulan.kategori_usulan`, serta membuat `revisi.tor_*`/`rab_*` boleh kosong. Usulan lama tetap ada, tetapi hierarki dan kategorinya tampil "—".
+- Revisi `0012_usulan_hierarki_kategori` berjalan otomatis saat `make up`: menambah `usulan.hierarki` dan `usulan.kategori_usulan`, serta membuat `revisi.tor_*`/`rab_*` boleh kosong. Pengajuan lama tetap ada, tetapi hierarki dan kategorinya tampil "—".
 - Daftar Program/Kegiatan/KRO/RO untuk Pengajuan Baru diambil dari menu **Master RO** (dikelola Reviewer, termasuk impor Excel); hanya data Aktif yang induknya Aktif yang dapat dipilih. Data Renja tidak disimpan di repo.
 - API berubah: `POST /api/usulan` kini menerima `program, kegiatan, kro, ro, kategori_id` (bukan `tahun_anggaran, kode_ro, nama_ro`) dan wajib berisi TOR dan RAB; `PUT /api/usulan/{id}/draf` (Pengusul) hanya mengganti PDF; `PUT /api/usulan/{id}` (Reviewer) membetulkan hierarki/kategori dan dapat mengganti TOR/RAB; `DELETE /api/usulan/{id}` khusus Reviewer; endpoint arsip dihapus; `POST /api/review/{id}/finalkan` menerima `{label, catatan}`. Lihat [docs/api.md](docs/api.md).
 
@@ -65,11 +65,11 @@ Catatan untuk pembaruan Menu Usulan (November 2026, [desain.md](desain.md) §7 n
 
 - **Terminal:** `docker compose exec db psql -U airen -d airen` (`\dt` daftar tabel, `\q` keluar).
 - **GUI** (DBeaver, pgAdmin, ekstensi VS Code): host `127.0.0.1`, port `5433`, database/user/password `airen`. Hanya dapat diakses dari laptop itu sendiri, lewat layanan penerus `db-gui`. Kontainer `db` tetap tanpa jalur ke internet. Production tidak membuka port database.
-- **Tabel panduan:**
+- **Tabel acuan:**
   - `panduan` = data terkini: `id`, `created_by`/`created_date` (pengunggah & waktu unggah pertama), `updated_by`/`updated_date` (penginput & waktu versi terkini), `panduan` (Nama Acuan), `aktif`, `file_id`, `nama_file`, `deskripsi`.
-  - `panduan_histori` = riwayat saja (Panduan Histori): salinan utuh baris `panduan` sebelum tiap perubahan, ditambah `panduan_id`; tidak pernah diubah.
+  - `panduan_histori` = riwayat saja (Acuan Histori): salinan utuh baris `panduan` sebelum tiap perubahan, ditambah `panduan_id`; tidak pernah diubah.
   - Nomor versi tidak disimpan: histori ke-n menurut `updated_date` = versi n, versi terkini = jumlah histori + 1.
-  - `review_panduan` = salinan panduan + nomor versi (`nomor`) yang dipakai tiap review.
+  - `review_panduan` = salinan acuan + nomor versi (`nomor`) yang dipakai tiap review.
 - **Tabel kategori:**
   - `kategori` = data terkini: `id`, `created_by`/`created_date` (pembuat & waktu dibuat), `updated_by`/`updated_date` (penginput & waktu versi terkini), `aktif` (Nonaktif = tidak dipakai review berikutnya), `kode`, `kategori` (nama), `deskripsi` (definisi yang dipakai AI).
   - `kategori_histori` = riwayat saja (Kategori Histori): salinan utuh baris kategori sebelum tiap perubahan (`created_by`/`created_date` = pembuat & waktu kategori dibuat, `updated_by`/`updated_date` = penginput & waktu versi itu), ditambah `kategori_id`; ikut terhapus bila kategorinya dihapus.
@@ -117,10 +117,10 @@ Jalankan `make test`. Cakupannya:
 - transisi status;
 - verifikasi rujukan (E3) dan invarian kutipan;
 - fingerprint/konsistensi hasil;
-- versioning checklist/kategori/panduan, status Aktif/Nonaktif panduan dan kategori, hapus panduan permanen, serta CRUD, riwayat, dan hapus permanen kategori tanpa mengubah review lama;
+- versioning checklist/kategori/panduan, status Aktif/Nonaktif acuan dan kategori, hapus acuan permanen, serta CRUD, riwayat, dan hapus permanen kategori tanpa mengubah review lama;
 - hak akses role + Satker, CSRF, validasi unggahan, dan ganti password mencabut sesi lain;
 - Master RO: CRUD berjenjang, khusus Reviewer, dan impor Excel;
-- alur ujung ke ujung (pengajuan → AI → verifikasi/override → keputusan akhir → revisi → Histori Dokumen), Pengusul melihat hasil AI tetapi belum melihat penilaian verifikator sebelum final, hierarki Pengajuan Baru mengikuti Master RO Aktif (termasuk induk Nonaktif), edit & hapus usulan oleh Reviewer, review lama terkunci setelah dokumen diganti, serta filter & urut daftar usulan;
+- alur ujung ke ujung (pengajuan → AI → verifikasi/override → keputusan akhir → revisi → Histori Dokumen), Pengusul melihat hasil AI tetapi belum melihat penilaian verifikator sebelum final, hierarki Pengajuan Baru mengikuti Master RO Aktif (termasuk induk Nonaktif), edit & hapus pengajuan oleh Reviewer, review lama terkunci setelah dokumen diganti, serta filter & urut daftar pengajuan;
 - **tidak ada koneksi keluar** selama review.
 
 `make cek-offline` memeriksa jaringan kontainer yang sedang berjalan. Build frontend juga gagal bila ada aset dari domain luar.
@@ -149,5 +149,5 @@ docker-compose*.yml komposisi dasar + gpu + dev + prod + node-ai
 - [API](docs/api.md)
 - [Instalasi offline & node GPU](docs/instalasi-offline.md)
 - [Panduan pengguna](docs/panduan-pengguna.md)
-- [Panduan administrasi](docs/panduan-admin.md)
+- [Acuan administrasi](docs/panduan-admin.md)
 - [Daftar asumsi](docs/asumsi.md)

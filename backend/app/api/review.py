@@ -1,4 +1,5 @@
-"""Endpoint Detail Review: lihat hasil, override (O1–O6), catatan reviewer, finalisasi (O7–O8)."""
+"""Endpoint Detail Review: lihat hasil, Simpan Sebagai Draf (status & catatan verifikator, keputusan akhir, kategori;
+disimpan sebagai override & catatan terpisah dari hasil AI, O1–O6), dan finalisasi (O7–O8)."""
 import uuid
 from datetime import datetime, timezone
 from typing import Literal
@@ -49,110 +50,13 @@ def lihat(review_id: uuid.UUID, db: Session = Depends(sesi_db), p: Pengguna = De
     return detail_review(db, review, p)
 
 
-@router.get("/revisi/{revisi_id}/review")
-def lihat_per_revisi(revisi_id: uuid.UUID, db: Session = Depends(sesi_db), p: Pengguna = Depends(pengguna_saat_ini)) -> dict:
-    """Review terbaru dari suatu revisi."""
-    review = review_terbaru(db, revisi_id)
-    if review is None:
-        raise Galat(404, "Revisi ini belum pernah diajukan review.")
-    return lihat(review.id, db, p)
-
-
-class OverrideMasuk(BaseModel):
-    target: Literal["ITEM", "LABEL", "KATEGORI"]
-    checklist_item_id: uuid.UUID | None = None
-    nilai: str
-    alasan: str
-
-
-@router.post("/review/{review_id}/override")
-def override(review_id: uuid.UUID, data: OverrideMasuk, request: Request, db: Session = Depends(sesi_db),
-             p: Pengguna = Depends(wajib_role(REVIEWER))) -> dict:
-    """Override status item / label / kategori. Hasil AI tidak diubah; override disimpan terpisah (O2).
-
-    ITEM = penilaian verifikator per item: Status & Catatan Verifikator (catatan opsional, nilai boleh sama dengan AI
-    sebagai konfirmasi; desain.md §7 no. 36). LABEL/KATEGORI: alasan wajib & nilai harus berbeda.
-    `nilai_sebelum` = nilai final saat ini (bisa nilai AI atau override sebelumnya) — tercatat untuk O4.
-    Error: 400 alasan kosong / nilai tidak valid / nilai sama; 409 review sudah final.
-    """
-    review, revisi = _ambil_review(db, review_id, p, kunci=True)
-    _wajib_dapat_diubah(db, review, revisi)
-    alasan = data.alasan.strip()
-    if not alasan and data.target != "ITEM":
-        raise Galat(400, "Alasan override wajib diisi.")
-    nf, _ = nilai_final_review(db, review, True)
-    if data.target == "ITEM":
-        if data.nilai not in (TERPENUHI, TIDAK_TERPENUHI) or data.checklist_item_id is None:
-            raise Galat(400, "Nilai override item tidak valid.")
-        if db.scalar(select(HasilItem).where(HasilItem.review_id == review.id, HasilItem.checklist_item_id == data.checklist_item_id)) is None:
-            raise Galat(400, "Item checklist tidak termasuk review ini.")
-        sebelum = TERPENUHI if nf.item[str(data.checklist_item_id)] else TIDAK_TERPENUHI
-    elif data.target == "LABEL":
-        if data.nilai not in (LOLOS, TIDAK_LOLOS):
-            raise Galat(400, "Nilai label tidak valid.")
-        sebelum = nf.label
-    else:
-        k = db.get(ReviewKategori, (review.id, uuid.UUID(data.nilai))) if _uuid_valid(data.nilai) else None
-        if k is None:
-            raise Galat(400, "Kategori tidak termasuk daftar kategori review ini.")
-        sebelum = nf.kategori_id or ""
-    if sebelum == data.nilai and data.target != "ITEM":
-        raise Galat(400, "Nilai baru sama dengan nilai saat ini.")
-    o = Override(review_id=review.id, target=data.target, checklist_item_id=data.checklist_item_id if data.target == "ITEM" else None,
-                 nilai_sebelum=sebelum, nilai_sesudah=data.nilai, alasan=alasan, oleh=p.id)
-    db.add(o)
-    db.flush()
-    catat(db, request, "OVERRIDE", "review", review.id,
-          sebelum={"target": data.target, "item": str(data.checklist_item_id) if data.checklist_item_id else None, "nilai": sebelum},
-          sesudah={"nilai": data.nilai, "alasan": alasan, "override_id": str(o.id)})
-    db.commit()
-    return detail_review(db, review, p)
-
-
-def _uuid_valid(s: str) -> bool:
-    try:
-        uuid.UUID(s)
-        return True
-    except ValueError:
-        return False
-
-
-@router.post("/override/{override_id}/batal")
-def batal_override(override_id: uuid.UUID, request: Request, db: Session = Depends(sesi_db),
-                   p: Pengguna = Depends(wajib_role(REVIEWER))) -> dict:
-    """Batalkan override (kembali ke nilai sebelumnya/AI) selama belum final (O5). Riwayat tetap tersimpan."""
-    o = db.get(Override, override_id)
-    if o is None or o.dibatalkan_at is not None:
-        raise Galat(404, "Override tidak ditemukan atau sudah dibatalkan.")
-    review, revisi = _ambil_review(db, o.review_id, p, kunci=True)
-    _wajib_dapat_diubah(db, review, revisi)
-    o.dibatalkan_at = datetime.now(timezone.utc)
-    o.dibatalkan_oleh = p.id
-    catat(db, request, "BATAL_OVERRIDE", "review", review.id, sebelum={"override_id": str(o.id), "nilai": o.nilai_sesudah})
-    db.commit()
-    return detail_review(db, review, p)
-
-
-class CatatanMasuk(BaseModel):
-    dokumen: Literal["TOR", "RAB", "UMUM"]
-    teks: str
-
-
-@router.put("/review/{review_id}/catatan")
-def simpan_catatan(review_id: uuid.UUID, data: CatatanMasuk, request: Request, db: Session = Depends(sesi_db),
-                   p: Pengguna = Depends(wajib_role(REVIEWER))) -> dict:
-    """Tambah/ubah catatan reviewer untuk Pengusul (teks kosong = hapus). Disembunyikan dari Pengusul sebelum final."""
-    review, revisi = _ambil_review(db, review_id, p, kunci=True)
-    _wajib_dapat_diubah(db, review, revisi)
-    _simpan_catatan(db, request, review, data.dokumen, data.teks, p)
-    db.commit()
-    return detail_review(db, review, p)
-
-
 def _simpan_catatan(db: Session, request: Request, review: Review, dokumen: str, teks: str, p: Pengguna) -> None:
-    """Upsert satu catatan reviewer per dokumen (teks kosong = hapus) + audit log."""
+    """Upsert satu catatan reviewer per dokumen (teks kosong = hapus) + audit log. Teks yang tidak berubah tidak ditulis dan
+    tidak dicatat di audit log (Simpan Sebagai Draf berulang tidak memenuhi Audit Log)."""
     c = db.scalar(select(CatatanReviewer).where(CatatanReviewer.review_id == review.id, CatatanReviewer.dokumen == dokumen))
     sebelum = c.teks if c else None
+    if (sebelum or "") == teks.strip():
+        return
     if not teks.strip():
         if c:
             db.delete(c)
@@ -164,15 +68,16 @@ def _simpan_catatan(db: Session, request: Request, review: Review, dokumen: str,
           sesudah={"dokumen": dokumen, "teks": teks.strip()})
 
 
+# Catatan tidak dikirim (None) = biarkan catatan tersimpan; "" = hapus. Bawaan "" dulu menghapus catatan tanpa sengaja.
 class ItemKeputusan(BaseModel):
     checklist_item_id: uuid.UUID
     nilai: Literal["TERPENUHI", "TIDAK_TERPENUHI"]
-    catatan: str = ""
+    catatan: str | None = None
 
 
 class KeputusanMasuk(BaseModel):
     label: Literal["LOLOS", "TIDAK_LOLOS"] | None = None
-    catatan: str = ""
+    catatan: str | None = None  # catatan akhir (catatan reviewer dokumen "UMUM")
     item: list[ItemKeputusan] = []
     kategori_id: uuid.UUID | None = None  # kategori pilihan verifikator (dari salinan kategori review ini)
     catatan_kategori: str | None = None   # Catatan Verifikator tabel Kategori (catatan reviewer dokumen "KATEGORI")
@@ -199,7 +104,7 @@ def _simpan_kategori(db: Session, request: Request, review: Review, data: Keputu
 
 def _simpan_item(db: Session, review: Review, daftar: list[ItemKeputusan], p: Pengguna) -> None:
     """Status & Catatan Verifikator per item dari halaman Pemeriksaan (desain.md §7 no. 40). Status disimpan sebagai override
-    ITEM hanya bila berbeda dari override aktif (hasil AI tidak diubah, O2); catatan di `catatan_item` (kosong = hapus).
+    ITEM hanya bila berbeda dari override aktif (hasil AI tidak diubah, O2); catatan di `catatan_item` (kosong = hapus, tidak dikirim = tetap).
     Error: 400 item tidak termasuk review ini."""
     if not daftar:
         return
@@ -210,11 +115,13 @@ def _simpan_item(db: Session, review: Review, daftar: list[ItemKeputusan], p: Pe
     aktif = override_aktif(overrides)
     catatan = {c.checklist_item_id: c for c in db.scalars(select(CatatanItem).where(CatatanItem.review_id == review.id))}
     for x in daftar:
-        iid, teks = str(x.checklist_item_id), x.catatan.strip()
+        iid, teks = str(x.checklist_item_id), (x.catatan or "").strip()
         o = aktif.get(("ITEM", iid))
         if o is None or o.nilai_sesudah != x.nilai:
             db.add(Override(review_id=review.id, target="ITEM", checklist_item_id=x.checklist_item_id,
                             nilai_sebelum=TERPENUHI if nf.item[iid] else TIDAK_TERPENUHI, nilai_sesudah=x.nilai, alasan=teks, oleh=p.id))
+        if x.catatan is None:
+            continue
         c = catatan.get(x.checklist_item_id)
         if not teks:
             if c:
@@ -231,7 +138,8 @@ def _simpan_keputusan(db: Session, request: Request, review: Review, data: Keput
     tetap terpilih saat halaman dibuka lagi dan tetap tersembunyi dari Pengusul sebelum final (O2, O4)."""
     _simpan_kategori(db, request, review, data, p)
     _simpan_item(db, review, data.item, p)
-    _simpan_catatan(db, request, review, "UMUM", data.catatan, p)
+    if data.catatan is not None:
+        _simpan_catatan(db, request, review, "UMUM", data.catatan, p)
     if data.label is not None:
         nf, overrides = nilai_final_review(db, review, True)  # setelah item di atas (autoflush)
         aktif = override_aktif(overrides).get(("LABEL", None))
@@ -240,7 +148,7 @@ def _simpan_keputusan(db: Session, request: Request, review: Review, data: Keput
                 aktif.dibatalkan_at, aktif.dibatalkan_oleh = datetime.now(timezone.utc), p.id
         elif aktif is None or aktif.nilai_sesudah != data.label:
             db.add(Override(review_id=review.id, target="LABEL", nilai_sebelum=nf.label, nilai_sesudah=data.label,
-                            alasan=data.catatan.strip() or "Keputusan akhir verifikator.", oleh=p.id))
+                            alasan=(data.catatan or "").strip() or "Keputusan akhir verifikator.", oleh=p.id))
     catat(db, request, "KEPUTUSAN_AKHIR", "review", review.id, sesudah={
         "label": data.label, "jumlah_item": len(data.item), "kategori_id": str(data.kategori_id) if data.kategori_id else None})
 

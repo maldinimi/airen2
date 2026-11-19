@@ -1,13 +1,13 @@
 /** Detail usulan (`/usulan/:id`, desain.md §7 no. 36 & 38): parameter hierarki anggaran + Histori Dokumen per revisi (urut naik).
- *  Aksi per revisi → halaman Pemeriksaan: Reviewer "Review" bila menunggu verifikasi, Pengusul "Revisi" bila revisi
- *  terbaru Tidak Lolos (tombol Unggah Revisi ada di bawah halaman Pemeriksaan), selain itu ikon mata (Detail). */
+ *  Aksi per revisi → halaman Pemeriksaan: Reviewer "Review" bila menunggu verifikasi, Pengusul "Perbaiki" bila revisi
+ *  terbaru Tidak Lolos (tombol Unggah Perbaikan ada di bawah halaman Pemeriksaan), selain itu ikon mata (Detail). */
 import { useQuery } from "@tanstack/react-query";
 import { ArrowLeft, Eye, Pencil } from "lucide-react";
 import { Link, useParams } from "react-router-dom";
 import { api } from "../api";
 import { useAuth } from "../auth";
 import { InfoProses, TautanDokumen, bolehUbahDokumen } from "../components/Usulan";
-import { waktuAngka } from "../format";
+import { namaRevisi, waktuAngka } from "../format";
 import type { BarisUsulan, Dok, StatusRevisi } from "../types";
 import { Judul, Kartu, Kosong, LencanaStatus, Memuat, Peringatan, Ringkasan, TanggalJam, Tombol } from "../ui";
 
@@ -22,7 +22,7 @@ export default function UsulanDetail() {
     refetchInterval: (x) => (x.state.data && ["ANTRE", "DIPROSES_AI"].includes(x.state.data.usulan.status) ? 5000 : false),
   });
   if (q.isLoading) return <Memuat />;
-  if (q.error || !q.data) return <Peringatan>{(q.error as Error)?.message ?? "Usulan tidak ditemukan."}</Peringatan>;
+  if (q.error || !q.data) return <Peringatan>{(q.error as Error)?.message ?? "Pengajuan tidak ditemukan."}</Peringatan>;
   const { usulan: u, revisi } = q.data;
   const h = u.hierarki;
   const reviewer = punya("REVIEWER");
@@ -31,9 +31,9 @@ export default function UsulanDetail() {
     if (terbaru && reviewer && r.status === "MENUNGGU_VERIFIKASI")
       return <Link to={`/review/${reviewId}`}><Tombol kecil>Review</Tombol></Link>;
     if (terbaru && u.boleh_kelola && !u.diarsipkan && r.status === "TIDAK_LOLOS")
-      return <Link to={`/review/${reviewId}`}><Tombol kecil>Revisi</Tombol></Link>;
+      return <Link to={`/review/${reviewId}`}><Tombol kecil>Perbaiki</Tombol></Link>;
     return (
-      <Link to={`/review/${reviewId}`} title="Detail" aria-label={`Detail revisi ${r.nomor}`}
+      <Link to={`/review/${reviewId}`} title="Detail" aria-label={`Detail ${namaRevisi(r.nomor)}`}
         className="inline-flex rounded-lg p-1.5 text-emerald-600 hover:bg-emerald-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-utama-100">
         <Eye className="size-4" /></Link>
     );
@@ -42,8 +42,8 @@ export default function UsulanDetail() {
   return (
     <div className="w-full space-y-4">
       <div>
-        <Link to="/usulan" className="mb-3 inline-flex items-center gap-1 text-sm text-slate-500 hover:text-slate-800"><ArrowLeft className="size-4" />Usulan</Link>
-        <Judul judul="Detail Usulan" sub={`${u.kode_ro} — ${u.nama_ro}`}
+        <Link to="/usulan" className="mb-3 inline-flex items-center gap-1 text-sm text-slate-500 hover:text-slate-800"><ArrowLeft className="size-4" />Pengajuan</Link>
+        <Judul judul="Detail Pengajuan" sub={`${u.kode_ro} — ${u.nama_ro}`}
           aksi={bolehUbahDokumen(u) && <Link to={`/usulan/${u.id}/ubah`}><Tombol><Pencil className="size-4" />Edit</Tombol></Link>} />
       </div>
       <Kartu className="space-y-3 p-5">
@@ -56,7 +56,7 @@ export default function UsulanDetail() {
           ["Rincian Output (RO)", `${u.kode_ro} — ${u.nama_ro}`],
           ["Kategori", u.kategori_usulan ? `${u.kategori_usulan.kode} — ${u.kategori_usulan.nama}` : "—"],
           ["Deskripsi Kategori", <span className="block whitespace-pre-line text-justify">{u.kategori_usulan?.deskripsi ?? "—"}</span>],
-          ["Tanggal Pengajuan", <TanggalJam iso={u.dibuat_at} />],
+          ["Tanggal Pengajuan", <TanggalJam iso={u.diajukan_at} />],
         ]} />
       </Kartu>
       <Kartu className="space-y-3 p-5">
@@ -68,7 +68,7 @@ export default function UsulanDetail() {
             const terbaru = r.nomor === u.revisi_nomor;
             return (
               <div key={r.id} className="space-y-2 rounded-lg border border-slate-200 p-3 text-sm">
-                <div className="flex items-center justify-between gap-2"><span className="font-semibold">Revisi {r.nomor}</span><LencanaStatus status={r.status} /></div>
+                <div className="flex items-center justify-between gap-2"><span className="font-semibold">{namaRevisi(r.nomor)}</span><LencanaStatus status={r.status} /></div>
                 {terbaru && <InfoProses p={u.proses} />}
                 <TautanDokumen tor={r.tor} rab={r.rab} />
                 <dl className="grid grid-cols-2 gap-1 text-xs text-slate-600">
@@ -82,7 +82,7 @@ export default function UsulanDetail() {
           <div className="hidden overflow-x-auto rounded-lg border border-slate-200 md:block">
             <table className="w-full min-w-[52rem] text-sm">
               <thead className="bg-slate-50 text-xs font-semibold text-slate-600">
-                <tr>{["No", "Dokumen", "Tanggal Pengajuan", "Tanggal Verifikasi", "Status Verifikasi", "Aksi"].map((x) => (
+                <tr>{["Tahap", "Dokumen", "Tanggal Pengajuan", "Tanggal Verifikasi", "Status Verifikasi", "Aksi"].map((x) => (
                   <th key={x} scope="col" className={x === "Dokumen" ? "px-3 py-2 text-left" : "px-3 py-2 text-center"}>{x}</th>))}</tr>
               </thead>
               <tbody className="divide-y divide-slate-100">{revisi.map((r) => {
@@ -90,7 +90,7 @@ export default function UsulanDetail() {
                 const terbaru = r.nomor === u.revisi_nomor;
                 return (
                   <tr key={r.id} className="align-top">
-                    <td className="px-3 py-2.5 text-center text-slate-500">{r.nomor}</td>
+                    <td className="whitespace-nowrap px-3 py-2.5 text-center font-medium text-slate-700">{namaRevisi(r.nomor)}</td>
                     <td className="px-3 py-2.5"><TautanDokumen tor={r.tor} rab={r.rab} /></td>
                     <td className="whitespace-nowrap px-3 py-2.5 text-center text-slate-600"><TanggalJam iso={r.dibuat_at} /></td>
                     <td className="whitespace-nowrap px-3 py-2.5 text-center text-slate-600"><TanggalJam iso={rv?.difinalkan_at} /></td>

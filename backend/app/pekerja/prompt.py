@@ -3,13 +3,13 @@ dan ID rujukan dibatasi `enum` alias yang ada di konteks sehingga LLM tidak dapa
 
 PROMPT_VERSI masuk fingerprint (desain §4.6) — naikkan setiap kali prompt/skema diubah.
 """
-PROMPT_VERSI = "2026.10.1"
+PROMPT_VERSI = "2026.11.1"
 
 SISTEM = (
-    "Anda adalah reviewer dokumen usulan anggaran pemerintah (TOR dan RAB) yang sangat teliti. "
+    "Anda adalah reviewer dokumen pengajuan anggaran pemerintah (TOR dan RAB) yang sangat teliti. "
     "Nalar secara mendalam sebelum menjawab, jangan sekadar mencocokkan kata kunci. "
     "Gunakan HANYA potongan dokumen yang diberikan; setiap potongan diawali ID dalam kurung siku, misalnya [E3] untuk "
-    "TOR/RAB dan [P2] untuk Panduan. Jangan pernah mengarang isi dokumen, isi panduan, maupun rujukan. "
+    "TOR/RAB dan [P2] untuk Acuan. Jangan pernah mengarang isi dokumen, isi acuan, maupun rujukan. "
     "Setiap rujukan WAJIB berisi ID potongan dan kutipan yang disalin PERSIS dari teks potongan tersebut "
     "(boleh sebagian, minimal satu frasa utuh). Jika informasi tidak ada, katakan tidak ditemukan. "
     "Seluruh jawaban dalam Bahasa Indonesia yang baku dan jelas. Jawab hanya dengan JSON sesuai skema."
@@ -70,13 +70,13 @@ def prompt_nilai_item(item, konteks_dok: str, konteks_panduan: str, umpan_balik:
         f"Nilai apakah dokumen memenuhi item checklist berikut.\n\n"
         f"ITEM {item.kode} — {item.judul}\nBerlaku untuk: {item.berlaku_untuk}\nKriteria pemenuhan: {item.kriteria}\n\n"
         f"ATURAN:\n"
-        f"- terpenuhi=true HANYA jika isi TOR/RAB memenuhi kriteria DAN sesuai ketentuan Panduan yang relevan, "
+        f"- terpenuhi=true HANYA jika isi TOR/RAB memenuhi kriteria DAN sesuai ketentuan Acuan yang relevan, "
         f"bukan sekadar menyebutkan topiknya.\n"
         f"- ditemukan=false jika sama sekali tidak ada bagian dokumen yang membahas kriteria ini; maka terpenuhi=false dan bukti kosong.\n"
-        f"- 'bukti' berisi rujukan potongan TOR/RAB [E..]; 'dasar_panduan' berisi rujukan potongan Panduan [P..] yang menjadi dasar penilaian.\n"
+        f"- 'bukti' berisi rujukan potongan TOR/RAB [E..]; 'dasar_panduan' berisi rujukan potongan Acuan [P..] yang menjadi dasar penilaian.\n"
         f"- 'alasan' menjelaskan penilaian; 'yang_kurang' menyebut secara konkret apa yang belum ada/kurang (kosongkan bila terpenuhi).\n\n"
         f"POTONGAN DOKUMEN (TOR/RAB):\n{konteks_dok or '(tidak ada potongan yang relevan)'}\n\n"
-        f"POTONGAN PANDUAN:\n{konteks_panduan or '(tidak ada panduan yang relevan)'}\n"
+        f"POTONGAN ACUAN:\n{konteks_panduan or '(tidak ada acuan yang relevan)'}\n"
     )
     if umpan_balik:
         teks += f"\nPERHATIAN — jawaban sebelumnya memuat rujukan tidak valid: {umpan_balik}. Perbaiki: pakai ID yang ada dan kutipan persis.\n"
@@ -101,9 +101,9 @@ def prompt_keselarasan(konteks: str) -> str:
 
 def prompt_rekomendasi(dokumen: str, masalah: str, konteks_panduan: str) -> str:
     return (f"Susun rekomendasi perbaikan {dokumen} agar dokumen menjadi LOLOS. Setiap rekomendasi berupa langkah konkret "
-            f"yang dapat langsung dikerjakan penyusun {dokumen}, merujuk ketentuan Panduan bila relevan (isi dasar_panduan), "
+            f"yang dapat langsung dikerjakan penyusun {dokumen}, merujuk ketentuan Acuan bila relevan (isi dasar_panduan), "
             f"dan kode_item diisi kode item checklist yang diperbaiki (kosong untuk temuan keselarasan).\n\n"
-            f"MASALAH YANG DITEMUKAN:\n{masalah}\n\nPOTONGAN PANDUAN:\n{konteks_panduan or '(tidak ada panduan yang relevan)'}\n")
+            f"MASALAH YANG DITEMUKAN:\n{masalah}\n\nPOTONGAN ACUAN:\n{konteks_panduan or '(tidak ada acuan yang relevan)'}\n")
 
 
 def prompt_kategori(definisi: str, konteks_dok: str, konteks_panduan: str) -> str:
@@ -112,7 +112,7 @@ def prompt_kategori(definisi: str, konteks_dok: str, konteks_panduan: str) -> st
             "keterkaitan dengan prioritas pembangunan nasional, sasaran kementerian, serta tugas dan fungsi Satker. "
             "Alasan WAJIB mengacu pada definisi kategori yang dipilih dan menjelaskan mengapa kategori yang lebih tinggi "
             "tidak terpenuhi.\n\n"
-            f"DEFINISI KATEGORI:\n{definisi}\n\nPOTONGAN DOKUMEN:\n{konteks_dok}\n\nPOTONGAN PANDUAN:\n{konteks_panduan or '(tidak ada)'}\n")
+            f"DEFINISI KATEGORI:\n{definisi}\n\nPOTONGAN DOKUMEN:\n{konteks_dok}\n\nPOTONGAN ACUAN:\n{konteks_panduan or '(tidak ada)'}\n")
 
 
 PROMPT_GAMBAR = ("Deskripsikan gambar/grafik/diagram/tabel pada potongan halaman dokumen anggaran ini secara faktual dalam "

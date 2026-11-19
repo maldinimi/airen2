@@ -2,12 +2,13 @@
 finalkan → revisi → riwayat; plus invarian rujukan, konsistensi (fingerprint), hak akses, versioning, offline."""
 import io
 import socket
+import threading
 import uuid
 
 from sqlalchemy import func, select, text, update
 
 from app.db import SessionLokal
-from app.model import Elemen, File, Kategori, KategoriHistori, Panduan, Review, Rujukan
+from app.model import Elemen, File, Kategori, KategoriHistori, Panduan, Review, Revisi, Rujukan, Usulan
 from tests.conftest import RAB_CONTOH, TOR_CONTOH, buat_pdf, isian, jalankan_antrean, unggah
 
 TOR = buat_pdf(TOR_CONTOH)
@@ -47,34 +48,37 @@ def test_alur_lengkap(klien):
         for r, e in db.execute(select(Rujukan, Elemen).join(Elemen, Elemen.id == Rujukan.elemen_id)).all():
             assert r.kutipan in e.teks and e.halaman >= 1
 
-    # Reviewer override item → label dihitung ulang; pengusul belum melihat override
+    # Reviewer menilai item (Simpan Sebagai Draf) → label dihitung ulang; pengusul belum melihat penilaian
     reviewer = klien("reviewer")
+    url = f"/api/review/{rv['id']}/keputusan"
     item = rv["item"][0]
     nilai = "TIDAK_TERPENUHI" if item["terpenuhi"] else "TERPENUHI"
-    assert reviewer.post(f"/api/review/{rv['id']}/override", json={"target": "LABEL", "nilai": "LOLOS", "alasan": ""}).status_code == 400
-    d = reviewer.post(f"/api/review/{rv['id']}/override", json={"target": "ITEM", "checklist_item_id": item["id"], "nilai": nilai, "alasan": "Bukti kurang"}).json()
+    d = reviewer.put(url, json={"item": [{"checklist_item_id": item["id"], "nilai": nilai, "catatan": "Bukti kurang"}]}).json()
     assert d["item"][0]["diubah"] and d["item"][0]["ai_terpenuhi"] == item["ai_terpenuhi"]  # hasil AI tetap (O2)
     belum = pengusul.get(f"/api/review/{rv['id']}").json()  # Pengusul: hasil AI terlihat, override belum (sebelum final)
     assert belum["item"][0]["diubah"] is False and pengusul.get(f"/api/usulan/{u['id']}").json()["review_id"] == rv["id"]
-    # Batal override (O5)
-    d = reviewer.post(f"/api/override/{d['item'][0]['override']['id']}/batal").json()
-    assert not d["item"][0]["diubah"]
-    # Override label tidak konsisten → peringatan; kategori override
-    d = reviewer.post(f"/api/review/{rv['id']}/override", json={"target": "LABEL", "nilai": "TIDAK_LOLOS" if d["label"]["final"] == "LOLOS" else "LOLOS", "alasan": "Pertimbangan reviewer"}).json()
+    # Kembali ke nilai AI (O5); catatan item tidak dikirim → catatan tersimpan tetap
+    d = reviewer.put(url, json={"item": [{"checklist_item_id": item["id"], "nilai": "TERPENUHI" if item["ai_terpenuhi"] else "TIDAK_TERPENUHI"}]}).json()
+    assert d["item"][0]["terpenuhi"] == item["ai_terpenuhi"] and d["item"][0]["catatan_verifikator"]["teks"] == "Bukti kurang"
+    # Keputusan akhir berbeda dari hitungan item → peringatan tidak konsisten; lalu TIDAK LOLOS + kategori K4 + catatan akhir
+    d = reviewer.put(url, json={"label": "TIDAK_LOLOS" if d["label"]["hitung"] == "LOLOS" else "LOLOS"}).json()
     assert d["label"]["tidak_konsisten"]
-    d = reviewer.post(f"/api/review/{rv['id']}/override", json={"target": "LABEL", "nilai": "TIDAK_LOLOS", "alasan": "Dikembalikan"}).json() \
-        if d["label"]["final"] == "LOLOS" else d
     k4 = next(k for k in d["kategori"]["pilihan"] if k["kode"] == "K4")
-    if d["kategori"]["final"]["kode"] != "K4":
-        d = reviewer.post(f"/api/review/{rv['id']}/override", json={"target": "KATEGORI", "nilai": k4["id"], "alasan": "Tidak terkait tusi"}).json()
-    reviewer.put(f"/api/review/{rv['id']}/catatan", json={"dokumen": "UMUM", "teks": "Perbaiki indikator."})
-    # Pengusul tidak dapat override/finalkan
+    d = reviewer.put(url, json={"label": "TIDAK_LOLOS", "kategori_id": k4["id"], "catatan": "Perbaiki indikator."}).json()
+    # Simpan ulang tanpa `catatan` tidak menghapus catatan akhir, dan teks yang sama tidak menambah Audit Log
+    audit = lambda: klien("admin", "GantiSegera!2026").get("/api/audit", params={"aksi": "CATATAN_REVIEWER"}).json()["total"]  # noqa: E731
+    jumlah_audit = audit()
+    reviewer.put(url, json={"label": "TIDAK_LOLOS"})
+    reviewer.put(url, json={"catatan": "Perbaiki indikator."})
+    assert audit() == jumlah_audit
+    # Pengusul tidak dapat menilai/finalkan
+    assert pengusul.put(url, json={"label": "LOLOS"}).status_code == 403
     assert pengusul.post(f"/api/review/{rv['id']}/finalkan").status_code == 403
 
     d = reviewer.post(f"/api/review/{rv['id']}/finalkan").json()
     assert d["final"] and d["label"]["final"] == "TIDAK_LOLOS" and d["kategori"]["final"]["kode"] == "K4"
     # Terkunci (O7)
-    assert reviewer.post(f"/api/review/{rv['id']}/override", json={"target": "LABEL", "nilai": "LOLOS", "alasan": "x"}).status_code == 409
+    assert reviewer.put(url, json={"label": "LOLOS"}).status_code == 409
     # Pengusul kini melihat hasil final + catatan, berdampingan dengan hasil AI
     lihat = pengusul.get(f"/api/review/{rv['id']}").json()
     assert lihat["final"] and lihat["catatan"][0]["teks"] == "Perbaiki indikator." and lihat["label"]["ai"] is not None
@@ -83,11 +87,14 @@ def test_alur_lengkap(klien):
     # Tombol "Unggah Revisi" di halaman Pemeriksaan: hanya Pengusul Satker ini, revisi terbaru yang Tidak Lolos
     assert pengusul.get(f"/api/review/{rv['id']}").json()["boleh_unggah_revisi"] and not _review(klien, rv["id"])["boleh_unggah_revisi"]
 
-    # Tidak boleh dihapus setelah direview; boleh revisi (RAB saja) → ajukan → hasil identik disalin? (TOR sama, RAB beda → tidak)
+    # Tidak boleh dihapus setelah direview; revisi wajib TOR dan RAB (TOR isinya sama, RAB beda) → ajukan → tidak disalin
     assert klien("pengusul_b").delete(f"/api/usulan/{u['id']}").status_code == 403  # Satker lain
     rab2 = buat_pdf(["RINCIAN ANGGARAN BIAYA REVISI"], RAB_CONTOH + [["Konsumsi", "5", "OK", "50.000"]])
-    r2 = unggah(pengusul, f"/api/usulan/{u['id']}/revisi", rab=rab2, ajukan=True).json()
+    assert unggah(pengusul, f"/api/usulan/{u['id']}/revisi", rab=rab2, ajukan=True).status_code == 400  # RAB saja
+    r2 = unggah(pengusul, f"/api/usulan/{u['id']}/revisi", tor=TOR, rab=rab2, ajukan=True).json()
     assert r2["revisi_nomor"] == 2 and r2["tor"]["file_id"] == u["tor"]["file_id"] and r2["rab"]["file_id"] != u["rab"]["file_id"]
+    # Tanggal Pengajuan mengikuti unggahan terakhir (revisi), bukan pengajuan pertama
+    assert r2["diajukan_at"] > u["diajukan_at"] and r2["dibuat_at"] == u["dibuat_at"]
     assert not pengusul.get(f"/api/review/{rv['id']}").json()["boleh_unggah_revisi"]  # bukan revisi terbaru lagi
     jalankan_antrean()
     riwayat = reviewer.get(f"/api/usulan/{u['id']}/riwayat").json()
@@ -196,12 +203,12 @@ def test_pengajuan_baru_keputusan_akhir_edit_dan_hapus_reviewer(klien):
     rv = _review(klien, rid)
     i0 = rv["item"][0]
     nilai_ai = "TERPENUHI" if i0["ai_terpenuhi"] else "TIDAK_TERPENUHI"
-    d = reviewer.post(f"/api/review/{rid}/override", json={"target": "ITEM", "checklist_item_id": i0["id"], "nilai": nilai_ai, "alasan": ""}).json()
+    url_keputusan = f"/api/review/{rid}/keputusan"
+    d = reviewer.put(url_keputusan, json={"item": [{"checklist_item_id": i0["id"], "nilai": nilai_ai}]}).json()
     assert d["item"][0]["override"]["nilai_sesudah"] == nilai_ai
     # Simpan Sebagai Draf: status (bawaan = nilai AI) & Catatan Verifikator per item tersimpan bersama
     i1 = rv["item"][1]
     nilai_i1 = "TERPENUHI" if i1["ai_terpenuhi"] else "TIDAK_TERPENUHI"
-    url_keputusan = f"/api/review/{rid}/keputusan"
     d = reviewer.put(url_keputusan, json={"item": [{"checklist_item_id": i1["id"], "nilai": nilai_i1, "catatan": " Cek ulang volume. "}]}).json()
     assert d["item"][1]["catatan_verifikator"]["teks"] == "Cek ulang volume." and d["item"][1]["override"]["nilai_sesudah"] == nilai_i1
     jumlah = len(d["riwayat_override"])
@@ -233,22 +240,15 @@ def test_pengajuan_baru_keputusan_akhir_edit_dan_hapus_reviewer(klien):
     assert lihat["item"][1]["catatan_verifikator"]["teks"] == "Cek ulang volume."
     assert reviewer.put(url_keputusan, json={"catatan": "terlambat"}).status_code == 409  # terkunci setelah final
     assert p.get(f"/api/usulan/{u['id']}").json()["status"] == "LOLOS"
-    # Edit usulan khusus Reviewer: hierarki/kategori, dan dokumen pengganti → revisi baru yang langsung direview AI
+    # Edit usulan khusus Reviewer: hierarki/kategori; terkunci setelah diverifikasi (desain.md §7 no. 51). Penggantian
+    # dokumen oleh Reviewer diuji di test_dokumen_diganti_review_lama_terkunci_dan_file_lama_ikut_terhapus.
     k2 = isian(p, "K2")["kategori_id"]
     ubah = {**form, "ro": "962", "kategori_id": k2}
-    assert p.put(f"/api/usulan/{u['id']}", data=ubah).status_code == 403
-    assert reviewer.put(f"/api/usulan/{u['id']}", data={**ubah, "ro": "999"}).status_code == 400
-    e = reviewer.put(f"/api/usulan/{u['id']}", data=ubah).json()
+    assert reviewer.put(f"/api/usulan/{u['id']}", data=ubah).status_code == 409  # sudah Lolos
+    assert p.put(f"/api/usulan/{lain['id']}", data=ubah).status_code == 403
+    assert reviewer.put(f"/api/usulan/{lain['id']}", data={**ubah, "ro": "999"}).status_code == 400
+    e = reviewer.put(f"/api/usulan/{lain['id']}", data=ubah).json()
     assert e["kode_ro"] == "4490.EBA.962" and e["kategori_usulan"]["kode"] == "K2" and e["revisi_nomor"] == 1
-    tor2 = buat_pdf(TOR_CONTOH + ["Perbaikan kerangka acuan oleh verifikator."])
-    e = reviewer.put(f"/api/usulan/{u['id']}", data=ubah, files={"tor": ("tor2.pdf", io.BytesIO(tor2), "application/pdf")}).json()
-    tor2_id = uuid.UUID(e["tor"]["file_id"])
-    assert e["revisi_nomor"] == 1 and e["status"] == "ANTRE" and e["rab"]["file_id"] == u["rab"]["file_id"]  # tanpa baris Histori baru
-    assert reviewer.delete(f"/api/usulan/{u['id']}").status_code == 409  # masih antre
-    jalankan_antrean()
-    assert p.get(f"/api/usulan/{u['id']}").json()["status"] == "MENUNGGU_VERIFIKASI"
-    riwayat = reviewer.get(f"/api/usulan/{u['id']}/riwayat").json()["revisi"]
-    assert len(riwayat) == 1 and len(riwayat[0]["review"]) == 2  # review lama tetap tersimpan
     # Hapus khusus Reviewer (Admin & Pengusul hanya melihat)
     assert p.delete(f"/api/usulan/{u['id']}").status_code == 403
     assert klien("admin", "GantiSegera!2026").delete(f"/api/usulan/{u['id']}").status_code == 403
@@ -256,10 +256,7 @@ def test_pengajuan_baru_keputusan_akhir_edit_dan_hapus_reviewer(klien):
     assert p.get(f"/api/usulan/{u['id']}").status_code == 404
     with SessionLokal() as db:
         assert db.get(Review, uuid.UUID(rid)) is None
-        # File yang hanya dipakai usulan ini ikut terhapus beserta ekstraksinya; file identik yang dipakai usulan lain tetap.
-        assert db.get(File, tor2_id) is None
-        assert db.scalar(select(func.count()).select_from(Elemen).where(Elemen.file_id == tor2_id)) == 0
-        assert db.get(File, uuid.UUID(u["rab"]["file_id"])) is not None  # masih dipakai usulan `lain`
+        assert db.get(File, uuid.UUID(u["rab"]["file_id"])) is not None  # file identik masih dipakai usulan `lain`
 
 
 def test_pengajuan_mengikuti_master_ro(klien):
@@ -296,7 +293,7 @@ def test_filter_dan_urut_daftar_usulan(klien):
     assert set(cari(satker=a["satker"]["nama"][-5:])) == {a["id"], b["id"]} and cari(satker="tidak-ada") == []
     assert cari(q="962") == [b["id"]] and set(cari(dokumen="tor")) == {a["id"], b["id"]} and cari(dokumen="xyz") == []
     assert set(cari(status="DRAF")) == {a["id"], b["id"]} and cari(status="LOLOS") == []
-    hari_ini = a["dibuat_at"][:10]  # UTC; uji berjalan jauh dari tengah malam WIB dianggap cukup
+    hari_ini = a["diajukan_at"][:10]  # UTC; uji berjalan jauh dari tengah malam WIB dianggap cukup
     assert cari(tanggal="2000-01-01") == [] and r.get("/api/usulan", params={"tanggal": hari_ini}).status_code == 200
     # 4490.EBA.962 < 4490.EBA.994
     assert cari(urut="rincian", arah="asc") == [b["id"], a["id"]] and cari(urut="rincian", arah="desc") == [a["id"], b["id"]]
@@ -339,8 +336,11 @@ def test_dokumen_diganti_review_lama_terkunci_dan_file_lama_ikut_terhapus(klien)
     jalankan_antrean()
     r1 = p.get(f"/api/usulan/{u['id']}").json()["review_id"]
     reviewer = klien("reviewer")
-    assert reviewer.put(f"/api/usulan/{u['id']}", data=form, files=berkas("tor-baru.pdf", "Versi perbaikan uji ganti dokumen.")).status_code == 200
+    e = reviewer.put(f"/api/usulan/{u['id']}", data=form, files=berkas("tor-baru.pdf", "Versi perbaikan uji ganti dokumen.")).json()
+    assert e["revisi_nomor"] == 1 and e["status"] == "ANTRE" and e["rab"]["file_id"] == u["rab"]["file_id"]  # tanpa baris Histori baru
+    assert reviewer.delete(f"/api/usulan/{u['id']}").status_code == 409  # masih antre
     jalankan_antrean()
+    assert len(reviewer.get(f"/api/usulan/{u['id']}/riwayat").json()["revisi"][0]["review"]) == 2  # review lama tetap tersimpan
     r2 = p.get(f"/api/usulan/{u['id']}").json()["review_id"]
     assert r2 != r1 and _review(klien, r2)["boleh_override"] and not _review(klien, r1)["boleh_override"]
     assert reviewer.put(f"/api/review/{r1}/keputusan", json={"label": "LOLOS"}).status_code == 409
@@ -401,11 +401,83 @@ def test_dashboard_dan_filter_per_kategori_final(klien):
     kat = _review(klien, rid)["kategori"]
     if kat["final"]["kode"] != "K4":
         k4 = next(k for k in kat["pilihan"] if k["kode"] == "K4")
-        reviewer.post(f"/api/review/{rid}/override", json={"target": "KATEGORI", "nilai": k4["id"], "alasan": "Tidak terkait tusi"})
+        reviewer.put(f"/api/review/{rid}/keputusan", json={"kategori_id": k4["id"], "catatan_kategori": "Tidak terkait tusi"})
     assert reviewer.post(f"/api/review/{rid}/finalkan").status_code == 200
-    assert reviewer.get("/api/dashboard").json()["per_kategori"] == {"K4": 1}
     assert [x["id"] for x in reviewer.get("/api/usulan", params={"kategori": "K4"}).json()["data"]] == [u["id"]]
     assert reviewer.get("/api/usulan", params={"kategori": "K1"}).json()["data"] == []
+    # Pengusul: pengajuan Lolos per kategori final — hanya review yang difinalkan Lolos (review kedua yang belum final tidak terhitung)
+    lolos = _review(klien, rid)["revisi"]["status"] == "LOLOS"
+    with SessionLokal() as db:
+        db.execute(update(Kategori).where(Kategori.kode == "K4").values(aktif=False))
+        db.commit()
+    kat = {k["kode"]: k["jumlah"] for k in pengusul.get("/api/dashboard").json()["kategori_lolos"]}
+    assert kat == ({"K1": 0, "K2": 0, "K3": 0, "K4": 1} if lolos else {"K1": 0, "K2": 0, "K3": 0})  # K4 Nonaktif tampil hanya bila ada data
+    assert "kategori_lolos" not in reviewer.get("/api/dashboard").json()
+
+
+def test_dashboard_checklist_tidak_lolos_dan_tahun_anggaran(klien):
+    """Dashboard (desain.md §7 no. 75): Pengusul melihat checklist yang tidak lolos per AI & verifikator beserta yang sudah/belum
+    diperbaiki; Reviewer melihat Menunggu Verifikasi per Satker; semua angka mengikuti Tahun Anggaran. Harapan dari detail review."""
+    from app.api.usulan import tahun_berjalan
+    pengusul, u = _usulan_diajukan(klien)
+    jalankan_antrean()
+    reviewer = klien("reviewer")
+    rid1 = pengusul.get(f"/api/usulan/{u['id']}").json()["review_id"]
+    i0 = _review(klien, rid1)["item"][0]
+    assert reviewer.put(f"/api/review/{rid1}/keputusan", json={"item": [{"checklist_item_id": i0["id"], "nilai": "TIDAK_TERPENUHI"}]}).status_code == 200
+    akhir1 = reviewer.post(f"/api/review/{rid1}/finalkan").json()
+    assert akhir1["revisi"]["status"] == "TIDAK_LOLOS"
+    belum = {x["kode"]: x for x in pengusul.get("/api/dashboard").json()["checklist_tidak_lolos"]}
+    assert belum[i0["kode"]]["verifikator"] == 1 and belum[i0["kode"]]["belum_diperbaiki"] == 1 and belum[i0["kode"]]["sudah_diperbaiki"] == 0
+
+    assert unggah(pengusul, f"/api/usulan/{u['id']}/revisi", tor=TOR, rab=RAB, ajukan=True).status_code == 200  # perbaikan 1
+    jalankan_antrean()
+    hasil2 = _review(klien, pengusul.get(f"/api/usulan/{u['id']}").json()["review_id"])
+    assert hasil2["revisi"]["status"] == "MENUNGGU_VERIFIKASI"  # belum final: hanya nilai AI yang terhitung
+    harap: dict[str, dict] = {}
+    for i in akhir1["item"]:
+        h = harap.setdefault(i["kode"], {"ai": 0, "verifikator": 0})
+        h["ai"] += not i["ai_terpenuhi"]
+        h["verifikator"] += not i["terpenuhi"]
+    for i in hasil2["item"]:
+        harap.setdefault(i["kode"], {"ai": 0, "verifikator": 0})["ai"] += not i["ai_terpenuhi"]
+    # Tidak lolos verifikator di revisi 1 → sudah diperbaiki karena revisi 2 sudah diunggah
+    harap = {k: {**h, "sudah_diperbaiki": h["verifikator"], "belum_diperbaiki": 0} for k, h in harap.items() if h["ai"] or h["verifikator"]}
+    tahun = tahun_berjalan()
+    d = pengusul.get("/api/dashboard", params={"tahun": tahun}).json()
+    assert {x["kode"]: {k: x[k] for k in ("ai", "verifikator", "sudah_diperbaiki", "belum_diperbaiki")} for x in d["checklist_tidak_lolos"]} == harap
+    assert "per_satker" not in d
+
+    r = reviewer.get("/api/dashboard", params={"tahun": tahun}).json()
+    assert r["per_satker"] == [{"satker": u["satker"]["nama"], "total": 1, "lolos": 0, "tidak_lolos": 0, "menunggu": 1}]
+    assert "checklist_tidak_lolos" not in r
+
+    # Tahun Anggaran lain: kosong
+    lain = pengusul.get("/api/dashboard", params={"tahun": tahun + 1}).json()
+    assert lain["total"] == 0 and lain["checklist_tidak_lolos"] == [] and all(k["jumlah"] == 0 for k in lain["kategori_lolos"])
+    assert reviewer.get("/api/dashboard", params={"tahun": tahun + 1}).json()["per_satker"] == []
+    tren = lambda t: sum(x["jumlah"] for x in pengusul.get("/api/dashboard/tren", params={"per": "hari", "tahun": t}).json()["data"])
+    assert tren(tahun) == 1 and tren(tahun + 1) == 0
+
+
+def test_grafik_jumlah_pengajuan_per_periode(klien):
+    """Dashboard: jumlah pengajuan baru per hari/minggu/bulan/tahun (WIB), periode kosong = 0; Pengusul hanya Satker-nya."""
+    from datetime import datetime, timedelta, timezone
+    _usulan_diajukan(klien, ajukan=False)
+    _usulan_diajukan(klien, ajukan=False)
+    hari_ini = datetime.now(timezone(timedelta(hours=7))).date()
+    reviewer, lain = klien("reviewer"), klien("pengusul_b")
+    for per, banyak in (("hari", 30), ("minggu", 12), ("bulan", 12), ("tahun", 5)):
+        d = reviewer.get("/api/dashboard/tren", params={"per": per}).json()["data"]
+        assert len(d) == banyak and [x["jumlah"] for x in d] == [0] * (banyak - 1) + [2]  # pengajuan hari ini di periode terakhir
+        assert [x["mulai"] for x in d] == sorted(x["mulai"] for x in d)
+    assert reviewer.get("/api/dashboard/tren", params={"per": "hari"}).json()["data"][-1]["mulai"] == hari_ini.isoformat()
+    assert reviewer.get("/api/dashboard/tren", params={"per": "minggu"}).json()["data"][-1]["mulai"] == \
+        (hari_ini - timedelta(days=hari_ini.weekday())).isoformat()
+    assert reviewer.get("/api/dashboard/tren", params={"per": "bulan"}).json()["data"][0]["mulai"].endswith("-01")
+    assert sum(x["jumlah"] for x in lain.get("/api/dashboard/tren").json()["data"]) == 0  # Satker lain
+    assert reviewer.get("/api/dashboard/tren", params={"per": "jam"}).status_code == 422
+    assert klien("admin", "GantiSegera!2026").get("/api/dashboard/tren").status_code == 403
 
 
 def test_kategori_crud_riwayat_dan_hapus_permanen(klien):
@@ -430,8 +502,7 @@ def test_kategori_crud_riwayat_dan_hapus_permanen(klien):
     assert pengusul.put("/api/kategori/urutan", json={"id": [k5["id"]]}).status_code == 403
     assert admin.get("/api/kategori").status_code == 403
     # Override kategori hanya ke salinan review (C3): K5 ditambah setelah review dimulai → ditolak
-    assert klien("reviewer").post(f"/api/review/{rid}/override",
-                                  json={"target": "KATEGORI", "nilai": k5["id"], "alasan": "x"}).status_code == 400
+    assert klien("reviewer").put(f"/api/review/{rid}/keputusan", json={"kategori_id": k5["id"]}).status_code == 400
     assert kelola.get(f"/api/kategori/{k5['id']}/riwayat").json() == []  # riwayat hanya versi sebelum perubahan
     # Ubah → isi sebelumnya masuk riwayat (terbaru dulu); simpan tanpa perubahan tidak menambah riwayat
     url = f"/api/kategori/{kat['K2']['id']}"
@@ -662,3 +733,23 @@ def test_tidak_ada_koneksi_keluar_selama_review(klien, monkeypatch):
     assert keluar == [], f"koneksi keluar terdeteksi: {keluar}"
     with SessionLokal() as db:
         assert db.scalar(select(Review.status).limit(1)) == "SELESAI"
+
+
+def test_ajukan_bersamaan_diproses_bergiliran(klien):
+    """Endpoint yang mengubah pengajuan mengunci baris usulan dulu: permintaan kedua menunggu, lalu melihat status terbaru
+    (di sini revisi sudah Antre oleh "permintaan pertama") sehingga ditolak 409 — tidak ada review AI ganda."""
+    p, u = _usulan_diajukan(klien, ajukan=False)
+    uid, hasil = uuid.UUID(u["id"]), {}
+    t = threading.Thread(target=lambda: hasil.setdefault("ajukan", p.post(f"/api/usulan/{uid}/ajukan").status_code))
+    with SessionLokal() as db:
+        db.execute(select(Usulan).where(Usulan.id == uid).with_for_update(of=Usulan))  # "permintaan pertama" memegang kunci
+        t.start()
+        t.join(1)
+        assert t.is_alive()  # permintaan kedua menunggu kunci
+        db.execute(update(Revisi).where(Revisi.usulan_id == uid).values(status="ANTRE"))
+        db.commit()
+    t.join(10)
+    assert hasil["ajukan"] == 409
+    with SessionLokal() as db:
+        assert db.scalar(select(func.count()).select_from(Review).join(Revisi, Revisi.id == Review.revisi_id)
+                         .where(Revisi.usulan_id == uid)) == 0

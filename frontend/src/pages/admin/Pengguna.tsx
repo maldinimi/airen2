@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Plus } from "lucide-react";
 import { useMemo, useState } from "react";
 import { api } from "../../api";
-import { FormFilter, type NilaiFilter, OPSI_STATUS, Paginasi, ThUrut, cocok, padaTanggal, lolosStatus, usePaginasi, useUrut } from "../../components/TabelData";
+import { FormFilter, type NilaiFilter, OPSI_STATUS, Paginasi, ThUrut, cocok, padaTanggal, lolosStatus, usePaginasi, useUrut, TabelGeser } from "../../components/TabelData";
 import { Aksi, HalamanDetail, HalamanForm, type Jejak, LencanaAktif, PilihBawah, type Satker, TD, barisJejak, th, usePesanSukses } from "../../components/Kelola";
 import { waktuAngka } from "../../format";
 import type { Role } from "../../types";
@@ -115,7 +115,7 @@ export default function KelolaPengguna() {
       )}
       {q.isLoading ? <Memuat /> : q.error ? <Peringatan>{(q.error as Error).message}</Peringatan> : !q.data?.length ? <Kosong>Belum ada pengguna.</Kosong>
         : baris.length === 0 ? <Kosong>Tidak ada pengguna yang cocok dengan filter.</Kosong> : (
-        <Kartu className="overflow-x-auto">
+        <Kartu><TabelGeser>
           <table className="w-full min-w-[48rem] text-sm">
             <thead className="bg-slate-100 text-xs font-semibold text-slate-700">
               <tr>{th("No")}
@@ -134,7 +134,7 @@ export default function KelolaPengguna() {
                 <td className={cx(TD, "whitespace-nowrap text-slate-600")}>{waktuAngka(p.last_login_at)}</td>
                 <Aksi nama={p.username} lihat={() => setLihat(p)} ubah={() => buka(p)} hapus={() => { hapus.reset(); setDihapus(p); }} />
               </tr>))}</tbody>
-          </table>
+          </table></TabelGeser>
         </Kartu>
       )}
       {baris.length > 0 && <Paginasi {...pg} />}

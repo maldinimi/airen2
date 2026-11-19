@@ -104,7 +104,7 @@ function Kembali({ label, tutup }: { label: string; tutup: () => void }) {
 
 /** Halaman detail: tabel label–nilai. */
 export function HalamanDetail({ kembali, judul, info, tutup }: { kembali: string; judul: string; info: [string, ReactNode][]; tutup: () => void }) {
-  useEffect(() => { document.querySelector("main")?.scrollTo(0, 0); }, []);
+  useEffect(() => { window.scrollTo(0, 0); }, []);
   return (
     <div className="w-full">
       <Kembali label={kembali} tutup={tutup} />
@@ -129,7 +129,7 @@ export function HalamanForm({ judul, tutup, kirim, reset, galat, sibuk, children
   judul: string; tutup: () => void; kirim: () => void; reset?: () => void; galat: Error | null; sibuk: boolean; children: ReactNode;
   teksKirim?: string;  // label tombol kirim (bawaan "Simpan"; mis. "Impor" di Impor Master RO)
 }) {
-  useEffect(() => { document.querySelector("main")?.scrollTo(0, 0); }, []);
+  useEffect(() => { window.scrollTo(0, 0); }, []);
   return (
     <div className="w-full">
       <Kembali label="Kembali" tutup={tutup} />

@@ -3,7 +3,7 @@
  *  Satker-nya (dicek backend). */
 import { useQuery } from "@tanstack/react-query";
 import { ArrowDown, ArrowUp, ArrowUpDown, CalendarDays, ChevronDown, ChevronUp, Filter, Plus, RotateCcw, Search } from "lucide-react";
-import { type FormEvent, type ReactNode, useRef, useState } from "react";
+import { type FormEvent, type ReactNode, useLayoutEffect, useRef, useState } from "react";
 import { Link, useOutletContext, useSearchParams } from "react-router-dom";
 import { api, qs } from "../api";
 import { useAuth } from "../auth";
@@ -12,6 +12,7 @@ import { AksiUsulan, InfoProses, TautanDokumen } from "../components/Usulan";
 import { waktuAngka } from "../format";
 import type { BarisUsulan, Satker, StatusRevisi } from "../types";
 import { Halaman, Input, Judul, Kartu, Kosong, LencanaStatus, Memuat, NAMA_STATUS, Peringatan, Pilih, TanggalJam, Tombol, cx, kelasGalat } from "../ui";
+import { TabelGeser } from "../components/TabelData";
 
 type Opsi = { satker: Satker[]; tahun: number[]; kategori: string[]; status: { kode: string; nama: string }[] };
 // Kunci filter (= parameter API) sesuai kolom tabel, kecuali No & Aksi.
@@ -49,24 +50,39 @@ export default function UsulanList() {
   const data = useQuery({
     queryKey: ["usulan", f],
     queryFn: () => api.get<{ total: number; halaman: number; per_halaman: number; data: BarisUsulan[] }>(`/api/usulan${qs(f)}`),
+    // Tabel lama tetap tampil selama halaman/filter baru dimuat: tanpa ini tabel diganti "Memuat" sesaat, halaman memendek,
+    // dan layar meloncat ke atas saat pindah halaman.
+    placeholderData: (lama) => lama,
     refetchInterval: (q) => (q.state.data?.data.some((u) => ["ANTRE", "DIPROSES_AI"].includes(u.status)) ? 5000 : false),
+  });
+  // Tinggi daftar saat halaman penuh dipakai sebagai tinggi minimum, agar halaman terakhir (baris lebih sedikit) tidak
+  // memendekkan halaman dan menggeser layar. Berlaku per filter/urutan/baris per halaman (kunci tanpa nomor halaman).
+  const daftar = useRef<HTMLDivElement>(null);
+  const kunciTinggi = JSON.stringify({ ...f, halaman: undefined });
+  const [cadang, setCadang] = useState({ kunci: "", tinggi: 0 });
+  useLayoutEffect(() => {
+    const d = data.data, el = daftar.current;
+    if (!d || !el || data.isPlaceholderData || d.data.length < d.per_halaman) return;
+    const tinggi = Math.max(el.offsetHeight, cadang.kunci === kunciTinggi ? cadang.tinggi : 0);
+    if (cadang.kunci !== kunciTinggi || cadang.tinggi !== tinggi) setCadang({ kunci: kunciTinggi, tinggi });
   });
 
   return (
     <div>
       {/* Pengusul hanya melihat usulan Satker-nya (dibatasi backend); Reviewer melihat semua Satker. */}
-      <Judul judul="Usulan" sub={punya("REVIEWER") ? "Histori usulan seluruh Satuan Kerja."
-        : `Histori usulan ${pengguna?.satker?.nama ?? "Satuan Kerja Anda"}.`}
+      <Judul judul="Pengajuan" sub={punya("REVIEWER") ? "Histori pengajuan seluruh Satuan Kerja."
+        : `Histori pengajuan ${pengguna?.satker?.nama ?? "Satuan Kerja Anda"}.`}
         aksi={punya("PENGUSUL") && <Link to="/usulan/baru"><Tombol><Plus className="size-4" />Pengajuan Baru</Tombol></Link>} />
       <FormFilter key={JSON.stringify(terpasang)} terpasang={terpasang} terapkan={terapkan} status={opsi.data?.status ?? []}
         buka={bukaFilter} setBuka={setBukaFilter}
-        info={data.data ? `Menampilkan ${data.data.data.length} dari ${data.data.total} usulan` : ""} />
+        info={data.data ? `Menampilkan ${data.data.data.length} dari ${data.data.total} pengajuan` : ""} />
 
       {data.isLoading ? <Memuat /> : data.error ? <Peringatan>{(data.error as Error).message}</Peringatan> : !data.data?.data.length ? (
-        adaFilter ? <Kosong>Tidak ada usulan yang sesuai dengan filter.</Kosong>
-          : <Kosong>Belum ada usulan{punya("PENGUSUL") && <> — <Link className="text-utama-600 underline" to="/usulan/baru">buat pengajuan pertama</Link></>}.</Kosong>
+        adaFilter ? <Kosong>Tidak ada pengajuan yang sesuai dengan filter.</Kosong>
+          : <Kosong>Belum ada pengajuan{punya("PENGUSUL") && <> — <Link className="text-utama-600 underline" to="/usulan/baru">buat pengajuan pertama</Link></>}.</Kosong>
       ) : (
         <>
+          <div ref={daftar} className="flex flex-col" style={{ minHeight: cadang.kunci === kunciTinggi ? cadang.tinggi : undefined }}>
           {/* Layar kecil: kartu per usulan; md ke atas: tabel. */}
           <div className="space-y-3 md:hidden">
             {data.data.data.map((u) => (
@@ -75,7 +91,7 @@ export default function UsulanList() {
                   <div className="min-w-0">
                     <div className="font-medium text-slate-900">{u.kode_ro}</div>
                     <div className="text-sm text-slate-600">{u.nama_ro}</div>
-                    <div className="mt-1 text-xs text-slate-500">{u.satker.nama} · {waktuAngka(u.dibuat_at)}</div>
+                    <div className="mt-1 text-xs text-slate-500">{u.satker.nama} · {waktuAngka(u.diajukan_at)}</div>
                   </div>
                   <LencanaStatus status={u.status} />
                 </div>
@@ -84,7 +100,7 @@ export default function UsulanList() {
               </Kartu>
             ))}
           </div>
-          <Kartu className="hidden overflow-x-auto md:block">
+          <Kartu className="hidden flex-1 md:block"><TabelGeser beku={3}>
             <table className="w-full min-w-[52rem] text-sm">
               <thead className="bg-slate-100 text-xs font-semibold text-slate-700">
                 <tr>{KOLOM.map(([h, k]) => {
@@ -111,13 +127,14 @@ export default function UsulanList() {
                     <td className="max-w-72 px-3 py-3"><div className="font-medium text-slate-900">{u.kode_ro}</div><div className="text-slate-500">{u.nama_ro}</div></td>
                     <td className="px-3 py-3"><TautanDokumen tor={u.tor} rab={u.rab} /></td>
                     <td className="min-w-44 space-y-1.5 px-3 py-3 text-center"><LencanaStatus status={u.status} /><InfoProses p={u.proses} /></td>
-                    <td className="whitespace-nowrap px-3 py-3 text-center text-slate-600"><TanggalJam iso={u.dibuat_at} /></td>
+                    <td className="whitespace-nowrap px-3 py-3 text-center text-slate-600"><TanggalJam iso={u.diajukan_at} /></td>
                     <td className="px-3 py-2"><AksiUsulan u={u} /></td>
                   </tr>
                 ))}
               </tbody>
-            </table>
+            </table></TabelGeser>
           </Kartu>
+          </div>
           <Halaman total={data.data.total} halaman={data.data.halaman} per={data.data.per_halaman} ubah={(h) => ubah("halaman", String(h))}
             ubahPer={(n) => ubah("per_halaman", String(n))} />
         </>
@@ -154,7 +171,7 @@ function FormFilter({ terpasang, terapkan, status, info, buka, setBuka }: {
     <Kartu className="mb-4">
       <button type="button" onClick={() => setBuka(!buka)} aria-expanded={buka}
         className="flex w-full items-center justify-between gap-3 border-b border-slate-100 px-4 py-3 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-utama-100">
-        <span className="flex items-center gap-2 text-sm font-bold uppercase text-slate-800"><Filter className="size-4 text-utama-600" aria-hidden />Form Filter Pencarian Usulan</span>
+        <span className="flex items-center gap-2 text-sm font-bold uppercase text-slate-800"><Filter className="size-4 text-utama-600" aria-hidden />Form Filter Pencarian Pengajuan</span>
         <span className="text-slate-500">{buka ? <ChevronUp className="size-4" /> : <ChevronDown className="size-4" />}</span>
       </button>
       {buka && (

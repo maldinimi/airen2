@@ -46,7 +46,7 @@ class Konteks:
     panduan: dict[uuid.UUID, str] = field(default_factory=dict)  # file_id → judul panduan
 
     def nama(self, file_id) -> str:
-        return {self.tor_id: "TOR", self.rab_id: "RAB"}.get(file_id) or self.panduan.get(file_id, "Panduan")
+        return {self.tor_id: "TOR", self.rab_id: "RAB"}.get(file_id) or self.panduan.get(file_id, "Acuan")
 
 
 def format_konteks(elemen: list[Elemen], awalan: str, ktx: Konteks) -> tuple[str, dict[str, Elemen], list[tuple[str, str]]]:

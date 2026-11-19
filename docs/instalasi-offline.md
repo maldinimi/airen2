@@ -1,4 +1,4 @@
-# Panduan Instalasi Offline & Node GPU
+# Acuan Instalasi Offline & Node GPU
 
 ## 1. Gambaran
 
@@ -51,7 +51,7 @@ Sunting `.env`: `POSTGRES_PASSWORD`, `DATABASE_URL`, `ADMIN_PASSWORD_AWAL`, `COO
 make up
 ```
 
-Login sebagai `admin`, segera ganti password, buat Satker, pengguna, checklist, dan unggah panduan.
+Login sebagai `admin`, segera ganti password, buat Satker, pengguna, checklist, dan unggah acuan.
 
 HTTPS: letakkan aplikasi di belakang reverse proxy/terminator TLS instansi yang meneruskan ke port `PORT_WEB` (default 8080), lalu set `COOKIE_SECURE=true`.
 

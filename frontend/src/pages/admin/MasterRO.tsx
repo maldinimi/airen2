@@ -10,7 +10,7 @@ import { Plus, Upload } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
 import { api } from "../../api";
 import { Aksi, HalamanDetail, HalamanForm, type Jejak, LencanaAktif, PilihBawah, TD, barisJejak, th, usePesanSukses } from "../../components/Kelola";
-import { FormFilter, type NilaiFilter, OPSI_STATUS, Paginasi, ThUrut, cocok, lolosJejak, lolosStatus, usePaginasi, useUrut } from "../../components/TabelData";
+import { FormFilter, type NilaiFilter, OPSI_STATUS, Paginasi, ThUrut, cocok, lolosJejak, lolosStatus, usePaginasi, useUrut, TabelGeser } from "../../components/TabelData";
 import { waktuAngka } from "../../format";
 import { Input, Judul, Kartu, Kolom, Konfirmasi, Kosong, Memuat, Peringatan, Saklar, TanggalJam, Tombol, cx } from "../../ui";
 
@@ -43,6 +43,8 @@ type KolomUrut = KolomDb | "aktif" | "oleh" | "tanggal";
 type Kolom = { k: KolomUrut; t?: Tingkat; label: string; jenis: "kode" | "nama" | "status" | "oleh" | "tanggal" };
 const kodeNama = (t: Tingkat): Kolom[] => [{ k: KOLOM_DB[t][0], t, label: `Kode ${NAMA[t]}`, jenis: "kode" }, { k: KOLOM_DB[t][1], t, label: NAMA[t], jenis: "nama" }];
 const KOLOM_JENJANG = TINGKAT.flatMap((t) => KOLOM_DB[t]);
+// Kolom nama RO (tingkat terbawah) diberi latar tipis agar mudah dibedakan dari kolom induknya (desain.md §7 no. 66).
+const kolomRO = (c: Kolom) => c.t === "RO" && c.jenis === "nama";
 const KOLOM: Kolom[] = [...TINGKAT.flatMap(kodeNama), { k: "aktif", label: "Status", jenis: "status" },
   { k: "oleh", label: "Diinput Oleh", jenis: "oleh" }, { k: "tanggal", label: "Tanggal Input", jenis: "tanggal" }];
 
@@ -303,10 +305,10 @@ export default function KelolaMasterRO() {
       )}
       {q.isLoading ? <Memuat /> : q.error ? <Peringatan>{(q.error as Error).message}</Peringatan> : !semua.length ? <Kosong>Belum ada data Master RO.</Kosong>
         : baris.length === 0 ? <Kosong>Tidak ada data Master RO yang cocok dengan filter.</Kosong> : (
-        <Kartu className="overflow-x-auto">
+        <Kartu><TabelGeser>
           <table className="w-full min-w-[96rem] text-sm">
             <thead className="bg-slate-100 text-xs font-semibold text-slate-700">
-              <tr>{th("No")}{KOLOM.map((x) => <ThUrut key={x.k} label={x.label} kolom={x.k} urut={urut} klik={klik} />)}{th("Aksi")}</tr>
+              <tr>{th("No")}{KOLOM.map((x) => <ThUrut key={x.k} label={x.label} kolom={x.k} urut={urut} klik={klik} className={kolomRO(x) ? "bg-utama-100" : undefined} />)}{th("Aksi")}</tr>
             </thead>
             <tbody className="divide-y divide-slate-100">{tampil.map((x, i) => (
               <tr key={x.id} className={cx("align-middle transition-colors hover:bg-slate-50", !x.aktif && "bg-slate-50")}>
@@ -319,7 +321,7 @@ export default function KelolaMasterRO() {
                       {c.jenis === "tanggal" ? <TanggalJam iso={x.diubah_at} /> : nilai(x, c)}</td>;
                   const milik = c.t === x.tingkat;  // kolom milik baris ini sendiri (bukan induknya)
                   return (
-                    <td key={c.k} className={cx(TD, c.jenis === "kode" ? "whitespace-nowrap" : "min-w-[12rem]",
+                    <td key={c.k} className={cx(TD, c.jenis === "kode" ? "whitespace-nowrap" : "min-w-[12rem]", kolomRO(c) && "bg-utama-50",
                       !x.aktif ? "text-slate-400" : milik ? "font-medium text-slate-900" : "text-slate-700")}>
                       {nilai(x, c) || "—"}
                     </td>
@@ -327,7 +329,7 @@ export default function KelolaMasterRO() {
                 })}
                 <Aksi nama={`${NAMA[x.tingkat]} ${x.kode}`} lihat={() => setLihat(x)} ubah={() => buka(x)} hapus={() => { hapus.reset(); setDihapus(x); }} />
               </tr>))}</tbody>
-          </table>
+          </table></TabelGeser>
         </Kartu>
       )}
       {baris.length > 0 && <Paginasi {...pg} />}

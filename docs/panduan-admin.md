@@ -58,7 +58,7 @@ Model embedding/reranker (`EMBEDDING_MODEL`, `RERANKER_MODEL`) juga dapat digant
 docker compose exec db psql -U airen -c "UPDATE file SET status_ekstraksi='BELUM'; DELETE FROM chunk;"
 ```
 
-Panduan perlu diproses ulang (unggah ulang atau "Proses ulang"). TOR/RAB diproses ulang otomatis saat review berikutnya.
+Acuan perlu diproses ulang (unggah ulang atau "Proses ulang"). TOR/RAB diproses ulang otomatis saat review berikutnya.
 
 ## Mengubah prompt
 
@@ -90,8 +90,8 @@ docker compose run --rm api python -m app.migrasi revisi "tambah kolom x"
 | Review GAGAL "LLM tidak memberikan jawaban valid" | vLLM mati/kehabisan memori, keluaran terpotong | `docker compose logs llm`. Naikkan `LLM_MAKS_TOKEN` atau turunkan `LLM_MAKS_PARALEL`/`ITEM_PARALEL` |
 | `llm` tidak pernah sehat | Model belum diunduh / VRAM kurang | `make doctor`; `make setup`; turunkan `LLM_GPU_UTIL` atau `LLM_KONTEKS` |
 | Ekstraksi/embedding lambat di worker GPU | Driver NVIDIA host lebih lama dari yang dibutuhkan PyTorch di image (CUDA 13 → driver ≥580); worker jatuh ke CPU | Perbarui driver NVIDIA host; cek `docker compose exec worker python -c "import torch;print(torch.cuda.is_available())"` |
-| Panduan status Gagal | PDF terenkripsi/rusak | Lihat pesan di bawah nama panduan pada tabel; perbaiki PDF-nya, unggah sebagai panduan baru, lalu nonaktifkan atau hapus yang lama (file tidak dapat diganti lewat Edit) |
-| Login "Terlalu banyak percobaan" | ≥5 gagal dalam 15 menit dari username/IP | Tunggu 15 menit, atau reset password oleh Admin |
+| Acuan status Gagal | PDF terenkripsi/rusak | Lihat pesan di bawah nama acuan pada tabel; perbaiki PDF-nya, unggah sebagai acuan baru, lalu nonaktifkan atau hapus yang lama (file tidak dapat diganti lewat Edit) |
+| Login "Terlalu banyak percobaan" | ≥5 gagal untuk username itu dari perangkat/IP yang sama, atau ≥20 gagal dari IP itu, dalam 5 menit | Tunggu 5 menit (reset password tidak membuka kunci) |
 | Admin lupa password | — | `docker compose exec api python -c "from app.db import SessionLokal; from app.model import Pengguna; from app.keamanan import hash_password; db=SessionLokal(); p=db.query(Pengguna).filter_by(username='admin').one(); p.password_hash=hash_password('PasswordBaru!1'); db.commit()"` |
 | Port 8080 dipakai | Program lain | Ubah `PORT_WEB` di `.env` |
 | Windows: perubahan kode tidak ter-reload | Bind mount | Vite memakai polling; untuk backend restart `docker compose restart api worker` |

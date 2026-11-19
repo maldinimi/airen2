@@ -1,7 +1,8 @@
 /** Form usulan (desain.md §7 no. 36 & 38):
  *  - `baru` (`/usulan/baru`, Pengusul): A. Hierarki anggaran RKA-K/L bertingkat, B. Kategori + Deskripsi otomatis,
  *    C. PDF TOR dan RAB (keduanya wajib).
- *  - `ubah` (`/usulan/:id/ubah`, Pengusul): hanya PDF TOR dan/atau RAB pengganti — Gagal = kirim ulang, Tidak Lolos = revisi.
+ *  - `ubah` (`/usulan/:id/ubah`, Pengusul): hanya PDF pengganti — Gagal = kirim ulang (TOR dan/atau RAB),
+ *    Tidak Lolos = revisi (TOR dan RAB wajib, desain.md §7 no. 51).
  *  - `parameter` (`/usulan/:id/parameter`, Reviewer): betulkan hierarki & kategori; TOR/RAB pengganti (opsional) menjadi
  *    revisi baru yang langsung direview AI.
  *  Kolom wajib yang kosong ditandai merah + pop-up singkat; sebelum dikirim → pop-up "Apakah Anda Yakin?". */
@@ -34,7 +35,7 @@ export default function UsulanForm({ mode }: { mode: Mode }) {
   const ada = useQuery({ queryKey: ["usulan", id], queryFn: () => api.get<BarisUsulan>(`/api/usulan/${id}`), enabled: mode !== "baru" });
   if (opsi.isLoading || ada.isLoading) return <Memuat />;
   if (opsi.error || ada.error) return <Peringatan>{((opsi.error ?? ada.error) as Error).message}</Peringatan>;
-  if (mode !== "baru" && !ada.data) return <Kosong>Usulan tidak ditemukan.</Kosong>;
+  if (mode !== "baru" && !ada.data) return <Kosong>Pengajuan tidak ditemukan.</Kosong>;
   return <Isi key={id ?? "baru"} mode={mode} opsi={opsi.data} u={ada.data} />;
 }
 
@@ -66,7 +67,8 @@ function Isi({ mode, opsi, u }: { mode: Mode; opsi?: Opsi; u?: BarisUsulan }) {
     const urut: (keyof Pilihan)[] = ["program", "kegiatan", "kro", "ro"];
     setPilih({ ...pilih, [k]: v, ...Object.fromEntries(urut.slice(urut.indexOf(k) + 1).map((x) => [x, ""])) });
   };
-  const pesanDokumen = mode === "ubah" ? "Unggah minimal satu dokumen (TOR atau RAB)." : "Wajib diunggah.";
+  const duaDokumen = mode === "baru" || revisi;  // TOR dan RAB wajib keduanya
+  const pesanDokumen = duaDokumen ? "Wajib diunggah." : "Unggah minimal satu dokumen (TOR atau RAB).";
   const reset = () => { setPilih(KOSONG); setKategoriId(""); setTor(null); setRab(null); setGalat(null); setDicoba(false); setUlang((n) => n + 1); };
 
   const kosong = () => {
@@ -78,11 +80,10 @@ function Isi({ mode, opsi, u }: { mode: Mode; opsi?: Opsi; u?: BarisUsulan }) {
       if (!ro) k.add("ro");
       if (!kategori) k.add("kategori");
     }
-    if (mode === "baru") {
+    if (duaDokumen) {
       if (!tor) k.add("tor");
       if (!rab) k.add("rab");
-    }
-    if (mode === "ubah" && !tor && !rab) { k.add("tor"); k.add("rab"); }
+    } else if (mode === "ubah" && !tor && !rab) { k.add("tor"); k.add("rab"); }
     return k;
   };
   const salah = dicoba ? kosong() : new Set<string>();
@@ -130,7 +131,7 @@ function Isi({ mode, opsi, u }: { mode: Mode; opsi?: Opsi; u?: BarisUsulan }) {
       <div>
         <Link to={u ? `/usulan/${u.id}` : "/usulan"} className="mb-3 inline-flex items-center gap-1 text-sm text-slate-500 hover:text-slate-800">
           <ArrowLeft className="size-4" />Kembali</Link>
-        <Judul judul={mode === "baru" ? "Pengajuan Baru" : mode === "parameter" ? "Edit Usulan" : revisi ? "Unggah Revisi" : "Ganti Dokumen"}
+        <Judul judul={mode === "baru" ? "Pengajuan Baru" : mode === "parameter" ? "Edit Pengajuan" : revisi ? "Unggah Perbaikan" : "Ganti Dokumen"}
           sub={u ? `${u.kode_ro} — ${u.nama_ro}` : `Tahun Anggaran ${tahun}`} />
       </div>
       <form className="space-y-4" onSubmit={cek} noValidate>
@@ -145,7 +146,7 @@ function Isi({ mode, opsi, u }: { mode: Mode; opsi?: Opsi; u?: BarisUsulan }) {
               {dropdown("kro", "Klasifikasi Rincian Output (KRO)", kegiatan?.kro, (x) => `${pilih.kegiatan}.${x.kode}`)}
               {dropdown("ro", "Rincian Output (RO)", kro?.ro, (x) => `${pilih.kegiatan}.${pilih.kro}.${x.kode}`)}
             </Bagian>
-            <Bagian judul="B. Klasifikasi Kategori Usulan">
+            <Bagian judul="B. Klasifikasi Kategori Pengajuan">
               <div className="grid gap-4 sm:grid-cols-2">
                 <Kolom label="Kategori" wajib galat={salah.has("kategori") ? "Wajib dipilih." : null}>
                   <Pilih value={kategoriId} onChange={(e) => setKategoriId(e.target.value)} aria-invalid={salah.has("kategori")}
@@ -167,16 +168,16 @@ function Isi({ mode, opsi, u }: { mode: Mode; opsi?: Opsi; u?: BarisUsulan }) {
         )}
         <Bagian judul={mode === "ubah" ? "Unggah Berkas Dokumen" : "C. Unggah Berkas Dokumen"}>
           <div className="grid gap-4 sm:grid-cols-2">
-            <Unggah key={`tor${ulang}`} label={mode === "baru" ? "TOR (PDF) *" : "TOR (PDF)"} file={tor} ubah={(f) => setTor(f[0] ?? null)}
+            <Unggah key={`tor${ulang}`} label={duaDokumen ? "TOR (PDF) *" : "TOR (PDF)"} file={tor} ubah={(f) => setTor(f[0] ?? null)}
               keterangan={u?.tor && !tor ? `Saat ini: ${u.tor.nama}` : undefined} galatLuar={salah.has("tor") ? pesanDokumen : null} />
-            <Unggah key={`rab${ulang}`} label={mode === "baru" ? "RAB (PDF) *" : "RAB (PDF)"} file={rab} ubah={(f) => setRab(f[0] ?? null)}
+            <Unggah key={`rab${ulang}`} label={duaDokumen ? "RAB (PDF) *" : "RAB (PDF)"} file={rab} ubah={(f) => setRab(f[0] ?? null)}
               keterangan={u?.rab && !rab ? `Saat ini: ${u.rab.nama}` : undefined} galatLuar={salah.has("rab") ? pesanDokumen : null} />
           </div>
         </Bagian>
         <div className="flex flex-wrap justify-end gap-2">
           <Tombol type="button" varian="hantu" onClick={() => nav(-1)}>Batal</Tombol>
           {mode === "baru" && <Tombol type="button" varian="sekunder" onClick={reset}>Reset</Tombol>}
-          <Tombol type="submit">{mode === "baru" ? "Kirim Pengajuan" : mode === "parameter" ? "Simpan" : revisi ? "Kirim Revisi" : "Kirim Ulang"}</Tombol>
+          <Tombol type="submit">{mode === "baru" ? "Kirim Pengajuan" : mode === "parameter" ? "Simpan" : revisi ? "Kirim Perbaikan" : "Kirim Ulang"}</Tombol>
         </div>
       </form>
       <Dialog buka={belumLengkap} ubahBuka={setBelumLengkap} judul="Data belum lengkap" lebar="max-w-sm">
