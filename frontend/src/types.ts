@@ -63,7 +63,8 @@ export type DetailReview = {
 };
 
 export type ItemChecklist = {
-  id?: string; kode: string; judul: string; kriteria: string; berlaku_untuk: "TOR" | "RAB" | "TOR & RAB"; aktif: boolean;
+  id?: string; kode: string; judul: string; kriteria: string; berlaku_untuk: "TOR" | "RAB" | "TOR & RAB";
+  jenis_pemeriksaan: "Kelengkapan" | "Kualitas"; aktif: boolean;
   diubah_oleh?: string | null; diubah_at?: string;
 };
 export type ItemKategori = { id: string; kode: string; nama: string; definisi: string; aktif: boolean; diubah_oleh: string | null; diubah_at: string };
