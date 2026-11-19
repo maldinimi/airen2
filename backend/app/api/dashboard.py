@@ -5,8 +5,8 @@ from typing import Literal
 
 from fastapi import APIRouter, Depends, Header
 from fastapi.responses import FileResponse
-from sqlalchemy import exists, func, or_, select
-from sqlalchemy.orm import Session, aliased
+from sqlalchemy import func, or_, select
+from sqlalchemy.orm import Session
 
 from app import status as st
 from app.akses import ADMIN, PENGUSUL, REVIEWER, boleh_lihat_semua, boleh_lihat_usulan, pastikan, pengguna_saat_ini, wajib_role
@@ -15,87 +15,49 @@ from app.db import sesi_db
 from app.galat import Galat
 from app.keamanan import hash_token
 from app.layanan_review import node_aktif
-from app.model import (ChecklistItem, File, HasilItem, Job, Kategori, NodeAI, Override, Panduan, PanduanHistori, Pengguna, Review,
-                       ReviewKategori, Revisi, Usulan)
+from app.model import (ChecklistItem, File, Job, Kategori, MasterRO, NodeAI, Panduan, PanduanHistori, Pengguna, Review,
+                       Revisi, Usulan)
 from app.penyimpanan import path_absolut
 
 router = APIRouter(prefix="/api", tags=["dashboard & file"])
 
 
-def _saring(kueri, p: Pengguna, tahun: int | None):
-    """Batas data Dashboard (kueri harus memuat tabel `usulan`): pengajuan yang tidak diarsipkan, Satker sendiri bagi Pengusul,
-    dan Tahun Anggaran pilihan header bila dikirim (sama dengan daftar Pengajuan, desain.md §7 no. 75)."""
-    kueri = kueri.where(Usulan.diarsipkan_at.is_(None))
-    if not boleh_lihat_semua(p):
-        kueri = kueri.where(Usulan.satker_id == p.satker_id)
-    return kueri if tahun is None else kueri.where(Usulan.tahun_anggaran == tahun)
-
-
-def _kategori_lolos(db: Session, p: Pengguna, tahun: int | None) -> list[dict]:
-    """Jumlah pengajuan yang difinalkan Lolos oleh verifikator per kategori final (nama dari salinan kategori review). Semua
-    kategori Aktif tetap tampil walau 0; kategori Nonaktif/terhapus hanya bila punya data."""
-    lolos = {kode: (nama, n) for kode, nama, n in db.execute(_saring(
-        select(ReviewKategori.kode, func.max(ReviewKategori.nama), func.count())
-        .join(Review, (Review.id == ReviewKategori.review_id) & (Review.kategori_final_id == ReviewKategori.kategori_id))
-        .join(Revisi, Revisi.id == Review.revisi_id).join(Usulan, Usulan.id == Revisi.usulan_id)
-        .where(Review.difinalkan_at.is_not(None), Revisi.status == st.LOLOS), p, tahun).group_by(ReviewKategori.kode))}
-    daftar = [{"kode": k.kode, "nama": k.kategori, "jumlah": lolos.pop(k.kode, (None, 0))[1]}
-              for k in db.scalars(select(Kategori).order_by(Kategori.no_urut)) if k.aktif or k.kode in lolos]
-    return daftar + [{"kode": kode, "nama": nama, "jumlah": n} for kode, (nama, n) in sorted(lolos.items())]
-
-
-def _checklist_tidak_lolos(db: Session, p: Pengguna, tahun: int | None) -> list[dict]:
-    """Item checklist yang tidak lolos per AI dan per verifikator, dihitung per pemeriksaan (review terakhir yang selesai di
-    tiap revisi, termasuk revisi lama). Verifikator = nilai final review yang sudah difinalkan (override ITEM aktif terakhir,
-    selain itu hasil AI — sama dengan app/nilai_final.py). Dari yang tidak lolos verifikator: "sudah diperbaiki" bila
-    pengajuan itu sudah punya revisi berikutnya (perbaikan diunggah), selain itu "belum". Item yang dihapus permanen tidak tampil."""
-    rv = _saring(select(Review.id, Review.difinalkan_at, Revisi.nomor, Revisi.usulan_id)
-                 .join(Revisi, Revisi.id == Review.revisi_id).join(Usulan, Usulan.id == Revisi.usulan_id)
-                 .where(Review.status == "SELESAI").distinct(Review.revisi_id)
-                 .order_by(Review.revisi_id, Review.created_at.desc()), p, tahun).subquery()
-    akhir = (select(Override.review_id, Override.checklist_item_id, Override.nilai_sesudah)
-             .where(Override.target == "ITEM", Override.dibatalkan_at.is_(None))
-             .distinct(Override.review_id, Override.checklist_item_id)
-             .order_by(Override.review_id, Override.checklist_item_id, Override.created_at.desc())).subquery()
-    lanjut = aliased(Revisi)
-    item = (select(HasilItem.checklist_item_id, (~HasilItem.terpenuhi).label("ai"),
-                   (rv.c.difinalkan_at.is_not(None) & ~func.coalesce(akhir.c.nilai_sesudah == "TERPENUHI", HasilItem.terpenuhi)).label("v"),
-                   exists().where(lanjut.usulan_id == rv.c.usulan_id, lanjut.nomor > rv.c.nomor).label("diperbaiki"))
-            .join(rv, rv.c.id == HasilItem.review_id)
-            .outerjoin(akhir, (akhir.c.review_id == HasilItem.review_id) & (akhir.c.checklist_item_id == HasilItem.checklist_item_id))
-            ).subquery()
-    ai, v = func.count().filter(item.c.ai), func.count().filter(item.c.v)
-    baris = db.execute(select(ChecklistItem.kode, ChecklistItem.checklist, ai, v, func.count().filter(item.c.v & item.c.diperbaiki))
-                       .join(item, item.c.checklist_item_id == ChecklistItem.id).group_by(ChecklistItem.id)
-                       .having(func.count().filter(item.c.ai | item.c.v) > 0).order_by(v.desc(), ai.desc(), ChecklistItem.no_urut)).all()
-    return [{"kode": k, "checklist": c, "ai": a, "verifikator": n, "sudah_diperbaiki": d, "belum_diperbaiki": n - d} for k, c, a, n, d in baris]
-
-
 @router.get("/dashboard")
-def dashboard(tahun: int | None = None, db: Session = Depends(sesi_db), p: Pengguna = Depends(wajib_role(PENGUSUL, REVIEWER))) -> dict:
-    """Ringkasan pengajuan (Dashboard hanya informasi, tanpa daftar tindakan). `tahun` = Tahun Anggaran pilihan header (tanpa =
-    semua tahun). Semua: jumlah per status; Reviewer: per Satker; Pengusul: pengajuan Lolos per kategori (`kategori_lolos`) dan
-    checklist yang tidak lolos (`checklist_tidak_lolos`), desain.md §7 no. 75. Pengusul & Reviewer saja (Admin tidak memiliki
-    menu Dashboard → 403). Pengguna yang juga ber-role Admin melihat antrean AI, node aktif, dan perkiraan waktu selesai (desain §2.3)."""
-    dasar = select(Usulan, Revisi).join(Revisi, (Revisi.usulan_id == Usulan.id) & (Revisi.nomor == revisi_terbaru()))
-    baris = db.execute(_saring(dasar, p, tahun)).all()
+def dashboard(db: Session = Depends(sesi_db), p: Pengguna = Depends(wajib_role(PENGUSUL, REVIEWER))) -> dict:
+    """Ringkasan jumlah usulan per status/Satker (Dashboard hanya informasi, tanpa daftar tindakan), Data Master, dan bagi
+    Pengusul pengajuan terakhir Satker-nya (`terakhir`, tidak ada bila belum punya pengajuan). Pengusul & Reviewer saja
+    (Admin tidak memiliki menu Dashboard → 403). Pengguna yang juga ber-role Admin melihat antrean AI, node aktif,
+    dan perkiraan waktu selesai (desain §2.3)."""
+    dasar = (select(Usulan, Revisi).join(Revisi, (Revisi.usulan_id == Usulan.id) & (Revisi.nomor == revisi_terbaru()))
+             .where(Usulan.diarsipkan_at.is_(None)))
+    if not boleh_lihat_semua(p):
+        dasar = dasar.where(Usulan.satker_id == p.satker_id)
+    baris = db.execute(dasar).all()
 
     per_status: dict[str, int] = {}
     per_satker: dict[str, dict] = {}
     for u, r in baris:
         per_status[r.status] = per_status.get(r.status, 0) + 1
-        s = per_satker.setdefault(str(u.satker_id), {"satker": u.satker.nama, "total": 0, "lolos": 0, "tidak_lolos": 0, "menunggu": 0})
+        s = per_satker.setdefault(str(u.satker_id), {"satker": u.satker.nama, "total": 0, "lolos": 0, "tidak_lolos": 0, "proses": 0})
         s["total"] += 1
         s["lolos"] += r.status == st.LOLOS
         s["tidak_lolos"] += r.status == st.TIDAK_LOLOS
-        s["menunggu"] += r.status == st.MENUNGGU_VERIFIKASI  # sama dengan kartu Menunggu Verifikasi (draf/antre/gagal tidak dihitung)
+        s["proses"] += r.status not in (st.LOLOS, st.TIDAK_LOLOS)
 
-    data = {"total": len(baris), "per_status": per_status}
-    if boleh_lihat_semua(p):
-        data["per_satker"] = sorted(per_satker.values(), key=lambda s: s["satker"])
-    else:
-        data["kategori_lolos"] = _kategori_lolos(db, p, tahun)
-        data["checklist_tidak_lolos"] = _checklist_tidak_lolos(db, p, tahun)
+    data = {"total": len(baris), "per_status": per_status,
+            "per_satker": sorted(per_satker.values(), key=lambda s: s["satker"])}
+
+    # Kartu "Data Master": jumlah baris tiap menu (sama dengan tabelnya), yang berstatus Aktif, dan waktu tambah/ubah terakhir
+    # (kartu "Terakhir Diperbarui" Pengusul; hapus permanen tidak tercatat di sini).
+    data["master"] = {}
+    for nama, m in (("checklist", ChecklistItem), ("acuan", Panduan), ("kategori", Kategori), ("master_ro", MasterRO)):
+        total, aktif, diubah = db.execute(select(func.count(), func.count().filter(m.aktif), func.max(m.updated_date)).select_from(m)).one()
+        data["master"][nama] = {"total": total, "aktif": aktif, "diubah_at": diubah.isoformat() if diubah else None}
+    # Pengusul: pengajuan Satker-nya yang terakhir diunggah (revisi terbaru), desain.md §7 no. 71.
+    if not boleh_lihat_semua(p) and baris:
+        u, r = max(baris, key=lambda x: x[1].created_at)
+        data["terakhir"] = {"kode_ro": u.kode_ro, "nama_ro": u.nama_ro, "revisi_nomor": r.nomor, "status": r.status,
+                            "diajukan_at": r.created_at.isoformat()}
 
     if ADMIN in p.daftar_role:
         aktif = node_aktif(db)
@@ -135,18 +97,20 @@ def _mundur(awal: date, per: str, n: int) -> date:
 
 
 @router.get("/dashboard/tren")
-def tren(per: Literal["hari", "minggu", "bulan", "tahun"] = "bulan", tahun: int | None = None, db: Session = Depends(sesi_db),
+def tren(per: Literal["hari", "minggu", "bulan", "tahun"] = "bulan", db: Session = Depends(sesi_db),
          p: Pengguna = Depends(wajib_role(PENGUSUL, REVIEWER))) -> dict:
     """Grafik Dashboard: jumlah pengajuan baru (tanggal pengajuan dibuat, WIB) per hari (30 terakhir), minggu (12, mulai
     Senin), bulan (12), atau tahun (5). Periode tanpa pengajuan bernilai 0. Pengusul hanya Satker-nya (sama dengan kartu
-    Dashboard), `tahun` = hanya pengajuan Tahun Anggaran itu. Output: {per, data: [{mulai: YYYY-MM-DD, jumlah}]} urut lama → baru.
-    Error: 422 `per` tidak dikenal."""
+    Dashboard). Output: {per, data: [{mulai: YYYY-MM-DD, jumlah}]} urut lama → baru. Error: 422 `per` tidak dikenal."""
     satuan, banyak = PERIODE[per]
     kini = _awal_periode(datetime.now(WIB).date(), per)
     daftar = [_mundur(kini, per, i) for i in range(banyak - 1, -1, -1)]
     lokal = func.timezone("Asia/Jakarta", Usulan.created_date)
     kunci = func.date(func.date_trunc(satuan, lokal))
-    jumlah = dict(db.execute(_saring(select(kunci, func.count()).where(lokal >= daftar[0]), p, tahun).group_by(kunci)).all())
+    kueri = select(kunci, func.count()).where(lokal >= daftar[0], Usulan.diarsipkan_at.is_(None)).group_by(kunci)
+    if not boleh_lihat_semua(p):
+        kueri = kueri.where(Usulan.satker_id == p.satker_id)
+    jumlah = dict(db.execute(kueri).all())
     return {"per": per, "data": [{"mulai": d.isoformat(), "jumlah": jumlah.get(d, 0)} for d in daftar]}
 
 

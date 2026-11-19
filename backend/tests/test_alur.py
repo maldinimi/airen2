@@ -405,59 +405,23 @@ def test_dashboard_dan_filter_per_kategori_final(klien):
     assert reviewer.post(f"/api/review/{rid}/finalkan").status_code == 200
     assert [x["id"] for x in reviewer.get("/api/usulan", params={"kategori": "K4"}).json()["data"]] == [u["id"]]
     assert reviewer.get("/api/usulan", params={"kategori": "K1"}).json()["data"] == []
-    # Pengusul: pengajuan Lolos per kategori final — hanya review yang difinalkan Lolos (review kedua yang belum final tidak terhitung)
-    lolos = _review(klien, rid)["revisi"]["status"] == "LOLOS"
+    # Kartu Data Master: jumlah baris tiap menu & yang Aktif (dibandingkan langsung dengan database)
+    from app.model import ChecklistItem, MasterRO
     with SessionLokal() as db:
         db.execute(update(Kategori).where(Kategori.kode == "K4").values(aktif=False))
         db.commit()
-    kat = {k["kode"]: k["jumlah"] for k in pengusul.get("/api/dashboard").json()["kategori_lolos"]}
-    assert kat == ({"K1": 0, "K2": 0, "K3": 0, "K4": 1} if lolos else {"K1": 0, "K2": 0, "K3": 0})  # K4 Nonaktif tampil hanya bila ada data
-    assert "kategori_lolos" not in reviewer.get("/api/dashboard").json()
-
-
-def test_dashboard_checklist_tidak_lolos_dan_tahun_anggaran(klien):
-    """Dashboard (desain.md §7 no. 75): Pengusul melihat checklist yang tidak lolos per AI & verifikator beserta yang sudah/belum
-    diperbaiki; Reviewer melihat Menunggu Verifikasi per Satker; semua angka mengikuti Tahun Anggaran. Harapan dari detail review."""
-    from app.api.usulan import tahun_berjalan
-    pengusul, u = _usulan_diajukan(klien)
-    jalankan_antrean()
-    reviewer = klien("reviewer")
-    rid1 = pengusul.get(f"/api/usulan/{u['id']}").json()["review_id"]
-    i0 = _review(klien, rid1)["item"][0]
-    assert reviewer.put(f"/api/review/{rid1}/keputusan", json={"item": [{"checklist_item_id": i0["id"], "nilai": "TIDAK_TERPENUHI"}]}).status_code == 200
-    akhir1 = reviewer.post(f"/api/review/{rid1}/finalkan").json()
-    assert akhir1["revisi"]["status"] == "TIDAK_LOLOS"
-    belum = {x["kode"]: x for x in pengusul.get("/api/dashboard").json()["checklist_tidak_lolos"]}
-    assert belum[i0["kode"]]["verifikator"] == 1 and belum[i0["kode"]]["belum_diperbaiki"] == 1 and belum[i0["kode"]]["sudah_diperbaiki"] == 0
-
-    assert unggah(pengusul, f"/api/usulan/{u['id']}/revisi", tor=TOR, rab=RAB, ajukan=True).status_code == 200  # perbaikan 1
-    jalankan_antrean()
-    hasil2 = _review(klien, pengusul.get(f"/api/usulan/{u['id']}").json()["review_id"])
-    assert hasil2["revisi"]["status"] == "MENUNGGU_VERIFIKASI"  # belum final: hanya nilai AI yang terhitung
-    harap: dict[str, dict] = {}
-    for i in akhir1["item"]:
-        h = harap.setdefault(i["kode"], {"ai": 0, "verifikator": 0})
-        h["ai"] += not i["ai_terpenuhi"]
-        h["verifikator"] += not i["terpenuhi"]
-    for i in hasil2["item"]:
-        harap.setdefault(i["kode"], {"ai": 0, "verifikator": 0})["ai"] += not i["ai_terpenuhi"]
-    # Tidak lolos verifikator di revisi 1 → sudah diperbaiki karena revisi 2 sudah diunggah
-    harap = {k: {**h, "sudah_diperbaiki": h["verifikator"], "belum_diperbaiki": 0} for k, h in harap.items() if h["ai"] or h["verifikator"]}
-    tahun = tahun_berjalan()
-    d = pengusul.get("/api/dashboard", params={"tahun": tahun}).json()
-    assert {x["kode"]: {k: x[k] for k in ("ai", "verifikator", "sudah_diperbaiki", "belum_diperbaiki")} for x in d["checklist_tidak_lolos"]} == harap
-    assert "per_satker" not in d
-
-    r = reviewer.get("/api/dashboard", params={"tahun": tahun}).json()
-    assert r["per_satker"] == [{"satker": u["satker"]["nama"], "total": 1, "lolos": 0, "tidak_lolos": 0, "menunggu": 1}]
-    assert "checklist_tidak_lolos" not in r
-
-    # Tahun Anggaran lain: kosong
-    lain = pengusul.get("/api/dashboard", params={"tahun": tahun + 1}).json()
-    assert lain["total"] == 0 and lain["checklist_tidak_lolos"] == [] and all(k["jumlah"] == 0 for k in lain["kategori_lolos"])
-    assert reviewer.get("/api/dashboard", params={"tahun": tahun + 1}).json()["per_satker"] == []
-    tren = lambda t: sum(x["jumlah"] for x in pengusul.get("/api/dashboard/tren", params={"per": "hari", "tahun": t}).json()["data"])
-    assert tren(tahun) == 1 and tren(tahun + 1) == 0
+        harap = {nama: {"total": db.scalar(select(func.count()).select_from(m)), "aktif": db.scalar(select(func.count()).where(m.aktif)),
+                        "diubah_at": x.isoformat() if (x := db.scalar(select(func.max(m.updated_date)))) else None}
+                 for nama, m in (("checklist", ChecklistItem), ("acuan", Panduan), ("kategori", Kategori), ("master_ro", MasterRO))}
+        # Semua pengajuan uji ini milik Satker `pengusul`; yang terakhir = revisi yang terakhir diunggah.
+        r, u_ = db.execute(select(Revisi, Usulan).join(Usulan, Usulan.id == Revisi.usulan_id).order_by(Revisi.created_at.desc())).first()
+        terakhir = {"kode_ro": u_.kode_ro, "nama_ro": u_.nama_ro, "revisi_nomor": r.nomor, "status": r.status, "diajukan_at": r.created_at.isoformat()}
+    d = pengusul.get("/api/dashboard").json()
+    master = d["master"]
+    assert master == harap and {k: master["kategori"][k] for k in ("total", "aktif")} == {"total": 4, "aktif": 3} and master["checklist"]["total"] > 0
+    # Pengusul: pengajuan Satker-nya yang terakhir diunggah; Reviewer & Pengusul Satker lain (tanpa pengajuan) tidak menerimanya
+    assert d["terakhir"] == terakhir
+    assert "terakhir" not in reviewer.get("/api/dashboard").json() and "terakhir" not in klien("pengusul_b").get("/api/dashboard").json()
 
 
 def test_grafik_jumlah_pengajuan_per_periode(klien):
