@@ -196,7 +196,7 @@ function TabelChecklist({ item, kelola, sibuk, ubah, hapus, lihat }: {
         { jenis: "tanggal", kunci: "tanggal", label: "Tanggal Input", kecil: true },
       ]} />
       {baris.length === 0 && <Kosong>Tidak ada checklist yang cocok dengan filter.</Kosong>}
-      {baris.length > 0 && <Kartu className="overflow-x-auto">
+      {baris.length > 0 && <Kartu><TabelGeser>
         <table className="w-full min-w-[72rem] text-sm">
           <thead className="bg-slate-100 text-xs font-semibold text-slate-700">
             <tr>{HEADER.map(([h, k]) => k === null
