@@ -8,7 +8,7 @@ import { api } from "../../api";
 import { useAuth } from "../../auth";
 import AturUrutan from "../../components/AturUrutan";
 import { TOMBOL_IKON } from "../../components/Kelola";
-import { FormFilter, type NilaiFilter, OPSI_STATUS, Paginasi, ThUrut, cocok, lolosJejak, lolosStatus, usePaginasi, useUrut } from "../../components/TabelData";
+import { FormFilter, type NilaiFilter, OPSI_STATUS, Paginasi, ThUrut, cocok, lolosJejak, lolosStatus, usePaginasi, useUrut, TabelGeser } from "../../components/TabelData";
 import { waktuAngka } from "../../format";
 import type { ItemChecklist } from "../../types";
 import { AreaTeks, Dialog, Input, Judul, Kartu, Kolom, Kosong, Lencana, Memuat, Peringatan, Pilih, Saklar, TanggalJam, Tombol, cx } from "../../ui";
@@ -64,7 +64,7 @@ export default function KelolaChecklist() {
   const [sukses, setSukses] = useState<string | null>(null);
   useEffect(() => { if (!sukses) return; const t = setTimeout(() => setSukses(null), 4000); return () => clearTimeout(t); }, [sukses]);
   const halaman = form ? "form" : lihat ? "detail" : atur ? "atur" : "tabel";
-  useEffect(() => { document.querySelector("main")?.scrollTo(0, 0); }, [halaman]);
+  useEffect(() => { window.scrollTo(0, 0); }, [halaman]);
 
   if (q.isLoading) return <Memuat />;
   if (q.error) return <Peringatan>{(q.error as Error).message}</Peringatan>;
@@ -224,7 +224,7 @@ function TabelChecklist({ item, kelola, sibuk, ubah, hapus, lihat }: {
               </tr>
             ); })}
           </tbody>
-        </table>
+        </table></TabelGeser>
       </Kartu>}
       {baris.length > 0 && <Paginasi {...pg} />}
 

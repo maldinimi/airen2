@@ -22,7 +22,7 @@ class Konfigurasi(BaseSettings):
     cookie_secure: bool = False  # set true bila diakses lewat HTTPS
     maks_ukuran_pdf_mb: int = 100
     login_maks_gagal: int = 5
-    login_jendela_menit: int = 15
+    login_jendela_menit: int = 5
 
     # Seed awal
     admin_username: str = "admin"

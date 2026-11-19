@@ -1,8 +1,58 @@
 /** Filter & sorting bersama untuk tabel daftar (Panduan, Checklist, Kategori, Satuan Kerja, Pengguna).
  *  Semuanya dikerjakan di browser atas data yang sudah dimuat; tidak mengubah data di server. */
 import { ArrowDown, ArrowUp, ArrowUpDown, ChevronDown, ChevronLeft, ChevronRight, Filter, RotateCcw, Search } from "lucide-react";
-import { type CSSProperties, Fragment, type KeyboardEvent, useEffect, useId, useMemo, useRef, useState } from "react";
+import { type CSSProperties, type FocusEvent, Fragment, type KeyboardEvent, type ReactNode, useEffect, useId, useLayoutEffect, useMemo, useRef,
+  useState } from "react";
 import { Input, Kartu, Pilih, Tombol, cx, gayaInput } from "../ui";
+
+/** Wadah tabel lebar (desain.md §7 no. 52 & 56): baris judul menempel di atas saat halaman digulir ke bawah, `beku` kolom
+ *  pertama diam saat tabel digeser ke kanan (hanya menu Pengajuan; menu lain tanpa kolom beku = 0), dan bilah geser
+ *  kiri/kanan menempel di bawah layar. Gulir atas/bawah memakai gulir halaman. Letakkan langsung di dalam `Kartu` tanpa
+ *  overflow; gaya di index.css (`.tabel-geser`).
+ *
+ *  Cara kerja: wadah gulir mana pun akan membuat judul kolom sticky terhadap wadah itu, bukan halaman. Karena itu wadah
+ *  hanya memotong (clip) dan tabel digeser dengan CSS `--geser` dari bilah bawah; geser trackpad/Shift+roda, sentuh, dan
+ *  fokus keyboard diteruskan ke bilah itu. */
+export function TabelGeser({ beku = 0, children }: { beku?: 0 | 1 | 2 | 3; children: ReactNode }) {
+  const wadah = useRef<HTMLDivElement>(null), bilah = useRef<HTMLDivElement>(null), sentuh = useRef<{ x: number; y: number; kiri: number } | null>(null);
+  const [lebar, setLebar] = useState(0);  // lebar tabel bila melebihi wadah; 0 = muat, bilah disembunyikan
+  const geser = () => wadah.current?.style.setProperty("--geser", `${bilah.current?.scrollLeft ?? 0}px`);
+  // Tanpa deps: tabel di dalamnya bisa berganti (data dimuat ulang); observer lama diputus tiap render.
+  useLayoutEffect(() => {
+    const w = wadah.current, t = w?.firstElementChild as HTMLElement | null;
+    if (!w || !t) return;
+    const ukur = () => { setLebar(t.offsetWidth > w.clientWidth + 1 ? t.offsetWidth : 0); geser(); };
+    const ro = new ResizeObserver(ukur);
+    ro.observe(w); ro.observe(t);
+    return () => ro.disconnect();
+  });
+  const tambah = (d: number) => { if (bilah.current) bilah.current.scrollLeft += d; };
+  // Fokus (Tab) ke sel yang tertutup kolom beku atau berada di luar sisi kanan → geser sampai terlihat.
+  const tampakkan = (e: FocusEvent) => {
+    const w = wadah.current, sel = (e.target as HTMLElement).closest("td, th") as HTMLTableCellElement | null;
+    if (!w || !lebar || !sel || sel.cellIndex < beku) return;
+    const r = (e.target as HTMLElement).getBoundingClientRect(), k = w.getBoundingClientRect();
+    const kiri = (beku && w.querySelector(`thead th:nth-child(${beku})`)?.getBoundingClientRect().right) || k.left;
+    if (r.right > k.right) tambah(r.right - k.right + 16);
+    else if (r.left < kiri) tambah(r.left - kiri - 16);
+  };
+  return (
+    <>
+      <div ref={wadah} className="tabel-geser" data-beku={beku} onFocus={tampakkan}
+        onWheel={(e) => tambah(e.deltaX || (e.shiftKey ? e.deltaY : 0))}
+        onTouchStart={(e) => { const t = e.touches[0]; sentuh.current = { x: t.clientX, y: t.clientY, kiri: bilah.current?.scrollLeft ?? 0 }; }}
+        onTouchMove={(e) => {
+          const s = sentuh.current, t = e.touches[0];
+          if (s && bilah.current && Math.abs(t.clientX - s.x) > Math.abs(t.clientY - s.y)) bilah.current.scrollLeft = s.kiri - (t.clientX - s.x);
+        }}>
+        {children}
+      </div>
+      <div ref={bilah} onScroll={geser} aria-hidden className={cx("tabel-geser-bilah rounded-b-[inherit] border-t border-slate-200 bg-white", !lebar && "hidden")}>
+        <div className="h-px" style={{ width: lebar }} />
+      </div>
+    </>
+  );
+}
 
 export type Urut<K extends string> = { kolom: K | null; naik: boolean };
 type Ambil<T, K extends string> = Record<K, (x: T) => string | number>;

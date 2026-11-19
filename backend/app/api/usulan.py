@@ -35,10 +35,13 @@ def revisi_terbaru():
     return select(func.max(r2.nomor)).where(r2.usulan_id == Usulan.id).scalar_subquery()
 
 
-def _ambil(db: Session, usulan_id: uuid.UUID, p: Pengguna) -> Usulan:
-    u = db.get(Usulan, usulan_id)
+def _ambil(db: Session, usulan_id: uuid.UUID, p: Pengguna, kunci: bool = False) -> Usulan:
+    """`kunci=True` untuk endpoint yang mengubah usulan: baris usulan dikunci (FOR UPDATE) SEBELUM revisinya dibaca, sehingga
+    dua permintaan bersamaan (mis. dua kali Ajukan, atau Pengusul kirim ulang saat Reviewer mengganti dokumen) diproses
+    bergiliran dan yang kedua melihat status terbaru — tidak ada dua review AI untuk satu revisi."""
+    u = db.get(Usulan, usulan_id, with_for_update={"of": Usulan} if kunci else None)  # "of": satker ikut di-join (LEFT JOIN)
     if u is None:
-        raise Galat(404, "Usulan tidak ditemukan.")
+        raise Galat(404, "Pengajuan tidak ditemukan.")
     pastikan(boleh_lihat_usulan(p, u))
     return u
 
@@ -61,6 +64,8 @@ def baris_usulan(db: Session, u: Usulan, p: Pengguna) -> dict:
         "revisi_id": str(r.id), "revisi_nomor": r.nomor, "status": r.status,
         "tor": _dok(r.tor_file_id, r.tor_nama), "rab": _dok(r.rab_file_id, r.rab_nama),
         "hierarki": u.hierarki, "kategori_usulan": u.kategori_usulan, "dibuat_at": u.created_date.isoformat(),
+        # Tanggal Pengajuan = unggahan terakhir (revisi terbaru), bukan pengajuan pertama (desain.md §7 no. 51).
+        "diajukan_at": r.created_at.isoformat(),
         "kategori_final": kategori, "diarsipkan": u.diarsipkan_at is not None, "review_id": str(rv.id) if rv else None,
         "proses": info_proses(db, rv) if r.status in (st.ANTRE, st.DIPROSES_AI, st.GAGAL) else None,
         "boleh_kelola": boleh_kelola_usulan(p, u),
@@ -75,7 +80,7 @@ def daftar(db: Session = Depends(sesi_db), p: Pengguna = Depends(wajib_role(PENG
            urut: Literal["satker", "rincian", "dokumen", "status", "tanggal"] | None = None, arah: Literal["asc", "desc"] = "asc",
            halaman: int = Query(1, ge=1), per_halaman: int = Query(10, ge=1, le=100)) -> dict:
     """Daftar usulan dengan filter A5 dan filter per kolom tabel (desain.md §7 no. 45): `satker` (nama Satuan Kerja), `q`
-    (kode/nama RO), `dokumen` (nama file TOR/RAB revisi terbaru), `status`, `tanggal` (tanggal pengajuan, WIB). `urut` + `arah`
+    (kode/nama RO), `dokumen` (nama file TOR/RAB revisi terbaru), `status`, `tanggal` (tanggal pengajuan revisi terbaru, WIB). `urut` + `arah`
     mengurutkan per kolom; tanpa `urut` = perubahan terbaru dulu. Pengusul otomatis dibatasi ke Satker-nya."""
     kueri = (select(Usulan).join(Revisi, (Revisi.usulan_id == Usulan.id) & (Revisi.nomor == revisi_terbaru()))
              .join(Satker, Satker.id == Usulan.satker_id))
@@ -100,13 +105,13 @@ def daftar(db: Session = Depends(sesi_db), p: Pengguna = Depends(wajib_role(PENG
         pola = f"%{dokumen.strip()}%"
         kueri = kueri.where(or_(Revisi.tor_nama.ilike(pola), Revisi.rab_nama.ilike(pola)))
     if tanggal:
-        kueri = kueri.where(func.date(func.timezone("Asia/Jakarta", Usulan.created_date)) == tanggal)
+        kueri = kueri.where(func.date(func.timezone("Asia/Jakarta", Revisi.created_at)) == tanggal)
     kueri = kueri.where(Usulan.diarsipkan_at.is_(None))  # fitur arsip dihapus (desain.md §7 no. 50); arsip lama tetap tersembunyi
     total = db.scalar(select(func.count()).select_from(kueri.subquery()))
     # Halaman di luar jangkauan (mis. ganti Tahun Anggaran di halaman 2, atau baris terakhir dihapus) → halaman terakhir.
     halaman = min(halaman, max(1, -(-total // per_halaman)))
     kolom = {"satker": Satker.nama, "rincian": Usulan.kode_ro, "dokumen": func.coalesce(Revisi.tor_nama, Revisi.rab_nama),
-             "status": Revisi.status, "tanggal": Usulan.created_date}.get(urut or "")
+             "status": Revisi.status, "tanggal": Revisi.created_at}.get(urut or "")
     urutan = [kolom.desc() if arah == "desc" else kolom.asc()] if kolom is not None else [Revisi.updated_at.desc()]
     baris = db.scalars(kueri.order_by(*urutan, Usulan.id).offset((halaman - 1) * per_halaman).limit(per_halaman)).unique().all()
     return {"total": total, "halaman": halaman, "per_halaman": per_halaman, "data": [baris_usulan(db, u, p) for u in baris]}
@@ -245,19 +250,17 @@ def buat(request: Request, db: Session = Depends(sesi_db), p: Pengguna = Depends
 
 
 def _buat_revisi(db: Session, request: Request, u: Usulan, tor: UploadFile | None, rab: UploadFile | None, p: Pengguna) -> Revisi:
-    """Revisi baru berisi TOR dan/atau RAB pengganti; dokumen yang tidak diganti terbawa dari revisi terakhir.
-    Error: 400 tanpa dokumen / bukan PDF; 413 terlalu besar."""
-    ada_tor, ada_rab = _ada(tor), _ada(rab)
-    if not (ada_tor or ada_rab):
-        raise Galat(400, "Unggah minimal satu dokumen (TOR atau RAB).")
-    lama = u.revisi[-1]
-    r = Revisi(usulan_id=u.id, nomor=lama.nomor + 1, tor_file_id=lama.tor_file_id, tor_nama=lama.tor_nama,
-               rab_file_id=lama.rab_file_id, rab_nama=lama.rab_nama, status=st.DRAF, dibuat_oleh=p.id)
-    _pasang_dokumen(db, r, tor, rab)  # file lama tetap dipakai revisi sebelumnya
+    """Revisi baru berisi TOR dan RAB (keduanya wajib, desain.md §7 no. 51). File yang isinya sama dengan revisi
+    sebelumnya dipakai ulang (per SHA), sehingga Histori Dokumen tidak menandainya "diganti".
+    Error: 400 TOR/RAB kosong / bukan PDF; 413 terlalu besar."""
+    if not (_ada(tor) and _ada(rab)):
+        raise Galat(400, "TOR dan RAB wajib diunggah.")
+    r = Revisi(usulan_id=u.id, nomor=u.revisi[-1].nomor + 1, status=st.DRAF, dibuat_oleh=p.id)
+    _pasang_dokumen(db, r, tor, rab)
     db.add(r)
     u.updated_by = p.id
     db.flush()
-    catat(db, request, "REVISI_BARU", "revisi", r.id, sesudah={"nomor": r.nomor, "ganti_tor": ada_tor, "ganti_rab": ada_rab})
+    catat(db, request, "REVISI_BARU", "revisi", r.id, sesudah={"nomor": r.nomor, "tor": r.tor_nama, "rab": r.rab_nama})
     return r
 
 
@@ -270,10 +273,13 @@ def ubah_parameter(usulan_id: uuid.UUID, request: Request, db: Session = Depends
     (opsional) mengganti TOR dan/atau RAB. Dokumen pengganti dipasang di **revisi terakhir yang sama** (tidak menambah baris
     Histori Dokumen), lalu revisi itu langsung direview AI ulang; review lama tetap tersimpan (hasil AI tidak ditimpa).
 
-    Error: 400 pilihan tidak valid / kategori tidak Aktif / file bukan PDF; 403 bukan Reviewer; 404; 409 dokumen diganti
-    saat revisi terakhir masih antre/diproses AI.
+    Error: 400 pilihan tidak valid / kategori tidak Aktif / file bukan PDF; 403 bukan Reviewer; 404; 409 revisi terakhir
+    sudah diverifikasi (Lolos/Tidak Lolos), atau dokumen diganti saat revisi terakhir masih antre/diproses AI.
     """
-    u = _ambil(db, usulan_id, p)
+    u = _ambil(db, usulan_id, p, kunci=True)
+    # Sudah diverifikasi = terkunci (desain.md §7 no. 51); Edit terbuka lagi setelah Pengusul mengunggah revisi baru.
+    if u.revisi[-1].status in (st.LOLOS, st.TIDAK_LOLOS):
+        raise Galat(409, "Pengajuan yang sudah diverifikasi tidak dapat diedit.")
     sebelum = {"hierarki": u.hierarki, "kategori": u.kategori_usulan}
     u.hierarki, u.kategori_usulan = _isian(db, program, kegiatan, kro, ro, kategori_id)
     u.kode_ro, u.nama_ro = u.hierarki["ro"]["kode"], u.hierarki["ro"]["nama"]
@@ -310,7 +316,7 @@ def ubah_draf(usulan_id: uuid.UUID, request: Request, db: Session = Depends(sesi
 
     Error: 409 bila revisi sedang/sudah direview (dokumen terkunci, PRD §5).
     """
-    u = _ambil(db, usulan_id, p)
+    u = _ambil(db, usulan_id, p, kunci=True)
     pastikan(boleh_kelola_usulan(p, u))
     r = u.revisi[-1]
     if r.status not in st.BOLEH_UBAH_DOKUMEN:
@@ -335,15 +341,14 @@ def ubah_draf(usulan_id: uuid.UUID, request: Request, db: Session = Depends(sesi
 def revisi_baru(usulan_id: uuid.UUID, request: Request, db: Session = Depends(sesi_db),
                 p: Pengguna = Depends(wajib_role(PENGUSUL)), tor: UploadFile | None = FormFile(None),
                 rab: UploadFile | None = FormFile(None), ajukan: bool = Form(False)) -> dict:
-    """Unggah revisi (TOR saja, RAB saja, atau keduanya) setelah hasil final TIDAK LOLOS.
-    Dokumen yang tidak diganti terbawa dari revisi sebelumnya.
+    """Unggah revisi (TOR dan RAB, keduanya wajib) setelah hasil final TIDAK LOLOS.
 
-    Error: 400 tidak ada file; 409 status revisi terakhir belum TIDAK LOLOS.
+    Error: 400 TOR/RAB kosong; 409 status revisi terakhir belum TIDAK LOLOS.
     """
-    u = _ambil(db, usulan_id, p)
+    u = _ambil(db, usulan_id, p, kunci=True)
     pastikan(boleh_kelola_usulan(p, u))
     if u.diarsipkan_at:
-        raise Galat(409, "Usulan diarsipkan.")
+        raise Galat(409, "Pengajuan diarsipkan.")
     if u.revisi[-1].status not in st.BOLEH_REVISI_BARU:
         raise Galat(409, "Revisi baru hanya dapat diunggah setelah hasil review final TIDAK LOLOS.")
     r = _buat_revisi(db, request, u, tor, rab, p)
@@ -358,7 +363,7 @@ def revisi_baru(usulan_id: uuid.UUID, request: Request, db: Session = Depends(se
 def ajukan(usulan_id: uuid.UUID, request: Request, db: Session = Depends(sesi_db),
            p: Pengguna = Depends(wajib_role(PENGUSUL))) -> dict:
     """Ajukan review AI untuk revisi terbaru (status DRAF, atau GAGAL untuk mengulang)."""
-    u = _ambil(db, usulan_id, p)
+    u = _ambil(db, usulan_id, p, kunci=True)
     ajukan_review(db, request, u.revisi[-1], p)
     db.commit()
     return baris_usulan(db, u, p)
@@ -374,9 +379,9 @@ def hapus(usulan_id: uuid.UUID, request: Request, db: Session = Depends(sesi_db)
 
     Error: 403 bukan Reviewer; 404; 409 bila antre/diproses AI (worker masih menulis hasilnya).
     """
-    u = _ambil(db, usulan_id, p)
+    u = _ambil(db, usulan_id, p, kunci=True)
     if u.revisi[-1].status in (st.ANTRE, st.DIPROSES_AI):
-        raise Galat(409, "Usulan sedang diproses AI dan belum dapat dihapus.")
+        raise Galat(409, "Pengajuan sedang diproses AI dan belum dapat dihapus.")
     review_ids = list(db.scalars(select(Review.id).where(Review.revisi_id.in_([r.id for r in u.revisi]))))
     file_ids = {f for r in u.revisi for f in (r.tor_file_id, r.rab_file_id)}
     sebelum = {"kode_ro": u.kode_ro, "nama_ro": u.nama_ro, "satker": u.satker.nama, "jumlah_revisi": len(u.revisi),

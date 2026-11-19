@@ -16,7 +16,7 @@ export default function PanduanForm({ mode }: { mode: "unggah" | "ubah" }) {
   if (mode === "unggah") return <Isi />;
   if (q.isLoading) return <Memuat />;
   const p = q.data?.find((x) => x.id === id);
-  return p ? <Isi key={p.id} p={p} /> : <Kosong>Panduan tidak ditemukan.</Kosong>;
+  return p ? <Isi key={p.id} p={p} /> : <Kosong>Acuan tidak ditemukan.</Kosong>;
 }
 
 function Isi({ p }: { p?: Panduan }) {
@@ -60,7 +60,7 @@ function Isi({ p }: { p?: Panduan }) {
   return (
     <div className="w-full">
       <Link to="/panduan" className="mb-3 inline-flex items-center gap-1 text-sm text-slate-500 hover:text-slate-800"><ArrowLeft className="size-4" />Kembali</Link>
-      <Judul judul={p ? "Edit Panduan" : "Unggah Panduan"} />
+      <Judul judul={p ? "Edit Acuan" : "Unggah Acuan"} />
       <Kartu className="p-5">
         <form className="space-y-5" onSubmit={cek}>
           {galat && <Peringatan>{galat}</Peringatan>}
@@ -68,8 +68,8 @@ function Isi({ p }: { p?: Panduan }) {
           <Kolom label="Deskripsi"><AreaTeks value={deskripsi} onChange={(e) => setDeskripsi(e.target.value)} /></Kolom>
           <div className="space-y-1.5">
             <span className="text-sm font-medium text-slate-700">Status</span>
-            <div><Saklar aktif={aktif} ubah={setAktif} label="Status panduan" /></div>
-            <span className="block text-xs text-slate-500">Hanya panduan Aktif yang dipakai review berikutnya.</span>
+            <div><Saklar aktif={aktif} ubah={setAktif} label="Status acuan" /></div>
+            <span className="block text-xs text-slate-500">Hanya acuan Aktif yang dipakai review berikutnya.</span>
           </div>
           {/* Nama Acuan diisi otomatis dari nama file bila masih kosong. */}
           {!p && <Unggah key={ulang} label="File PDF *" file={file} lihat={() => setPratinjau(true)}

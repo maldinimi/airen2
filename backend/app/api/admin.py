@@ -281,7 +281,7 @@ def hapus_satker(satker_id: uuid.UUID, request: Request, db: Session = Depends(s
         db.flush()
     except IntegrityError:
         db.rollback()
-        raise Galat(409, "Satuan Kerja masih dipakai oleh pengguna atau usulan sehingga tidak dapat dihapus. Pindahkan dulu pengguna ke Satuan Kerja lain.")
+        raise Galat(409, "Satuan Kerja masih dipakai oleh pengguna atau pengajuan sehingga tidak dapat dihapus. Pindahkan dulu pengguna ke Satuan Kerja lain.")
     catat(db, request, "SATKER_HAPUS", "satker", satker_id, sebelum=sebelum)
     db.commit()
     return {"ok": True}

@@ -8,6 +8,19 @@ from sqlalchemy import text
 from app.db import SessionLokal
 
 
+def test_batas_login_per_akun_dan_ip(klien):
+    """Login dikunci per pasangan username+IP (5 gagal); akun lain dari IP yang sama tetap bisa login sampai batas per IP
+    (20 gagal) tercapai. Mencegah orang lain mengunci akun Reviewer, tetapi tetap menahan tebakan ke banyak akun."""
+    c = klien()
+    salah = lambda u: c.post("/api/auth/login", json={"username": u, "password": "salah-salah1"}).status_code  # noqa: E731
+    assert [salah("pengusul") for _ in range(5)] == [401] * 5
+    r = c.post("/api/auth/login", json={"username": "pengusul", "password": "Contoh!2026"})
+    assert r.status_code == 429 and "5 menit" in r.json()["pesan"]
+    klien("reviewer")  # akun lain dari IP yang sama tidak ikut terkunci
+    assert {salah(f"tebak{i}") for i in range(15)} == {401}  # total 20 gagal dari IP ini
+    assert c.post("/api/auth/login", json={"username": "reviewer", "password": "Contoh!2026"}).status_code == 429
+
+
 def test_ganti_password_mencabut_sesi_lain(klien):
     """Ganti password sendiri: sesi di perangkat lain berakhir (401), sesi yang dipakai tetap berlaku."""
     a, b = klien("pengusul"), klien("pengusul")

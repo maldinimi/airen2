@@ -8,3 +8,7 @@ const fmtAngka = new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "2-di
   hourCycle: "h23", timeZone: "Asia/Jakarta" });
 /** DD/MM/YYYY HH:mm (WIB). */
 export const waktuAngka = (iso?: string | null) => (iso ? fmtAngka.format(new Date(iso)).replace(",", "") : "—");
+
+/** Nama tahap revisi untuk tampilan (desain.md §7 no. 73–74): revisi 1 = "Dokumen", revisi n ≥ 2 = "Perbaikan n−1".
+ *  Nomor revisi di data/API tetap. */
+export const namaRevisi = (nomor: number) => (nomor === 1 ? "Dokumen" : `Perbaikan ${nomor - 1}`);

@@ -106,7 +106,7 @@ def ubah(panduan_id: uuid.UUID, request: Request, judul: str = Form(...), deskri
     # Kunci baris: dua edit bersamaan tidak boleh menyalin versi yang sama dua kali (nomor versi dihitung dari riwayat).
     pd = db.get(Panduan, panduan_id, with_for_update={"of": Panduan})
     if pd is None:
-        raise Galat(404, "Panduan tidak ditemukan.")
+        raise Galat(404, "Acuan tidak ditemukan.")
     judul, deskripsi = _nama_acuan(judul), (deskripsi or "").strip() or None
     aktif = pd.aktif if aktif is None else aktif
     if (judul, deskripsi, aktif) == (pd.panduan, pd.deskripsi, pd.aktif):
@@ -136,7 +136,7 @@ def hapus(panduan_id: uuid.UUID, request: Request, db: Session = Depends(sesi_db
     """
     pd = db.get(Panduan, panduan_id)
     if pd is None:
-        raise Galat(404, "Panduan tidak ditemukan.")
+        raise Galat(404, "Acuan tidak ditemukan.")
     jumlah_versi, file_ids = len(pd.versi) + 1, {pd.file_id, *(v.file_id for v in pd.versi)}
     # Hapus permanen (riwayat versi ikut terhapus) → isi semua versi disimpan di Audit Log agar tetap dapat ditelusuri,
     # sama seperti hapus Checklist/Kategori.
@@ -146,10 +146,10 @@ def hapus(panduan_id: uuid.UUID, request: Request, db: Session = Depends(sesi_db
     # ponytail: review yang mengunci acuan bersamaan dengan hapus ini bisa gagal (FK); cukup diajukan ulang.
     if db.scalar(select(Review.id).join(ReviewPanduan, ReviewPanduan.review_id == Review.id)
                  .where(ReviewPanduan.panduan_id == pd.id, Review.status.in_(("ANTRE", "DIPROSES"))).limit(1)):
-        raise Galat(409, "Panduan sedang dipakai review yang berjalan. Coba lagi setelah review selesai.")
+        raise Galat(409, "Acuan sedang dipakai review yang berjalan. Coba lagi setelah review selesai.")
     for fid in file_ids:  # worker memegang kunci yang sama selama ekstraksi (pekerja/proses_file.py)
         if not db.scalar(text("SELECT pg_try_advisory_xact_lock(hashtext(:id))"), {"id": str(fid)}):
-            raise Galat(409, "File panduan sedang diproses. Coba lagi setelah selesai.")
+            raise Galat(409, "File acuan sedang diproses. Coba lagi setelah selesai.")
     for tabel in (ReviewPanduan, PanduanHistori):
         db.execute(delete(tabel).where(tabel.panduan_id == pd.id))
     db.execute(delete(Panduan).where(Panduan.id == pd.id))
@@ -167,10 +167,10 @@ def proses_ulang(panduan_id: uuid.UUID, request: Request, db: Session = Depends(
     """Ulangi pemrosesan file panduan versi terkini yang GAGAL."""
     pd = db.get(Panduan, panduan_id)
     if pd is None:
-        raise Galat(404, "Panduan tidak ditemukan.")
+        raise Galat(404, "Acuan tidak ditemukan.")
     f = pd.file
     if f.status_ekstraksi != "GAGAL":
-        raise Galat(409, "Hanya panduan berstatus Gagal yang dapat diproses ulang.")
+        raise Galat(409, "Hanya acuan berstatus Gagal yang dapat diproses ulang.")
     antrekan_ekstraksi(db, f)
     catat(db, request, "PANDUAN_PROSES_ULANG", "panduan", pd.id)
     db.commit()

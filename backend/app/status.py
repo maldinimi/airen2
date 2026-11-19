@@ -35,7 +35,7 @@ def ajukan_ulang_oleh_reviewer(revisi) -> None:
     Error: `Galat` 409 bila revisi masih antre/diproses AI.
     """
     if revisi.status in (ANTRE, DIPROSES_AI):
-        raise Galat(409, "Usulan sedang diproses AI; dokumen belum dapat diganti.")
+        raise Galat(409, "Pengajuan sedang diproses AI; dokumen belum dapat diganti.")
     revisi.status = DRAF
 
 

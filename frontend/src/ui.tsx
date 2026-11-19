@@ -176,8 +176,8 @@ export function Konfirmasi({ buka, baris, batal, ya, memuat, galat, bahaya, judu
 }
 
 /** Nomor halaman (‹ 1 2 3 ›) di kiri dan pilihan jumlah baris di kanan (bila `ubahPer` diisi); selalu tampil walau satu halaman. */
-export function Halaman({ total, halaman, per, ubah, ubahPer }:
-  { total: number; halaman: number; per: number; ubah: (h: number) => void; ubahPer?: (n: number) => void }) {
+export function Halaman({ total, halaman, per, ubah, ubahPer, pilihan = [10, 20, 50, 100] }:
+  { total: number; halaman: number; per: number; ubah: (h: number) => void; ubahPer?: (n: number) => void; pilihan?: number[] }) {
   const maks = Math.max(1, Math.ceil(total / per));
   // Banyak halaman: tampilkan awal, akhir, dan sekitar halaman aktif; celah ditandai "…".
   const nomor = Array.from({ length: maks }, (_, i) => i + 1).filter((n) => maks <= 7 || n === 1 || n === maks || Math.abs(n - halaman) <= 1);
@@ -202,7 +202,7 @@ export function Halaman({ total, halaman, per, ubah, ubahPer }:
           <span>Baris per halaman</span>
           <select className="h-8 rounded-md border border-slate-300 bg-white px-2 text-sm focus:outline-none focus:ring-2 focus:ring-utama-100"
             value={per} onChange={(e) => ubahPer(Number(e.target.value))}>
-            {[10, 20, 50, 100].map((n) => <option key={n} value={n}>{n}</option>)}
+            {pilihan.map((n) => <option key={n} value={n}>{n}</option>)}
           </select>
         </label>
       )}

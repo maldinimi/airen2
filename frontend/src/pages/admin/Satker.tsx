@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Plus } from "lucide-react";
 import { useMemo, useState } from "react";
 import { api } from "../../api";
-import { FormFilter, type NilaiFilter, OPSI_STATUS, Paginasi, ThUrut, cocok, lolosJejak, lolosStatus, usePaginasi, useUrut } from "../../components/TabelData";
+import { FormFilter, type NilaiFilter, OPSI_STATUS, Paginasi, ThUrut, cocok, lolosJejak, lolosStatus, usePaginasi, useUrut, TabelGeser } from "../../components/TabelData";
 import { waktuAngka } from "../../format";
 import { Aksi, HalamanDetail, HalamanForm, LencanaAktif, PilihBawah, type Satker, TD, barisJejak, daftarUke1, kunciUke1, th, usePesanSukses } from "../../components/Kelola";
 import { Input, Judul, Kartu, Kolom, Konfirmasi, Kosong, Memuat, Peringatan, Tombol, cx } from "../../ui";
@@ -158,7 +158,7 @@ export default function KelolaSatker() {
       )}
       {q.isLoading ? <Memuat /> : q.error ? <Peringatan>{(q.error as Error).message}</Peringatan> : !q.data?.length ? <Kosong>Belum ada Satuan Kerja.</Kosong>
         : baris.length === 0 ? <Kosong>Tidak ada Satuan Kerja yang cocok dengan filter.</Kosong> : (
-        <Kartu className="overflow-x-auto">
+        <Kartu><TabelGeser>
           <table className="w-full min-w-[84rem] text-sm">
             <thead className="bg-slate-100 text-xs font-semibold text-slate-700">
               <tr>{th("No")}{KOLOM.map((x) => <ThUrut key={x.k} label={x.label} kolom={x.k} urut={urut} klik={klik} />)}
@@ -180,13 +180,13 @@ export default function KelolaSatker() {
                 <td className={cx(TD, "min-w-[9.5rem] whitespace-nowrap text-slate-600")}>{waktuAngka(s.diubah_at)}</td>
                 <Aksi nama={s.nama || "Satuan Kerja"} lihat={() => setLihat(s)} ubah={() => buka(s)} hapus={() => { hapus.reset(); setDihapus(s); }} />
               </tr>))}</tbody>
-          </table>
+          </table></TabelGeser>
         </Kartu>
       )}
       {baris.length > 0 && <Paginasi {...pg} />}
       {dihapus && (
         <Konfirmasi bahaya buka judul="Hapus Satuan Kerja secara permanen?" teksYa="Ya, hapus" teksBatal="Batal" baris={isi(dihapus)}
-          pesan="Satuan Kerja dihapus dan tidak dapat dikembalikan. Satuan Kerja yang masih dipakai pengguna atau usulan tidak dapat dihapus."
+          pesan="Satuan Kerja dihapus dan tidak dapat dikembalikan. Satuan Kerja yang masih dipakai pengguna atau pengajuan tidak dapat dihapus."
           galat={hapus.error?.message} memuat={hapus.isPending} batal={() => setDihapus(null)} ya={() => hapus.mutate(dihapus)} />
       )}
     </div>

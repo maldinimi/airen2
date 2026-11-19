@@ -1,7 +1,7 @@
 import { BookOpen, Building2, FileText, History, KeyRound, Landmark, LayoutDashboard, ListChecks, LogOut, Menu, PanelLeftClose, PanelLeftOpen, Server,
   Tags, Users, X } from "lucide-react";
-import { type ReactNode, useState } from "react";
-import { NavLink, Outlet, useLocation } from "react-router-dom";
+import { type ReactNode, useEffect, useState } from "react";
+import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../auth";
 import type { Role } from "../types";
 import { Pilih, cx } from "../ui";
@@ -9,13 +9,13 @@ import { Pilih, cx } from "../ui";
 type Menu = { ke: string; label: string; ikon: ReactNode; role: Role[] };
 const KERJA: Role[] = ["PENGUSUL", "REVIEWER"];
 /** Satu daftar tanpa judul grup (permintaan pemilik produk). Hak akses (juga dicek backend):
- *  - Pengusul : Dashboard, Usulan, dan Panduan/Checklist/Kategori untuk dilihat saja.
- *  - Reviewer : Dashboard, Usulan, serta mengelola Panduan, Checklist, Kategori, Master RO, Satuan Kerja.
+ *  - Pengusul : Dashboard, Pengajuan (route /usulan), dan Acuan (route /panduan)/Checklist/Kategori untuk dilihat saja.
+ *  - Reviewer : Dashboard, Pengajuan, serta mengelola Acuan, Checklist, Kategori, Master RO, Satuan Kerja.
  *  - Admin    : Pengguna (CRUD & reset password), Node AI, Audit Log. */
 const MENU: Menu[] = [
   { ke: "/", label: "Dashboard", ikon: <LayoutDashboard className="size-4" />, role: KERJA },
-  { ke: "/usulan", label: "Usulan", ikon: <FileText className="size-4" />, role: KERJA },
-  { ke: "/panduan", label: "Panduan", ikon: <BookOpen className="size-4" />, role: KERJA },
+  { ke: "/usulan", label: "Pengajuan", ikon: <FileText className="size-4" />, role: KERJA },
+  { ke: "/panduan", label: "Acuan", ikon: <BookOpen className="size-4" />, role: KERJA },
   { ke: "/kelola/checklist", label: "Checklist", ikon: <ListChecks className="size-4" />, role: KERJA },
   { ke: "/kelola/kategori", label: "Kategori", ikon: <Tags className="size-4" />, role: KERJA },
   { ke: "/kelola/master-ro", label: "Master RO", ikon: <Landmark className="size-4" />, role: ["REVIEWER"] },
@@ -45,11 +45,20 @@ export default function Layout() {
   const { pengguna, keluar, punya } = useAuth();
   const [laci, setLaci] = useState(false);
   const lokasi = useLocation();
+  const nav = useNavigate();
   const [tahun, setTahun] = useState(bacaTahun);
-  const pilihTahun = (t: string) => { setTahun(t); try { localStorage.setItem(KUNCI_TAHUN, t); } catch { /* abaikan */ } };
+  // Di halaman turunan menu Usulan (detail, pemeriksaan, form, dan PDF yang dibuka dari sana: `?dari=pengajuan`) → kembali ke
+  // daftar Usulan tahun itu. Di menu lain (termasuk PDF dari menu Acuan) halaman tetap (desain.md §7 no. 51 & 72).
+  const pilihTahun = (t: string) => {
+    setTahun(t);
+    try { localStorage.setItem(KUNCI_TAHUN, t); } catch { /* abaikan */ }
+    if (/^\/(usulan|review)\//.test(lokasi.pathname) || new URLSearchParams(lokasi.search).get("dari") === "pengajuan") nav("/usulan");
+  };
   // Sidebar diperkecil (layar lebar saja), diingat di browser seperti tahun.
   const [ciut, setCiut] = useState(() => { try { return localStorage.getItem(KUNCI_CIUT) === "1"; } catch { return false; } });
   const ubahCiut = (c: boolean) => { setCiut(c); try { localStorage.setItem(KUNCI_CIUT, c ? "1" : "0"); } catch { /* abaikan */ } };
+  // Halaman digulir oleh browser (tanpa gulir di dalam <main>), jadi pindah menu/halaman dimulai dari atas.
+  useEffect(() => { window.scrollTo(0, 0); }, [lokasi.pathname]);
 
   // `kecil` = sidebar diperkecil (hanya ikon; nama menu jadi tooltip & teks pembaca layar). Laci di layar kecil selalu lebar.
   // `tombol` = tampilkan tombol perkecil/perbesar (sidebar layar lebar; laci layar kecil punya tombol tutup sendiri).
@@ -88,8 +97,8 @@ export default function Layout() {
   };
 
   return (
-    <div className="flex h-full">
-      <aside className="hidden shrink-0 lg:block">{sisi(ciut, true)}</aside>
+    <div className="flex min-h-full">
+      <aside className="sticky top-0 hidden h-dvh shrink-0 lg:block">{sisi(ciut, true)}</aside>
       {laci && (
         <div className="fixed inset-0 z-40 lg:hidden">
           <div className="absolute inset-0 bg-slate-900/50" onClick={() => setLaci(false)} />
@@ -99,13 +108,13 @@ export default function Layout() {
         </div>
       )}
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex h-16 shrink-0 items-center justify-between gap-3 border-b border-slate-200 bg-white px-4 sm:px-6">
+        <header className="sticky top-0 z-35 flex h-16 shrink-0 items-center justify-between gap-3 border-b border-slate-200 bg-white px-4 sm:px-6">
           <button className="rounded-lg p-2 text-slate-600 hover:bg-slate-100 lg:hidden" onClick={() => setLaci(true)} aria-label="Buka menu"><Menu className="size-5" /></button>
           {/* Tahun hanya menyaring menu Usulan, jadi tidak ditampilkan bagi Admin (tidak punya menu Usulan). */}
           {punya(...KERJA) && (
             <label className="flex shrink-0 items-center gap-2">
               <span className="whitespace-nowrap text-base font-bold uppercase text-slate-800">Tahun Anggaran</span>
-              <Pilih className="w-24" title="Tahun anggaran — menyaring menu Usulan" value={tahun} onChange={(e) => pilihTahun(e.target.value)}>
+              <Pilih className="w-24" title="Tahun anggaran — menyaring menu Pengajuan" value={tahun} onChange={(e) => pilihTahun(e.target.value)}>
                 {DAFTAR_TAHUN.map((t) => <option key={t} value={t}>{t}</option>)}
               </Pilih>
             </label>
@@ -117,7 +126,7 @@ export default function Layout() {
             </div>
           </div>
         </header>
-        <main key={lokasi.pathname} className="min-w-0 flex-1 overflow-y-auto p-4 sm:p-6"><Outlet context={{ tahun } satisfies KonteksLayout} /></main>
+        <main key={lokasi.pathname} className="min-w-0 flex-1 p-(--tepi)"><Outlet context={{ tahun } satisfies KonteksLayout} /></main>
       </div>
     </div>
   );

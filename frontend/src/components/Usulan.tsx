@@ -13,7 +13,7 @@ export function TautanDokumen({ tor, rab }: { tor: Dok | null; rab: Dok | null }
   return (
     <div className="space-y-1">
       {([["TOR", tor], ["RAB", rab]] as const).map(([jenis, d]) => d && (
-        <Link key={jenis} to={`/pdf/${d.file_id}?judul=${encodeURIComponent(`${jenis} — ${d.nama}`)}`} title={d.nama}
+        <Link key={jenis} to={`/pdf/${d.file_id}?judul=${encodeURIComponent(`${jenis} — ${d.nama}`)}&dari=pengajuan`} title={d.nama}
           className="flex max-w-56 items-center gap-1.5 text-xs text-utama-600 hover:underline">
           <FileText className="size-3.5 shrink-0" aria-hidden /><span className="truncate"><b>{jenis}</b> · {d.nama}</span>
         </Link>
@@ -34,8 +34,9 @@ export function InfoProses({ p }: { p: Proses | null }) {
  *  usulan yang sudah terkirim (menunggu verifikasi, lolos, tidak lolos) cukup dilihat — revisi lewat halaman Pemeriksaan. */
 export const bolehUbahDokumen = (u: BarisUsulan) => u.boleh_kelola && !u.diarsipkan && ["DRAF", "GAGAL"].includes(u.status);
 
-/** Aksi per role (desain.md §7 no. 38): semua = Detail; Reviewer (ROCAN) = Edit hierarki/kategori + Hapus;
- *  Satker = Edit dokumen hanya saat Gagal/Draf; Admin = Detail saja. Hak akses tetap dicek backend. */
+/** Aksi per role (desain.md §7 no. 38 & 51): semua = Detail; Reviewer (ROCAN) = Edit hierarki/kategori (kecuali sudah
+ *  diverifikasi Lolos/Tidak Lolos; muncul lagi setelah Pengusul mengunggah revisi) + Hapus; Satker = Edit dokumen hanya
+ *  saat Gagal/Draf; Admin = Detail saja. Hak akses tetap dicek backend. */
 export function AksiUsulan({ u }: { u: BarisUsulan }) {
   const { punya } = useAuth();
   const nav = useNavigate();
@@ -46,7 +47,8 @@ export function AksiUsulan({ u }: { u: BarisUsulan }) {
     mutationFn: () => api.del(`/api/usulan/${u.id}`),
     onSuccess: () => { setKonfirmasi(false); qc.invalidateQueries(); },
   });
-  const ubah = reviewer ? `/usulan/${u.id}/parameter` : bolehUbahDokumen(u) ? `/usulan/${u.id}/ubah` : null;
+  const diverifikasi = ["LOLOS", "TIDAK_LOLOS"].includes(u.status);
+  const ubah = reviewer ? (diverifikasi ? null : `/usulan/${u.id}/parameter`) : bolehUbahDokumen(u) ? `/usulan/${u.id}/ubah` : null;
   const tombol = "rounded-lg p-1.5 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-utama-100";
   return (
     <div className="flex items-center justify-center">

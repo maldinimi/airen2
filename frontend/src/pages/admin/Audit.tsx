@@ -3,9 +3,13 @@ import { useState } from "react";
 import { api, qs } from "../../api";
 import { waktu } from "../../format";
 import { Dialog, Halaman, Input, Judul, Kartu, Kolom, Memuat, Pilih } from "../../ui";
+import { TabelGeser } from "../../components/TabelData";
 
 type Baris = { id: string; at: string; pengguna: string | null; aksi: string; entitas: string; entitas_id: string | null;
   data_sebelum: unknown; data_sesudah: unknown; ip: string | null };
+
+// Kode entitas audit tetap `usulan`/`panduan` (nama tabel); yang tampil memakai istilah menu (desain.md §7 no. 53).
+const labelEntitas = (x: string) => ({ usulan: "pengajuan", panduan: "acuan" } as Record<string, string>)[x] ?? x;
 
 export default function Audit() {
   const [f, setF] = useState({ aksi: "", entitas: "", dari: "", sampai: "", halaman: 1 });
@@ -20,19 +24,19 @@ export default function Audit() {
       <Kartu className="mb-4 grid gap-3 p-3 sm:grid-cols-4">
         <Kolom label="Aksi"><Pilih value={f.aksi} onChange={(e) => ubah("aksi", e.target.value)}><option value="">Semua</option>{q.data?.aksi.map((a) => <option key={a}>{a}</option>)}</Pilih></Kolom>
         <Kolom label="Entitas"><Pilih value={f.entitas} onChange={(e) => ubah("entitas", e.target.value)}><option value="">Semua</option>
-          {["usulan", "revisi", "review", "checklist_item", "checklist_versi", "kategori", "panduan", "pengguna", "satker", "node_ai"].map((x) => <option key={x}>{x}</option>)}</Pilih></Kolom>
+          {["usulan", "revisi", "review", "checklist_item", "checklist_versi", "kategori", "panduan", "pengguna", "satker", "node_ai"].map((x) => <option key={x} value={x}>{labelEntitas(x)}</option>)}</Pilih></Kolom>
         <Kolom label="Dari tanggal"><Input type="date" value={f.dari} onChange={(e) => ubah("dari", e.target.value)} /></Kolom>
         <Kolom label="Sampai tanggal"><Input type="date" value={f.sampai} onChange={(e) => ubah("sampai", e.target.value)} /></Kolom>
       </Kartu>
       {q.isLoading ? <Memuat /> : (
-        <Kartu className="overflow-x-auto">
+        <Kartu><TabelGeser>
           <table className="w-full text-sm">
-            <thead className="bg-slate-50 text-left text-xs text-slate-500"><tr>{["Waktu", "Pengguna", "Aksi", "Entitas", "IP", ""].map((h) => <th key={h} className="px-3 py-2">{h}</th>)}</tr></thead>
+            <thead className="bg-slate-100 text-left text-xs text-slate-500"><tr>{["Waktu", "Pengguna", "Aksi", "Entitas", "IP", ""].map((h) => <th key={h} className="px-3 py-2">{h}</th>)}</tr></thead>
             <tbody className="divide-y divide-slate-100">{q.data?.data.map((b) => (
               <tr key={b.id}><td className="whitespace-nowrap px-3 py-2">{waktu(b.at)}</td><td className="px-3 py-2">{b.pengguna ?? "—"}</td>
-                <td className="px-3 py-2 font-medium">{b.aksi}</td><td className="px-3 py-2">{b.entitas}</td><td className="px-3 py-2 text-slate-500">{b.ip}</td>
+                <td className="px-3 py-2 font-medium">{b.aksi}</td><td className="px-3 py-2">{labelEntitas(b.entitas)}</td><td className="px-3 py-2 text-slate-500">{b.ip}</td>
                 <td className="px-3 py-2">{!!(b.data_sebelum || b.data_sesudah) && <button className="text-utama-600 hover:underline" onClick={() => setDetail(b)}>Detail</button>}</td></tr>))}</tbody>
-          </table>
+          </table></TabelGeser>
         </Kartu>
       )}
       {q.data && <Halaman total={q.data.total} halaman={f.halaman} per={50} ubah={(h) => setF({ ...f, halaman: h })} />}

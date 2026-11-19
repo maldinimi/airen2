@@ -7,7 +7,7 @@ import { api } from "../api";
 import { useAuth } from "../auth";
 import AturUrutan from "../components/AturUrutan";
 import { TOMBOL_IKON, usePesanSukses } from "../components/Kelola";
-import { FormFilter, type NilaiFilter, OPSI_STATUS, Paginasi, ThUrut, cocok, lolosJejak, lolosStatus, usePaginasi, useUrut } from "../components/TabelData";
+import { FormFilter, type NilaiFilter, OPSI_STATUS, Paginasi, ThUrut, cocok, lolosJejak, lolosStatus, usePaginasi, useUrut, TabelGeser } from "../components/TabelData";
 import { waktuAngka } from "../format";
 import type { Panduan, VersiPanduan } from "../types";
 import { Judul, Kartu, Konfirmasi, Kosong, Lencana, Memuat, Peringatan, Ringkasan, TanggalJam, Tombol, cx } from "../ui";
@@ -48,20 +48,20 @@ export default function PanduanPage() {
   const [atur, setAtur] = useState(false);
   const [sukses, setSukses] = usePesanSukses();
 
-  if (atur && kelola) return <AturUrutan judul="Atur Urutan Panduan" endpoint="/api/panduan"
+  if (atur && kelola) return <AturUrutan judul="Atur Urutan Acuan" endpoint="/api/panduan"
     item={semua.map((p) => ({ id: p.id, judul: p.judul }))} tutup={() => setAtur(false)}
     disimpan={() => { segarkan(); setSukses("Urutan berhasil disimpan."); setAtur(false); }} />;
 
   return (
     <div>
-      <Judul judul="Panduan"
+      <Judul judul="Acuan"
         aksi={kelola && <>
           <Tombol varian="sekunder" onClick={() => setAtur(true)} disabled={semua.length < 2}><ListOrdered className="size-4" />Atur Urutan</Tombol>
-          <Tombol onClick={() => nav("/panduan/unggah")}><Upload className="size-4" />Unggah Panduan</Tombol>
+          <Tombol onClick={() => nav("/panduan/unggah")}><Upload className="size-4" />Unggah Acuan</Tombol>
         </>} />
       {sukses && <div className="mb-3"><Peringatan jenis="sukses">{sukses}</Peringatan></div>}
       {!!q.data?.length && (
-        <FormFilter judul="Panduan" nilai={f} terapkan={setF} bidang={[
+        <FormFilter judul="Acuan" nilai={f} terapkan={setF} bidang={[
           { jenis: "teks", kunci: "cari", label: "Nama Acuan", placeholder: "Cari nama acuan…" },
           { jenis: "teks", kunci: "dokumen", label: "Nama Dokumen", placeholder: "Cari nama dokumen, mis. .pdf…" },
           { jenis: "teks", kunci: "deskripsi", label: "Deskripsi", placeholder: "Cari deskripsi…" },
@@ -70,8 +70,8 @@ export default function PanduanPage() {
           { jenis: "tanggal", kunci: "tanggal", label: "Tanggal Input", kecil: true },
         ]} />
       )}
-      {q.isLoading ? <Memuat /> : !q.data?.length ? <Kosong>Belum ada panduan.</Kosong> : baris.length === 0 ? <Kosong>Tidak ada panduan yang cocok dengan filter.</Kosong> : (
-        <Kartu className="overflow-x-auto">
+      {q.isLoading ? <Memuat /> : !q.data?.length ? <Kosong>Belum ada acuan.</Kosong> : baris.length === 0 ? <Kosong>Tidak ada acuan yang cocok dengan filter.</Kosong> : (
+        <Kartu><TabelGeser>
           {/* Gaya tabel mengikuti Kelola Checklist; semua kolom (judul & isi) rata tengah; kolom teks diberi lebar maksimum agar baris rapi. */}
           <table className="w-full min-w-[72rem] text-sm">
             <thead className="bg-slate-100 text-xs font-semibold text-slate-700"><tr>
@@ -119,15 +119,15 @@ export default function PanduanPage() {
                 </tr>
               );
             })}</tbody>
-          </table>
+          </table></TabelGeser>
         </Kartu>
       )}
       {baris.length > 0 && <Paginasi {...pg} />}
       {dihapus && (
-        <Konfirmasi bahaya buka judul="Hapus panduan secara permanen?" teksYa="Ya, hapus" teksBatal="Batal"
+        <Konfirmasi bahaya buka judul="Hapus acuan secara permanen?" teksYa="Ya, hapus" teksBatal="Batal"
           baris={[["Nama Acuan", dihapus.judul], ["File", dihapus.terkini.nama_file], ["Status", dihapus.aktif ? "Aktif" : "Nonaktif"],
-            ["Panduan Histori", dihapus.versi.length > 1 ? `${dihapus.versi.length - 1} versi` : "—"]]}
-          pesan="Panduan beserta Panduan Histori dan file PDF-nya dihapus dari database dan tidak dapat dikembalikan. Hasil review lama kehilangan rujukan ke panduan ini."
+            ["Acuan Histori", dihapus.versi.length > 1 ? `${dihapus.versi.length - 1} versi` : "—"]]}
+          pesan="Acuan beserta Acuan Histori dan file PDF-nya dihapus dari database dan tidak dapat dikembalikan. Hasil review lama kehilangan rujukan ke acuan ini."
           galat={hapus.error?.message} memuat={hapus.isPending} batal={() => setDihapus(null)} ya={() => hapus.mutate(dihapus.id)} />
       )}
     </div>
@@ -147,13 +147,13 @@ export function PanduanDetail() {
   const q = useQuery(kueriPanduan);
   if (q.isLoading) return <Memuat />;
   const p = q.data?.find((x) => x.id === id);
-  if (!p) return <Kosong>Panduan tidak ditemukan.</Kosong>;
+  if (!p) return <Kosong>Acuan tidak ditemukan.</Kosong>;
   const v = p.terkini;
   return (
     <div className="w-full space-y-4">
       <div>
-        <Link to="/panduan" className="mb-3 inline-flex items-center gap-1 text-sm text-slate-500 hover:text-slate-800"><ArrowLeft className="size-4" />Panduan</Link>
-        <Judul judul="Detail Panduan" />
+        <Link to="/panduan" className="mb-3 inline-flex items-center gap-1 text-sm text-slate-500 hover:text-slate-800"><ArrowLeft className="size-4" />Acuan</Link>
+        <Judul judul="Detail Acuan" />
       </div>
       <Kartu className="space-y-5 p-5">
         {/* Urutan, label, dan nilai disamakan dengan kolom tabel Panduan. */}
@@ -167,7 +167,7 @@ export function PanduanDetail() {
           ["Tanggal Input", waktuAngka(p.diubah_at)],
         ]} />
         <div>
-          <h2 className="mb-2 text-sm font-semibold text-slate-700">Panduan Histori</h2>
+          <h2 className="mb-2 text-sm font-semibold text-slate-700">Acuan Histori</h2>
           {p.versi.length < 2 ? <p className="text-sm text-slate-500">Belum ada perubahan.</p> : (
           <div className="overflow-x-auto rounded-lg border border-slate-200">
             <table className="w-full text-sm">

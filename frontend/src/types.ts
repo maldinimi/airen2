@@ -18,7 +18,7 @@ export type Hierarki = { program: KodeNama; kegiatan: KodeNama; kro: KodeNama; r
 export type BarisUsulan = {
   id: string; satker: Satker; tahun_anggaran: number; kode_ro: string; nama_ro: string; revisi_id: string;
   revisi_nomor: number; status: StatusRevisi; tor: Dok | null; rab: Dok | null; kategori_final: KategoriRingkas | null;
-  dibuat_at: string; diarsipkan: boolean; review_id: string | null;
+  dibuat_at: string; diajukan_at: string /* revisi terbaru */; diarsipkan: boolean; review_id: string | null;
   hierarki: Hierarki | null; kategori_usulan: { id: string; kode: string; nama: string; deskripsi: string } | null;
   proses: Proses | null; boleh_kelola: boolean;
 };
