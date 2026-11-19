@@ -17,7 +17,7 @@ export default function PdfViewer({ fileId, file, judul, sorot }: { fileId?: str
   const [galat, setGalat] = useState<string | null>(null);
   const [hlm, setHlm] = useState(sorot?.halaman ?? 1);
   const [zoom, setZoom] = useState(1);
-  const [ukuran, setUkuran] = useState<{ skala: number; w: number; h: number } | null>(null);
+  const [ukuran, setUkuran] = useState<{ skala: number } | null>(null);
   const wadah = useRef<HTMLDivElement>(null);
   const kanvas = useRef<HTMLCanvasElement>(null);
   const kotakSorot = useRef<HTMLDivElement>(null);
@@ -53,7 +53,7 @@ export default function PdfViewer({ fileId, file, judul, sorot }: { fileId?: str
       c.width = Math.floor(vp.width * dpr); c.height = Math.floor(vp.height * dpr);
       c.style.width = `${vp.width}px`; c.style.height = `${vp.height}px`;
       render = page.render({ canvasContext: c.getContext("2d")!, viewport: vp, transform: dpr !== 1 ? [dpr, 0, 0, dpr, 0, 0] : undefined });
-      render.promise.then(() => setUkuran({ skala, w: vp.width, h: vp.height }), () => undefined);
+      render.promise.then(() => setUkuran({ skala }), () => undefined);
     });
     return () => { batal = true; render?.cancel(); };
   }, [doc, hlm, zoom]);
@@ -65,11 +65,10 @@ export default function PdfViewer({ fileId, file, judul, sorot }: { fileId?: str
   }, [ukuran, sorot]);
 
   if (galat) return <div className="p-4"><Peringatan>{galat}</Peringatan></div>;
-  const kotak = sorot && sorot.halaman === hlm && ukuran
-    ? sorot.bbox
-      ? { left: sorot.bbox[0] * ukuran.skala - 3, top: sorot.bbox[1] * ukuran.skala - 3,
-          width: (sorot.bbox[2] - sorot.bbox[0]) * ukuran.skala + 6, height: (sorot.bbox[3] - sorot.bbox[1]) * ukuran.skala + 6 }
-      : { left: 0, top: 0, width: ukuran.w, height: ukuran.h }
+  // Sorotan kuning hanya untuk bagian yang dirujuk (bbox); tanpa bbox halaman tetap putih (tidak disorot penuh).
+  const kotak = sorot?.bbox && sorot.halaman === hlm && ukuran
+    ? { left: sorot.bbox[0] * ukuran.skala - 3, top: sorot.bbox[1] * ukuran.skala - 3,
+        width: (sorot.bbox[2] - sorot.bbox[0]) * ukuran.skala + 6, height: (sorot.bbox[3] - sorot.bbox[1]) * ukuran.skala + 6 }
     : null;
 
   return (

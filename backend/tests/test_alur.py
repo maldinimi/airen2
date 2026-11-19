@@ -584,6 +584,23 @@ def test_checklist_crud_riwayat_dan_status(klien):
     assert kelola.put(f"/api/checklist/item/{aktif[-1]['id']}", json=isi(aktif[-1], aktif=False)).status_code == 400
 
 
+def test_checklist_jenis_pemeriksaan(klien):
+    kelola = klien("reviewer")
+    c01 = next(i for i in kelola.get("/api/checklist").json()["item"] if i["kode"] == "C01")
+    url = f"/api/checklist/item/{c01['id']}"
+    dasar = {k: c01[k] for k in ("kode", "judul", "kriteria", "berlaku_untuk", "aktif")}
+    # Data awal = Kelengkapan; ubah ke Kualitas tersimpan di item & riwayat
+    assert c01["jenis_pemeriksaan"] == "Kelengkapan"
+    assert kelola.put(url, json={**dasar, "jenis_pemeriksaan": "Kualitas"}).json()["jenis_pemeriksaan"] == "Kualitas"
+    assert kelola.get(f"{url}/riwayat").json()[0]["jenis_pemeriksaan"] == "Kualitas"
+    # Ubah tanpa field (klien lama) tidak mengembalikannya ke Kelengkapan
+    assert kelola.put(url, json={**dasar, "judul": "Judul baru"}).json()["jenis_pemeriksaan"] == "Kualitas"
+    # Nilai di luar pilihan ditolak; tambah tanpa field = Kelengkapan
+    assert kelola.put(url, json={**dasar, "jenis_pemeriksaan": "Lainnya"}).status_code == 422
+    baru = kelola.post("/api/checklist/item", json={**dasar, "kode": "Z1"}).json()
+    assert baru["jenis_pemeriksaan"] == "Kelengkapan"
+
+
 def test_simpan_checklist_tidak_menunggu_pembaca_lama(klien):
     """Transaksi lain yang sedang membaca checklist (mis. worker menunggu jawaban AI) tidak membuat simpan Admin
     tertahan: CLUSTER (urutan fisik) dilewati bila kunci tabel tidak didapat dalam 1 detik."""
