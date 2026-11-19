@@ -14,10 +14,11 @@ import type { ItemChecklist } from "../../types";
 import { AreaTeks, Dialog, Input, Judul, Kartu, Kolom, Kosong, Lencana, Memuat, Peringatan, Pilih, Saklar, TanggalJam, Tombol, cx } from "../../ui";
 
 const BERLAKU = { TOR: "TOR", RAB: "RAB", "TOR & RAB": "TOR & RAB" };
+const JENIS = { Kelengkapan: "Kelengkapan", Kualitas: "Kualitas" };
 const ENDPOINT = "/api/checklist";
 type Data = { item: ItemChecklist[] };
 type Aksi = { jenis: "tambah"; nilai: ItemChecklist } | { jenis: "ubah"; nilai: ItemChecklist } | { jenis: "hapus"; id: string };
-const isian = ({ kode, judul, kriteria, berlaku_untuk, aktif }: ItemChecklist) => ({ kode, judul, kriteria, berlaku_untuk, aktif });
+const isian = ({ kode, judul, kriteria, berlaku_untuk, jenis_pemeriksaan, aktif }: ItemChecklist) => ({ kode, judul, kriteria, berlaku_untuk, jenis_pemeriksaan, aktif });
 
 /** Urut kode alami: angka dibandingkan sebagai angka (C2 < C10), selain itu per karakter (I.T.1 < II.A.1). */
 function bandingKode(a: string, b: string): number {
@@ -29,9 +30,9 @@ function bandingKode(a: string, b: string): number {
   return pa.length - pb.length;
 }
 
-type KolomUrut = "kode" | "judul" | "kriteria" | "berlaku_untuk" | "aktif" | "diubah_oleh" | "diubah_at";
+type KolomUrut = "kode" | "judul" | "kriteria" | "berlaku_untuk" | "jenis_pemeriksaan" | "aktif" | "diubah_oleh" | "diubah_at";
 const HEADER: [string, KolomUrut | null][] = [["Kode", "kode"], ["Checklist", "judul"], ["Kriteria Lolos", "kriteria"],
-  ["Berlaku Untuk", "berlaku_untuk"], ["Status", "aktif"], ["Diinput Oleh", "diubah_oleh"], ["Tanggal Input", "diubah_at"], ["Aksi", null]];
+  ["Berlaku Untuk", "berlaku_untuk"], ["Jenis Pemeriksaan", "jenis_pemeriksaan"], ["Status", "aktif"], ["Diinput Oleh", "diubah_oleh"], ["Tanggal Input", "diubah_at"], ["Aksi", null]];
 
 const LencanaStatus = ({ aktif }: { aktif: boolean }) => aktif
   ? <Lencana className="bg-emerald-50 text-emerald-700 ring-emerald-300">Aktif</Lencana>
@@ -39,6 +40,10 @@ const LencanaStatus = ({ aktif }: { aktif: boolean }) => aktif
 
 const LencanaBerlaku = ({ b }: { b: ItemChecklist["berlaku_untuk"] }) =>
   <Lencana className="bg-slate-100 text-slate-600 ring-slate-200">{BERLAKU[b]}</Lencana>;
+
+// Data lama tanpa kolom ini dianggap Kelengkapan (nilai bawaan database).
+const LencanaJenis = ({ j }: { j?: ItemChecklist["jenis_pemeriksaan"] }) =>
+  <Lencana className="bg-slate-100 text-slate-600 ring-slate-200">{JENIS[j ?? "Kelengkapan"]}</Lencana>;
 
 export default function KelolaChecklist() {
   const qc = useQueryClient();
@@ -66,7 +71,7 @@ export default function KelolaChecklist() {
 
   const buka = (idx: number | null) => {
     simpan.reset();
-    setForm({ idx, nilai: idx === null ? { kode: "", judul: "", kriteria: "", berlaku_untuk: "TOR", aktif: true } : { ...item[idx] } });
+    setForm({ idx, nilai: idx === null ? { kode: "", judul: "", kriteria: "", berlaku_untuk: "TOR", jenis_pemeriksaan: "Kelengkapan", aktif: true } : { ...item[idx] } });
   };
 
   if (form && kelola) return (
@@ -118,7 +123,7 @@ function FormItem({ form, sibuk, galat, tutup, kirim }: {
         <form className="space-y-4" onSubmit={submit}>
           {galat && <Peringatan>{galat.message}</Peringatan>}
           <Kolom label="Kode" wajib>
-            <Input required maxLength={50} placeholder="mis. A.01" value={n.kode} onChange={(e) => set("kode", e.target.value)} />
+            <Input required maxLength={50} placeholder="mis. A01" value={n.kode} onChange={(e) => set("kode", e.target.value)} />
           </Kolom>
           <Kolom label="Checklist" wajib><Input required value={n.judul} onChange={(e) => set("judul", e.target.value)} /></Kolom>
           <Kolom label="Kriteria lolos" wajib petunjuk="Tuliskan sejelas mungkin; AI menilai berdasarkan kriteria ini.">
@@ -127,6 +132,11 @@ function FormItem({ form, sibuk, galat, tutup, kirim }: {
           <Kolom label="Berlaku untuk" wajib>
             <Pilih value={n.berlaku_untuk} onChange={(e) => set("berlaku_untuk", e.target.value as ItemChecklist["berlaku_untuk"])}>
               {Object.entries(BERLAKU).map(([nilai, label]) => <option key={nilai} value={nilai}>{label}</option>)}
+            </Pilih>
+          </Kolom>
+          <Kolom label="Jenis pemeriksaan" wajib>
+            <Pilih value={n.jenis_pemeriksaan} onChange={(e) => set("jenis_pemeriksaan", e.target.value as ItemChecklist["jenis_pemeriksaan"])}>
+              {Object.entries(JENIS).map(([nilai, label]) => <option key={nilai} value={nilai}>{label}</option>)}
             </Pilih>
           </Kolom>
           <div className="space-y-1.5">
@@ -161,10 +171,12 @@ function TabelChecklist({ item, kelola, sibuk, ubah, hapus, lihat }: {
     const i = item[n];
     // Satu filter per kolom tabel (urut kolom); penginput kosong tampil "Sistem" seperti di tabel.
     return cocok(f.kode, i.kode) && cocok(f.cari, i.judul) && cocok(f.kriteria, i.kriteria) && (!f.berlaku || i.berlaku_untuk === f.berlaku)
+      && (!f.jenis || (i.jenis_pemeriksaan ?? "Kelengkapan") === f.jenis)
       && lolosStatus(f.status, i.aktif !== false) && lolosJejak(f, i);
   }), [item, f]);
   const { baris, urut, klik: klikUrut } = useUrut<number, KolomUrut>(lolos, {
     kode: (n) => item[n].kode, judul: (n) => item[n].judul, kriteria: (n) => item[n].kriteria, berlaku_untuk: (n) => item[n].berlaku_untuk,
+    jenis_pemeriksaan: (n) => item[n].jenis_pemeriksaan ?? "Kelengkapan",
     aktif: (n) => (item[n].aktif === false ? 1 : 0), diubah_oleh: (n) => item[n].diubah_oleh ?? "Sistem", diubah_at: (n) => item[n].diubah_at ?? "",
   }, { kode: bandingKode });
   // Paginasi di browser seperti Satuan Kerja & Master RO (bawaan 20 baris); kembali ke halaman 1 setiap filter/urutan berubah.
@@ -178,13 +190,14 @@ function TabelChecklist({ item, kelola, sibuk, ubah, hapus, lihat }: {
         { jenis: "teks", kunci: "cari", label: "Checklist", placeholder: "Cari checklist…" },
         { jenis: "teks", kunci: "kriteria", label: "Kriteria Lolos", placeholder: "Cari kriteria lolos…" },
         { jenis: "pilih", kunci: "berlaku", label: "Berlaku Untuk", semua: "Semua Dokumen", opsi: Object.entries(BERLAKU).map(([nilai, label]) => ({ nilai, label })), kecil: true },
+        { jenis: "pilih", kunci: "jenis", label: "Jenis Pemeriksaan", semua: "Semua Jenis", opsi: Object.entries(JENIS).map(([nilai, label]) => ({ nilai, label })), kecil: true },
         { jenis: "pilih", kunci: "status", label: "Status", semua: "Semua Status", opsi: OPSI_STATUS, kecil: true },
         { jenis: "teks", kunci: "oleh", label: "Diinput Oleh", placeholder: "Cari nama penginput…" },
         { jenis: "tanggal", kunci: "tanggal", label: "Tanggal Input", kecil: true },
       ]} />
       {baris.length === 0 && <Kosong>Tidak ada checklist yang cocok dengan filter.</Kosong>}
       {baris.length > 0 && <Kartu className="overflow-x-auto">
-        <table className="w-full min-w-[64rem] text-sm">
+        <table className="w-full min-w-[72rem] text-sm">
           <thead className="bg-slate-100 text-xs font-semibold text-slate-700">
             <tr>{HEADER.map(([h, k]) => k === null
               ? <th key={h} scope="col" className="whitespace-nowrap px-3 py-2.5 text-center">{h}</th>
@@ -197,6 +210,7 @@ function TabelChecklist({ item, kelola, sibuk, ubah, hapus, lihat }: {
                 <td className="min-w-[12rem] px-3 py-2.5 text-slate-900">{i.judul}</td>
                 <td className="min-w-[20rem] px-3 py-2.5 text-justify text-slate-600">{i.kriteria}</td>
                 <td className="px-3 py-2.5 text-center"><LencanaBerlaku b={i.berlaku_untuk} /></td>
+                <td className="px-3 py-2.5 text-center"><LencanaJenis j={i.jenis_pemeriksaan} /></td>
                 <td className="px-3 py-2.5 text-center"><LencanaStatus aktif={i.aktif !== false} /></td>
                 <td className="min-w-[9rem] whitespace-nowrap px-3 py-2.5 text-center text-slate-600">{i.diubah_oleh ?? "Sistem"}</td>
                 <td className="min-w-[9.5rem] whitespace-nowrap px-3 py-2.5 text-center text-slate-600"><TanggalJam iso={i.diubah_at} /></td>
@@ -249,7 +263,7 @@ function TabelChecklist({ item, kelola, sibuk, ubah, hapus, lihat }: {
 type EntriRiwayat = {
   id: string; kode: string; diubah_oleh: string | null; diubah_at: string;
 } & Pick<ItemChecklist, KolomIsi>;
-type KolomIsi = "judul" | "kriteria" | "berlaku_untuk" | "aktif";
+type KolomIsi = "judul" | "kriteria" | "berlaku_untuk" | "jenis_pemeriksaan" | "aktif";
 
 /** Ikon mata: halaman detail (tabel label–nilai) + tabel riwayat semua perubahan (terbaru dulu), bergaya Detail Panduan. */
 function DetailItem({ i, tutup }: { i: ItemChecklist; tutup: () => void }) {
@@ -260,6 +274,7 @@ function DetailItem({ i, tutup }: { i: ItemChecklist; tutup: () => void }) {
     ["Checklist", i.judul],
     ["Kriteria Lolos", <span className="whitespace-pre-line">{i.kriteria}</span>],
     ["Berlaku Untuk", <LencanaBerlaku b={i.berlaku_untuk} />],
+    ["Jenis Pemeriksaan", <LencanaJenis j={i.jenis_pemeriksaan} />],
     ["Status", <LencanaStatus aktif={i.aktif !== false} />],
     ["Tanggal Input", waktuAngka(i.diubah_at)],
     ["Diinput Oleh", i.diubah_oleh ?? "Sistem"],
@@ -287,20 +302,26 @@ function DetailItem({ i, tutup }: { i: ItemChecklist; tutup: () => void }) {
           {/* checklist_histori memuat semua versi; versi terbaru sudah di tabel atas → Riwayat Data = versi sebelumnya. */}
           {q.isLoading ? <Memuat /> : q.error ? <Peringatan>{(q.error as Error).message}</Peringatan> : q.data!.length < 2 ? <Kosong>Belum ada perubahan sebelumnya.</Kosong> : (
             <div className="overflow-x-auto rounded-lg border border-slate-200">
-              <table className="w-full min-w-[56rem] text-sm">
-                <thead className="bg-slate-50 text-xs font-semibold text-slate-500">
-                  <tr>{["Tanggal Input", "Diinput Oleh", "Status", "Kode", "Checklist", "Kriteria Lolos", "Berlaku Untuk"].map((h) => (
-                    <th key={h} scope="col" className="whitespace-nowrap px-3 py-2 text-center">{h}</th>))}</tr>
+              {/* Urutan, gaya, dan proporsi lebar kolom = tabel daftar Checklist. Lebar dalam persen (table-fixed) agar
+                  jarak antarkolom tetap seimbang walau isinya pendek atau hanya satu baris. */}
+              <table className="w-full min-w-[72rem] table-fixed text-sm">
+                <colgroup>
+                  {["6%", "18%", "22%", "10%", "12%", "7%", "11%", "14%"].map((w, k) => <col key={k} style={{ width: w }} />)}
+                </colgroup>
+                <thead className="bg-slate-100 text-xs font-semibold text-slate-700">
+                  <tr>{["Kode", "Checklist", "Kriteria Lolos", "Berlaku Untuk", "Jenis Pemeriksaan", "Status", "Diinput Oleh", "Tanggal Input"].map((h) => (
+                    <th key={h} scope="col" className="whitespace-nowrap px-3 py-2.5 text-center">{h}</th>))}</tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">{q.data!.slice(1).map((r) => (
                   <tr key={r.id} className="align-middle">
-                    <td className="whitespace-nowrap px-3 py-2.5 text-center text-slate-500"><TanggalJam iso={r.diubah_at} /></td>
-                    <td className="whitespace-nowrap px-3 py-2.5 text-center text-slate-700">{r.diubah_oleh ?? "Sistem"}</td>
-                    <td className="px-3 py-2.5 text-center"><LencanaStatus aktif={r.aktif} /></td>
                     <td className="whitespace-nowrap px-3 py-2.5 text-center font-medium text-slate-900">{r.kode}</td>
-                    <td className="min-w-[12rem] px-3 py-2.5 text-slate-800">{r.judul}</td>
-                    <td className="min-w-[20rem] whitespace-pre-line px-3 py-2.5 text-justify text-slate-700">{r.kriteria}</td>
+                    <td className="break-words px-3 py-2.5 text-center text-slate-900">{r.judul}</td>
+                    <td className="whitespace-pre-line break-words px-3 py-2.5 text-center text-slate-600">{r.kriteria}</td>
                     <td className="px-3 py-2.5 text-center"><LencanaBerlaku b={r.berlaku_untuk} /></td>
+                    <td className="px-3 py-2.5 text-center"><LencanaJenis j={r.jenis_pemeriksaan} /></td>
+                    <td className="px-3 py-2.5 text-center"><LencanaStatus aktif={r.aktif} /></td>
+                    <td className="whitespace-nowrap px-3 py-2.5 text-center text-slate-600">{r.diubah_oleh ?? "Sistem"}</td>
+                    <td className="whitespace-nowrap px-3 py-2.5 text-center text-slate-600"><TanggalJam iso={r.diubah_at} /></td>
                   </tr>))}</tbody>
               </table>
             </div>

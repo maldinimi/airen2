@@ -270,6 +270,8 @@ class ChecklistItem(Base):
     checklist: Mapped[str] = mapped_column(String(500))
     kriteria: Mapped[str] = mapped_column(Text)
     berlaku_untuk: Mapped[str] = mapped_column(String(10))  # TOR | RAB | TOR & RAB
+    # Kelengkapan | Kualitas
+    jenis_pemeriksaan: Mapped[str] = mapped_column(String(20), default="Kelengkapan", server_default="Kelengkapan")
     # Item nonaktif tidak dinilai AI dan tidak dihitung dalam label.
     aktif: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true", nullable=False)
     updated_by: Mapped[uuid.UUID | None] = _fk("pengguna", nullable=True, index=False)
@@ -292,6 +294,8 @@ class ChecklistHistory(Base):
     checklist: Mapped[str] = mapped_column(String(500))
     kriteria: Mapped[str] = mapped_column(Text)
     berlaku_untuk: Mapped[str] = mapped_column(String(10))  # TOR | RAB | TOR & RAB
+    # Kelengkapan | Kualitas
+    jenis_pemeriksaan: Mapped[str] = mapped_column(String(20), default="Kelengkapan", server_default="Kelengkapan")
     # Item nonaktif tidak dinilai AI dan tidak dihitung dalam label.
     aktif: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true", nullable=False)
     updated_by: Mapped[uuid.UUID | None] = _fk("pengguna", nullable=True, index=False)

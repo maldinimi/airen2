@@ -26,7 +26,7 @@ router = APIRouter(prefix="/api", tags=["checklist & kategori"])
 
 # Kolom yang disalin dari checklist_item ke checklist_histori (id baru, isi & jejak buat/ubah sama).
 KOLOM_SALIN = ("created_by", "created_date", "updated_by", "updated_date", "no_urut", "kode", "checklist", "kriteria",
-               "berlaku_untuk", "aktif")
+               "berlaku_untuk", "jenis_pemeriksaan", "aktif")
 
 
 class ItemChecklistMasuk(BaseModel):
@@ -34,6 +34,9 @@ class ItemChecklistMasuk(BaseModel):
     judul: str
     kriteria: str
     berlaku_untuk: Literal["TOR", "RAB", "TOR & RAB"]
+    # Opsional: tidak dikirim = tambah → Kelengkapan, ubah → nilai lama tetap
+    # (klien lama tidak menimpanya diam-diam).
+    jenis_pemeriksaan: Literal["Kelengkapan", "Kualitas"] | None = None
     aktif: bool = True
 
 
@@ -51,14 +54,17 @@ def _nama(db: Session, pid) -> str | None:
 def _item(db: Session, i: ChecklistItem | ChecklistHistory) -> dict:
     # Nama field API tetap (judul/urutan/diubah_*) agar frontend tidak berubah; kolom DB memakai nama baru.
     return {"id": str(i.id), "urutan": i.no_urut, "kode": i.kode, "judul": i.checklist, "kriteria": i.kriteria,
-            "berlaku_untuk": i.berlaku_untuk, "aktif": i.aktif, "diubah_oleh": _nama(db, i.updated_by),
-            "diubah_at": i.updated_date.isoformat()}
+            "berlaku_untuk": i.berlaku_untuk, "jenis_pemeriksaan": i.jenis_pemeriksaan, "aktif": i.aktif,
+            "diubah_oleh": _nama(db, i.updated_by), "diubah_at": i.updated_date.isoformat()}
 
 
 def _isi_item(db: Session, data: ItemChecklistMasuk, kecuali: uuid.UUID | None = None) -> dict:
     """Validasi & normalisasi isian (nama kolom DB). Error: 400."""
     isi = {"kode": data.kode.strip().upper(), "checklist": data.judul.strip(), "kriteria": data.kriteria.strip(),
-           "berlaku_untuk": data.berlaku_untuk, "aktif": data.aktif}
+           "berlaku_untuk": data.berlaku_untuk, "jenis_pemeriksaan": data.jenis_pemeriksaan, "aktif": data.aktif}
+    if isi["jenis_pemeriksaan"] is None:
+        lama = kecuali and db.scalar(select(ChecklistItem.jenis_pemeriksaan).where(ChecklistItem.id == kecuali))
+        isi["jenis_pemeriksaan"] = lama or "Kelengkapan"
     if not (isi["kode"] and isi["checklist"] and isi["kriteria"]):
         raise Galat(400, "Kode, checklist, dan kriteria lolos wajib diisi.")
     for k, maks, nama in (("kode", 50, "Kode"), ("checklist", 500, "Checklist")):
