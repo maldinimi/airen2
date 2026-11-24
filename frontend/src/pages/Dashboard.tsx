@@ -1,98 +1,77 @@
-/** Dashboard (Pengusul & Reviewer) — hanya informasi, tanpa tombol tindakan: 4 kartu angka utama, (Pengusul) pengajuan terakhir,
- *  Data Master, lalu ringkasan per Satuan Kerja (Reviewer saja) di samping grafik jumlah pengajuan. Kartu tidak dapat diklik. */
+/** Dashboard (Pengusul & Reviewer) — hanya informasi, tanpa tombol tindakan; angka mengikuti Tahun Anggaran di header
+ *  (desain.md §7 no. 75, 80–81). Semua role: sapaan dan 4 kartu status (menyegarkan sendiri tiap 15 detik). Reviewer:
+ *  Ringkasan per Satuan Kerja. Pengusul: jumlah Lolos per kategori dan diagram batang checklist Tidak Lolos.
+ *  Kartu tidak dapat diklik. */
 import { useQuery } from "@tanstack/react-query";
-import { BookOpen, CalendarClock, CircleCheck, CircleX, ClipboardList, Hourglass, Landmark, ListChecks, Server, Tags, type LucideIcon }
-  from "lucide-react";
-import { type ReactNode, useLayoutEffect, useRef, useState } from "react";
+import { CircleCheck, CircleX, ClipboardList, Hourglass, Server, Tags } from "lucide-react";
+import type { ReactNode } from "react";
+import { useOutletContext } from "react-router-dom";
 import { api } from "../api";
 import { useAuth } from "../auth";
-import { namaRevisi, tanggal, waktu } from "../format";
+import type { KonteksLayout } from "../components/Layout";
+import { waktu } from "../format";
 import type { StatusRevisi } from "../types";
-import { Judul, Kartu, LencanaStatus, Memuat, NAMA_STATUS, Peringatan, cx } from "../ui";
-
-type KunciMaster = "checklist" | "acuan" | "kategori" | "master_ro";
-// Kartu Data Master: [kunci respons, label, ikon (sama dengan menu samping)].
-const MASTER: [KunciMaster, string, LucideIcon][] = [["checklist", "Checklist", ListChecks], ["acuan", "Acuan", BookOpen],
-  ["kategori", "Kategori", Tags], ["master_ro", "Master RO", Landmark]];
+import { Judul, Kartu, Memuat, NAMA_STATUS, Peringatan, cx } from "../ui";
 
 type Data = {
   total: number; per_status: Partial<Record<StatusRevisi, number>>;
-  per_satker: { satker: string; total: number; lolos: number; tidak_lolos: number; proses: number }[];
-  master: Record<KunciMaster, { total: number; aktif: number; diubah_at: string | null }>;
-  terakhir?: { kode_ro: string; nama_ro: string; revisi_nomor: number; status: StatusRevisi; diajukan_at: string };  // Pengusul saja
+  per_satker: { satker: string; total: number; lolos: number; tidak_lolos: number; menunggu: number }[];
+  kategori_lolos?: { kode: string; nama: string; jumlah: number }[];  // Pengusul saja
+  checklist_tidak_lolos?: { kode: string; checklist: string; ai: number; verifikator: number }[];  // Pengusul saja
   antrean?: { antre: number; diproses: number; rata_menit_per_review: number | null; perkiraan_selesai_menit: number | null;
     node: { nama: string; terakhir_terlihat: string; info: Record<string, string> | null }[] };
 };
 
+const JUDUL_BAGIAN = "mb-3 text-sm font-semibold uppercase tracking-wide text-slate-500";
+
 export default function Dashboard() {
   const { pengguna, punya } = useAuth();
-  // Pengusul hanya melihat Satker-nya sendiri, jadi Ringkasan per Satuan Kerja tidak ditampilkan (desain.md §7 no. 70).
-  const semuaSatker = punya("REVIEWER");
-  const q = useQuery({ queryKey: ["dashboard"], queryFn: () => api.get<Data>("/api/dashboard"), refetchInterval: 15000 });
+  const semuaSatker = punya("REVIEWER");  // Reviewer melihat semua Satker; Pengusul hanya Satker-nya (dibatasi backend)
+  const { tahun } = useOutletContext<KonteksLayout>();
+  const q = useQuery({ queryKey: ["dashboard", tahun], queryFn: () => api.get<Data>(`/api/dashboard?tahun=${tahun}`), refetchInterval: 15000 });
   if (q.isLoading) return <Memuat />;
   if (q.error || !q.data) return <Peringatan>{(q.error as Error)?.message}</Peringatan>;
   const d = q.data;
   const n = (s: StatusRevisi) => d.per_status[s] ?? 0;
-  const diperbarui = new Date(q.dataUpdatedAt).toISOString();
-  // Pengusul (desain.md §7 no. 71): persentase Lolos/Tidak Lolos dari pengajuan yang sudah diverifikasi, dan kartu Master RO
-  // (menu yang tidak dimilikinya) diganti waktu acuan review (Checklist/Acuan/Kategori) terakhir diperbarui.
-  const diverifikasi = n("LOLOS") + n("TIDAK_LOLOS");
-  const porsi = (x: number) => (!semuaSatker && diverifikasi ? `${Math.round((100 * x) / diverifikasi)}% dari terverifikasi` : undefined);
-  const masterTampil = semuaSatker ? MASTER : MASTER.filter(([k]) => k !== "master_ro");
-  const [ubahKunci, ubahLabel] = MASTER.filter(([k]) => k !== "master_ro" && d.master[k].diubah_at)
-    .sort(([a], [b]) => Date.parse(d.master[b].diubah_at!) - Date.parse(d.master[a].diubah_at!))[0] ?? [];
-  const ubahAt = ubahKunci && d.master[ubahKunci].diubah_at;
 
   return (
     <div className="space-y-6">
-      <Judul judul="Dashboard" sub={`Selamat datang, ${pengguna?.nama}. Ringkasan pengajuan · diperbarui ${tanggal(diperbarui)} pukul ${jam(diperbarui)}.`} />
+      <Judul judul="Dashboard" sub={<span className="block text-lg font-medium text-slate-800 sm:text-xl">Selamat datang, {pengguna?.nama}.</span>} />
 
       <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
         <Angka label="Total Pengajuan" nilai={d.total} ikon={<ClipboardList className="size-5" />} warna={WARNA.utama} />
         <Angka label="Menunggu Verifikasi" nilai={n("MENUNGGU_VERIFIKASI")}
           ikon={<Hourglass className="size-5" />} warna={WARNA.kuning} />
-        <Angka label="Lolos" nilai={n("LOLOS")} sub={porsi(n("LOLOS"))} ikon={<CircleCheck className="size-5" />} warna={WARNA.hijau} />
-        <Angka label="Tidak Lolos" nilai={n("TIDAK_LOLOS")} sub={porsi(n("TIDAK_LOLOS"))} ikon={<CircleX className="size-5" />} warna={WARNA.merah} />
+        <Angka label="Lolos" nilai={n("LOLOS")} ikon={<CircleCheck className="size-5" />} warna={WARNA.hijau} />
+        <Angka label="Tidak Lolos" nilai={n("TIDAK_LOLOS")} ikon={<CircleX className="size-5" />} warna={WARNA.merah} />
       </div>
 
-      {d.terakhir && (
-        <section aria-labelledby="judul-terakhir">
-          <h2 id="judul-terakhir" className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-500">Pengajuan Terakhir</h2>
-          <Kartu className="flex flex-wrap items-center justify-between gap-x-8 gap-y-3 p-5">
-            <div className="min-w-0">
-              <div className="font-semibold text-slate-900">{d.terakhir.kode_ro}</div>
-              <div className="text-sm text-slate-600">{d.terakhir.nama_ro}</div>
-            </div>
-            <dl className="flex flex-wrap items-center gap-x-8 gap-y-2 text-sm">
-              <div><dt className="text-xs text-slate-500">Tahap</dt><dd className="font-medium text-slate-900">{namaRevisi(d.terakhir.revisi_nomor)}</dd></div>
-              <div><dt className="text-xs text-slate-500">Tanggal Pengajuan</dt><dd className="font-medium text-slate-900">{waktu(d.terakhir.diajukan_at)}</dd></div>
-              <div><dt className="text-xs text-slate-500">Status</dt><dd className="mt-0.5"><LencanaStatus status={d.terakhir.status} /></dd></div>
-            </dl>
-          </Kartu>
+      {d.kategori_lolos && (
+        <section aria-labelledby="judul-kategori">
+          <h2 id="judul-kategori" className={JUDUL_BAGIAN}>Lolos per Kategori</h2>
+          <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
+            {d.kategori_lolos.map((k) => (
+              <Angka key={k.kode} label={`${k.kode} · ${k.nama}`} nilai={k.jumlah}
+                ikon={<Tags className="size-5" />} warna={WARNA.netral} />))}
+          </div>
         </section>
       )}
 
-      <section aria-labelledby="judul-data-master">
-        <h2 id="judul-data-master" className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-500">Data Master</h2>
-        <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
-          {masterTampil.map(([k, label, Ikon]) => (
-            <Angka key={k} label={label} nilai={d.master[k].total}
-              sub={`${d.master[k].aktif} Aktif · ${d.master[k].total - d.master[k].aktif} Nonaktif`} ikon={<Ikon className="size-5" />} warna={WARNA.netral} />
-          ))}
-          {!semuaSatker && <Angka label="Terakhir Diperbarui" nilai={ubahAt ? tanggal(ubahAt) : "—"} ikon={<CalendarClock className="size-5" />}
-            sub={ubahAt ? `${ubahLabel} · pukul ${jam(ubahAt)}` : undefined} warna={WARNA.netral} />}
-        </div>
-      </section>
+      {d.checklist_tidak_lolos && (
+        <Panel judul="Checklist Tidak Lolos">
+          {d.checklist_tidak_lolos.length === 0 ? <Kosong>Belum ada checklist yang tidak lolos.</Kosong>
+            : <BatangChecklist data={d.checklist_tidak_lolos} />}
+        </Panel>
+      )}
 
-      {/* grid-cols-1 = minmax(0, 1fr): tanpa ini kolom tunggal selebar isi grafik yang bergeser dan panel keluar layar. */}
-      <div className={cx("grid grid-cols-1 gap-6", semuaSatker && "xl:grid-cols-2")}>
-        {semuaSatker && <Panel judul="Ringkasan per Satuan Kerja">
+      {semuaSatker && (
+        <Panel judul="Ringkasan per Satuan Kerja">
           {d.per_satker.length === 0 ? <Kosong>Belum ada pengajuan.</Kosong> : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead className="bg-slate-50 text-xs font-semibold text-slate-600">
                   <tr><th scope="col" className="px-3 py-2 text-left">Satuan Kerja</th>
-                    {["Total", NAMA_STATUS.LOLOS, NAMA_STATUS.TIDAK_LOLOS, "Dalam proses"].map((h) =>
+                    {["Total", NAMA_STATUS.LOLOS, NAMA_STATUS.TIDAK_LOLOS, "Menunggu Verifikasi"].map((h) =>
                       <th key={h} scope="col" className="whitespace-nowrap px-3 py-2 text-right">{h}</th>)}</tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 tabular-nums">{d.per_satker.map((s) => (
@@ -101,14 +80,13 @@ export default function Dashboard() {
                     <td className="px-3 py-2 text-right font-semibold text-slate-900">{s.total}</td>
                     <td className="px-3 py-2 text-right text-slate-700">{s.lolos}</td>
                     <td className="px-3 py-2 text-right text-slate-700">{s.tidak_lolos}</td>
-                    <td className="px-3 py-2 text-right text-slate-700">{s.proses}</td>
+                    <td className="px-3 py-2 text-right text-slate-700">{s.menunggu}</td>
                   </tr>))}</tbody>
               </table>
             </div>
           )}
-        </Panel>}
-        <GrafikPengajuan />
-      </div>
+        </Panel>
+      )}
 
       {d.antrean && <AntreanAI a={d.antrean} />}
     </div>
@@ -121,7 +99,7 @@ const WARNA = {
   kuning: { kartu: "border-amber-200 bg-amber-50/60", label: "text-amber-700", ikon: "bg-white text-amber-700" },
   hijau: { kartu: "border-emerald-200 bg-emerald-50/60", label: "text-emerald-700", ikon: "bg-white text-emerald-700" },
   merah: { kartu: "border-red-200 bg-red-50/60", label: "text-red-700", ikon: "bg-white text-red-700" },
-  netral: { kartu: "border-slate-200 bg-white", label: "text-slate-500", ikon: "bg-utama-50 text-utama-700" },  // Data Master
+  netral: { kartu: "border-slate-200 bg-white", label: "text-slate-500", ikon: "bg-utama-50 text-utama-700" },  // Lolos per Kategori
 };
 
 /** Kartu angka (informasi saja, bukan tombol): label, angka besar, keterangan opsional, ikon berwarna (warna status selalu
@@ -157,101 +135,60 @@ function Panel({ judul, keterangan, aksi, className, children }: {
 
 const Kosong = ({ children }: { children: ReactNode }) => <p className="py-6 text-center text-sm text-slate-500">{children}</p>;
 
-// Jam data Dashboard terakhir dimuat (angka menyegarkan sendiri tiap 15 detik).
-const fmtJam = new Intl.DateTimeFormat("id-ID", { hour: "2-digit", minute: "2-digit", hourCycle: "h23", timeZone: "Asia/Jakarta" });
-const jam = (iso: string) => fmtJam.format(new Date(iso));
+// Dua seri diagram batang Checklist Tidak Lolos. Biru–oranye lolos uji buta warna (ΔE 31); legenda selalu tampil.
+const SERI = [
+  { kunci: "ai", label: "AI", warna: "#2553e0" },
+  { kunci: "verifikator", label: "Verifikator", warna: "#ea580c" },
+] as const;
 
-type Per = "hari" | "minggu" | "bulan" | "tahun";
-type Tren = { per: Per; data: { mulai: string; jumlah: number }[] };
-const PILIHAN_PER: [Per, string][] = [["hari", "Per Tanggal"], ["minggu", "Per Minggu"], ["bulan", "Per Bulan"], ["tahun", "Per Tahun"]];
-const KETERANGAN_PER: Record<Per, string> = { hari: "30 hari terakhir", minggu: "12 minggu terakhir (mulai Senin)",
-  bulan: "12 bulan terakhir", tahun: "5 tahun terakhir" };
-const fmt = (o: Intl.DateTimeFormatOptions) => new Intl.DateTimeFormat("id-ID", o);
-const fmtHari = fmt({ day: "numeric", month: "short" }), fmtTgl = fmt({ day: "numeric", month: "short", year: "numeric" });
-const fmtBulan = fmt({ month: "short", year: "2-digit" }), fmtBulanPanjang = fmt({ month: "long", year: "numeric" });
-
-/** Label periode dari tanggal awalnya (YYYY-MM-DD): pendek untuk sumbu, panjang untuk tooltip. */
-function labelPeriode(iso: string, per: Per, panjang: boolean) {
-  const d = new Date(`${iso}T00:00:00`);
-  if (per === "tahun") return iso.slice(0, 4);
-  if (per === "bulan") return (panjang ? fmtBulanPanjang : fmtBulan).format(d);
-  if (per === "minggu" && panjang) return `${fmtHari.format(d)} – ${fmtTgl.format(new Date(d.getTime() + 6 * 864e5))}`;
-  return (panjang ? fmtTgl : fmtHari).format(d);
-}
-
-/** Grafik batang jumlah pengajuan baru per tanggal/minggu/bulan/tahun. Satu seri (tanpa legenda, judul menamainya); angka
- *  muncul di tooltip saat batang diarahkan; tabel tersembunyi untuk pembaca layar. */
-function GrafikPengajuan() {
-  const [per, setPer] = useState<Per>("hari");
-  const q = useQuery({ queryKey: ["dashboard-tren", per], queryFn: () => api.get<Tren>(`/api/dashboard/tren?per=${per}`),
-    placeholderData: (lama) => lama, refetchInterval: 60000 });
-  const pilih = (
-    <div role="radiogroup" aria-label="Periode grafik" className="inline-flex flex-wrap gap-1 rounded-lg bg-slate-100 p-1">
-      {PILIHAN_PER.map(([k, l]) => (
-        <button key={k} type="button" role="radio" aria-checked={per === k} onClick={() => setPer(k)}
-          className={cx("rounded-md px-3 py-1 text-xs font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-utama-100",
-            per === k ? "bg-white text-utama-700 shadow-sm" : "text-slate-600 hover:text-slate-900")}>{l}</button>))}
-    </div>
-  );
-  return (
-    <Panel judul="Jumlah Pengajuan" keterangan={`Pengajuan baru · ${KETERANGAN_PER[per]}`} aksi={pilih}>
-      {q.isLoading ? <Memuat /> : q.error || !q.data ? <Peringatan>{(q.error as Error)?.message}</Peringatan> : <Batang t={q.data} />}
-    </Panel>
-  );
-}
-
-// Banyak batang yang terlihat per layar grafik; periode lebih lama dilihat dengan menggeser grafik ke kiri (desain.md §7 no. 68).
-const PER_LAYAR = 7;
-
-function Batang({ t }: { t: Tren }) {
-  const gulir = useRef<HTMLDivElement>(null);
-  const maks = Math.max(0, ...t.data.map((x) => x.jumlah));
-  // Mulai dari periode terbaru (ujung kanan) saat grafik muncul atau jenis periode diganti; penyegaran otomatis tiap
-  // menit tidak menggeser posisi yang sedang dilihat.
-  useLayoutEffect(() => { const g = gulir.current; if (g) g.scrollLeft = g.scrollWidth; }, [t.per, maks === 0]);
-  if (maks === 0) return <Kosong>Belum ada pengajuan pada periode ini.</Kosong>;
-  const skala = Math.ceil(maks / 4) * 4;  // kelipatan 4 → garis bantu 0, ½, penuh selalu bilangan bulat
-  const akhir = t.data.length - 1;
+/** Diagram batang berkelompok Checklist Tidak Lolos (Pengusul): satu kelompok per item checklist (kode di sumbu bawah), dua
+ *  batang berdampingan (AI, Verifikator) dengan celah 2px; angka & nama item di tooltip saat diarahkan; tabel tersembunyi untuk
+ *  pembaca layar. Banyak item → diagram dapat digeser (sumbu angka tetap). */
+function BatangChecklist({ data }: { data: NonNullable<Data["checklist_tidak_lolos"]> }) {
+  const skala = Math.max(4, Math.ceil(Math.max(...data.flatMap((c) => [c.ai, c.verifikator])) / 4) * 4);
+  const akhir = data.length - 1;
   return (
     <div>
+      <div className="mb-3 flex flex-wrap gap-x-5 gap-y-1 text-xs text-slate-600">
+        {SERI.map((s) => (
+          <span key={s.kunci} className="inline-flex items-center gap-1.5">
+            <span className="size-2.5 rounded-sm" style={{ backgroundColor: s.warna }} aria-hidden />{s.label}
+          </span>))}
+      </div>
       <div className="flex gap-2">
-        <div className="relative mt-9 h-52 w-7 shrink-0 text-right text-[11px] tabular-nums text-slate-400" aria-hidden>
+        <div className="relative mt-3 h-52 w-7 shrink-0 text-right text-[11px] tabular-nums text-slate-400" aria-hidden>
           {[0, 50, 100].map((p) => <span key={p} className="absolute right-0 translate-y-1/2" style={{ bottom: `${p}%` }}>{(skala * p) / 100}</span>)}
         </div>
-        {/* Sumbu kiri tetap, area batang bergeser. pt-9 = ruang tooltip di atas batang tertinggi (wadah gulir memotong isinya). */}
-        <div ref={gulir} role="region" tabIndex={0} aria-label="Grafik jumlah pengajuan, geser ke kiri untuk periode sebelumnya"
-          className="min-w-0 flex-1 overflow-x-auto pb-1 pt-9 focus:outline-none focus-visible:ring-2 focus-visible:ring-utama-100">
-          <div aria-hidden style={{ width: `${Math.max(1, t.data.length / PER_LAYAR) * 100}%` }}>
-          <div className="relative h-52">
-            {[0, 50, 100].map((p) => <div key={p} className={cx("absolute inset-x-0 border-t", p ? "border-dashed border-slate-200" : "border-slate-300")}
-              style={{ bottom: `${p}%` }} />)}
-            <div className="absolute inset-0 flex items-end gap-0.5">
-              {t.data.map((x, i) => (
-                <div key={x.mulai} className="group flex h-full flex-1 items-end justify-center">
-                  <div className="relative w-full max-w-10 rounded-t bg-utama-600 transition-colors group-hover:bg-utama-800"
-                    style={{ height: `${(x.jumlah / skala) * 100}%`, minHeight: x.jumlah ? 2 : 0 }}>
-                    {/* Batang pertama/terakhir: tooltip rata kiri/kanan agar tidak terpotong tepi grafik. */}
-                    <div className={cx("pointer-events-none absolute bottom-full z-10 mb-1.5 hidden whitespace-nowrap rounded-md bg-slate-900 px-2 py-1 text-xs text-white shadow-lg group-hover:block",
+        <div className="min-w-0 flex-1 overflow-x-auto pb-1 pt-3">
+          <div aria-hidden style={{ minWidth: `${data.length * 4}rem` }}>
+            <div className="relative h-52">
+              {[0, 50, 100].map((p) => <div key={p} className={cx("absolute inset-x-0 border-t", p ? "border-dashed border-slate-200" : "border-slate-300")}
+                style={{ bottom: `${p}%` }} />)}
+              <div className="absolute inset-0 flex">
+                {data.map((c, i) => (
+                  <div key={c.kode} className="group relative flex h-full flex-1 items-end justify-center gap-0.5 px-2">
+                    {SERI.map((s) => (
+                      <div key={s.kunci} className="w-full max-w-7 rounded-t transition-[filter] group-hover:brightness-90"
+                        style={{ height: `${(c[s.kunci] / skala) * 100}%`, minHeight: c[s.kunci] ? 2 : 0, backgroundColor: s.warna }} />))}
+                    {/* Tooltip di dalam area diagram (bukan di atasnya): wadah geser memotong apa pun di luar tingginya. */}
+                    <div className={cx("pointer-events-none absolute top-0 z-10 hidden whitespace-nowrap rounded-md bg-slate-900 px-2 py-1 text-xs text-white shadow-lg group-hover:block",
                       i === 0 ? "left-0" : i === akhir ? "right-0" : "left-1/2 -translate-x-1/2")}>
-                      {labelPeriode(x.mulai, t.per, true)}: <b>{x.jumlah}</b> pengajuan
+                      <div className="font-semibold">{c.kode} · {c.checklist}</div>
+                      {SERI.map((s) => <div key={s.kunci}>{s.label}: <b>{c[s.kunci]}</b></div>)}
                     </div>
-                  </div>
-                </div>
-              ))}
+                  </div>))}
+              </div>
             </div>
-          </div>
-          {/* Setiap batang berlabel (tanpa lompatan), mis. 1 Nov, 2 Nov, 3 Nov. */}
-          <div className="mt-2 flex gap-0.5 text-[11px] text-slate-500">
-            {t.data.map((x) => <span key={x.mulai} className="flex-1 whitespace-nowrap text-center">{labelPeriode(x.mulai, t.per, false)}</span>)}
-          </div>
+            <div className="mt-2 flex text-[11px] text-slate-500">
+              {data.map((c) => <span key={c.kode} className="flex-1 truncate text-center" title={c.checklist}>{c.kode}</span>)}
+            </div>
           </div>
         </div>
       </div>
-      {/* sr-only di <div>, bukan di <table>: tabel mengabaikan tinggi 1px sehingga memanjangkan halaman (ruang kosong di bawah). */}
       <div className="sr-only"><table>
-        <caption>Jumlah pengajuan baru per periode</caption>
-        <thead><tr><th scope="col">Periode</th><th scope="col">Jumlah</th></tr></thead>
-        <tbody>{t.data.map((x) => <tr key={x.mulai}><td>{labelPeriode(x.mulai, t.per, true)}</td><td>{x.jumlah}</td></tr>)}</tbody>
+        <caption>Jumlah pemeriksaan yang tidak lolos per item checklist</caption>
+        <thead><tr><th scope="col">Checklist</th>{SERI.map((s) => <th key={s.kunci} scope="col">{s.label}</th>)}</tr></thead>
+        <tbody>{data.map((c) => <tr key={c.kode}><td>{c.kode} · {c.checklist}</td>{SERI.map((s) => <td key={s.kunci}>{c[s.kunci]}</td>)}</tr>)}</tbody>
       </table></div>
     </div>
   );

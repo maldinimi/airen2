@@ -405,43 +405,56 @@ def test_dashboard_dan_filter_per_kategori_final(klien):
     assert reviewer.post(f"/api/review/{rid}/finalkan").status_code == 200
     assert [x["id"] for x in reviewer.get("/api/usulan", params={"kategori": "K4"}).json()["data"]] == [u["id"]]
     assert reviewer.get("/api/usulan", params={"kategori": "K1"}).json()["data"] == []
-    # Kartu Data Master: jumlah baris tiap menu & yang Aktif (dibandingkan langsung dengan database)
-    from app.model import ChecklistItem, MasterRO
-    with SessionLokal() as db:
-        db.execute(update(Kategori).where(Kategori.kode == "K4").values(aktif=False))
-        db.commit()
-        harap = {nama: {"total": db.scalar(select(func.count()).select_from(m)), "aktif": db.scalar(select(func.count()).where(m.aktif)),
-                        "diubah_at": x.isoformat() if (x := db.scalar(select(func.max(m.updated_date)))) else None}
-                 for nama, m in (("checklist", ChecklistItem), ("acuan", Panduan), ("kategori", Kategori), ("master_ro", MasterRO))}
-        # Semua pengajuan uji ini milik Satker `pengusul`; yang terakhir = revisi yang terakhir diunggah.
-        r, u_ = db.execute(select(Revisi, Usulan).join(Usulan, Usulan.id == Revisi.usulan_id).order_by(Revisi.created_at.desc())).first()
-        terakhir = {"kode_ro": u_.kode_ro, "nama_ro": u_.nama_ro, "revisi_nomor": r.nomor, "status": r.status, "diajukan_at": r.created_at.isoformat()}
-    d = pengusul.get("/api/dashboard").json()
-    master = d["master"]
-    assert master == harap and {k: master["kategori"][k] for k in ("total", "aktif")} == {"total": 4, "aktif": 3} and master["checklist"]["total"] > 0
-    # Pengusul: pengajuan Satker-nya yang terakhir diunggah; Reviewer & Pengusul Satker lain (tanpa pengajuan) tidak menerimanya
-    assert d["terakhir"] == terakhir
-    assert "terakhir" not in reviewer.get("/api/dashboard").json() and "terakhir" not in klien("pengusul_b").get("/api/dashboard").json()
+    # Ringkasan per Satker: kolom Menunggu Verifikasi = status MENUNGGU_VERIFIKASI saja (pengajuan kedua)
+    assert [s["menunggu"] for s in reviewer.get("/api/dashboard").json()["per_satker"]] == [1]
 
 
-def test_grafik_jumlah_pengajuan_per_periode(klien):
-    """Dashboard: jumlah pengajuan baru per hari/minggu/bulan/tahun (WIB), periode kosong = 0; Pengusul hanya Satker-nya."""
-    from datetime import datetime, timedelta, timezone
-    _usulan_diajukan(klien, ajukan=False)
-    _usulan_diajukan(klien, ajukan=False)
-    hari_ini = datetime.now(timezone(timedelta(hours=7))).date()
-    reviewer, lain = klien("reviewer"), klien("pengusul_b")
-    for per, banyak in (("hari", 30), ("minggu", 12), ("bulan", 12), ("tahun", 5)):
-        d = reviewer.get("/api/dashboard/tren", params={"per": per}).json()["data"]
-        assert len(d) == banyak and [x["jumlah"] for x in d] == [0] * (banyak - 1) + [2]  # pengajuan hari ini di periode terakhir
-        assert [x["mulai"] for x in d] == sorted(x["mulai"] for x in d)
-    assert reviewer.get("/api/dashboard/tren", params={"per": "hari"}).json()["data"][-1]["mulai"] == hari_ini.isoformat()
-    assert reviewer.get("/api/dashboard/tren", params={"per": "minggu"}).json()["data"][-1]["mulai"] == \
-        (hari_ini - timedelta(days=hari_ini.weekday())).isoformat()
-    assert reviewer.get("/api/dashboard/tren", params={"per": "bulan"}).json()["data"][0]["mulai"].endswith("-01")
-    assert sum(x["jumlah"] for x in lain.get("/api/dashboard/tren").json()["data"]) == 0  # Satker lain
-    assert reviewer.get("/api/dashboard/tren", params={"per": "jam"}).status_code == 422
-    assert klien("admin", "GantiSegera!2026").get("/api/dashboard/tren").status_code == 403
+def test_dashboard_pengusul_checklist_kategori_dan_tahun(klien):
+    """Dashboard Pengusul (desain.md §7 no. 75–76): checklist Tidak Lolos per pemeriksaan (AI/Verifikator), jumlah Lolos per
+    kategori, dan saringan Tahun Anggaran. Harapan dihitung dari detail review final."""
+    from app.api.usulan import tahun_berjalan
+    pengusul, u = _usulan_diajukan(klien)
+    jalankan_antrean()
+    reviewer = klien("reviewer")
+    rid1 = pengusul.get(f"/api/usulan/{u['id']}").json()["review_id"]
+    i0 = _review(klien, rid1)["item"][0]
+    # Dokumen: verifikator menolak item pertama → Tidak Lolos
+    assert reviewer.put(f"/api/review/{rid1}/keputusan", json={"item": [{"checklist_item_id": i0["id"], "nilai": "TIDAK_TERPENUHI"}]}).status_code == 200
+    a1 = reviewer.post(f"/api/review/{rid1}/finalkan").json()
+    assert a1["label"]["final"] == "TIDAK_LOLOS"
+    # Perbaikan 1: verifikator meloloskan semua item → Lolos
+    r = unggah(pengusul, f"/api/usulan/{u['id']}/revisi", tor=TOR, rab=RAB, ajukan=True)
+    assert r.status_code == 200, r.text
+    jalankan_antrean()
+    rid2 = pengusul.get(f"/api/usulan/{u['id']}").json()["review_id"]
+    semua = [{"checklist_item_id": i["id"], "nilai": "TERPENUHI"} for i in _review(klien, rid2)["item"]]
+    assert reviewer.put(f"/api/review/{rid2}/keputusan", json={"item": semua}).status_code == 200
+    a2 = reviewer.post(f"/api/review/{rid2}/finalkan").json()
+    assert a2["label"]["final"] == "LOLOS"
+
+    # Dua pemeriksaan final: Dokumen dan Perbaikan 1
+    satu, harap = {i["id"]: i for i in a1["item"]}, {}
+    for i in a2["item"]:
+        k = satu[i["id"]]
+        ai, verif = (not k["ai_terpenuhi"]) + (not i["ai_terpenuhi"]), (not k["terpenuhi"]) + (not i["terpenuhi"])
+        if ai or verif:
+            harap[i["kode"]] = {"ai": ai, "verifikator": verif}
+    tahun = tahun_berjalan()
+    d = pengusul.get("/api/dashboard", params={"tahun": tahun}).json()
+    assert {x["kode"]: {k: x[k] for k in ("ai", "verifikator")} for x in d["checklist_tidak_lolos"]} == harap
+    assert harap[i0["kode"]]["verifikator"] == 1
+    lolos = {x["kode"]: x["jumlah"] for x in d["kategori_lolos"]}
+    assert lolos[a2["kategori"]["final"]["kode"]] == 1 and sum(lolos.values()) == 1 and {"K1", "K2", "K3", "K4"} <= set(lolos)
+    assert d["per_status"] == {"LOLOS": 1}
+
+    # Tahun Anggaran lain: semua angka pengajuan kosong
+    lain = pengusul.get("/api/dashboard", params={"tahun": tahun + 1}).json()
+    assert lain["total"] == 0 and lain["checklist_tidak_lolos"] == []
+    assert all(x["jumlah"] == 0 for x in lain["kategori_lolos"])
+    # Reviewer: tanpa data khusus Pengusul; Menunggu Verifikasi di ringkasan per Satker
+    rv = reviewer.get("/api/dashboard", params={"tahun": tahun}).json()
+    assert "checklist_tidak_lolos" not in rv and "kategori_lolos" not in rv
+    assert [{k: v for k, v in x.items() if k != "satker"} for x in rv["per_satker"]] == [{"total": 1, "lolos": 1, "tidak_lolos": 0, "menunggu": 0}]
 
 
 def test_kategori_crud_riwayat_dan_hapus_permanen(klien):

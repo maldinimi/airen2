@@ -17,12 +17,12 @@ Masuk dengan username dan password dari Admin. Menu yang tampil menyesuaikan rol
 
 Dashboard hanya menampilkan informasi (tidak ada yang dapat diklik). Semua angka mengikuti pilihan **Tahun Anggaran** di bilah atas dan menyegarkan sendiri. Pengusul melihat angka Satker-nya sendiri, Reviewer seluruh Satker.
 
+- **Sapaan** (semua): "Selamat datang, …".
 - **Kartu status** (semua): Total Pengajuan, Menunggu Verifikasi, Lolos, Tidak Lolos. Buka menu **Pengajuan** untuk melihat daftarnya.
 - **Reviewer**: **Ringkasan per Satuan Kerja** — Total, Lolos, Tidak Lolos, dan Menunggu Verifikasi per Satker.
 - **Pengusul**:
   - **Pengajuan Lolos per Kategori**: jumlah pengajuan yang difinalkan Lolos oleh verifikator, per kategori final.
-  - **Checklist Tidak Lolos**: untuk setiap item checklist, berapa pemeriksaan yang tidak lolos menurut AI dan menurut verifikator (setelah final). Yang tidak lolos verifikator dibagi **Sudah Diperbaiki** (perbaikan sudah diunggah) dan **Belum Diperbaiki**.
-  - Grafik **Jumlah Pengajuan** (per tanggal, minggu, bulan, atau tahun; geser ke kiri untuk periode sebelumnya).
+  - **Checklist Tidak Lolos**: diagram batang per item checklist — berapa pemeriksaan yang tidak lolos menurut AI (batang biru) dan menurut verifikator setelah final (batang oranye). Arahkan kursor ke item untuk melihat angkanya.
 
 ## Pengusul
 

@@ -26,7 +26,7 @@ const MENU: Menu[] = [
 ];
 const NAMA_ROLE: Record<Role, string> = { PENGUSUL: "Pengusul", REVIEWER: "Reviewer", ADMIN: "Admin" };
 
-/** Tahun anggaran pilihan di header: tampil di semua menu, tetapi hanya menyaring menu Usulan (lewat Outlet context).
+/** Tahun anggaran pilihan di header: tampil di semua menu, tetapi hanya menyaring Dashboard & menu Usulan (lewat Outlet context).
  *  Disimpan di browser agar tetap terpilih saat berpindah menu/memuat ulang; storage bisa tidak tersedia → abaikan. */
 export type KonteksLayout = { tahun: string };
 const KUNCI_TAHUN = "airen.tahun";
@@ -110,11 +110,11 @@ export default function Layout() {
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="sticky top-0 z-35 flex h-16 shrink-0 items-center justify-between gap-3 border-b border-slate-200 bg-white px-4 sm:px-6">
           <button className="rounded-lg p-2 text-slate-600 hover:bg-slate-100 lg:hidden" onClick={() => setLaci(true)} aria-label="Buka menu"><Menu className="size-5" /></button>
-          {/* Tahun hanya menyaring menu Usulan, jadi tidak ditampilkan bagi Admin (tidak punya menu Usulan). */}
+          {/* Tahun hanya menyaring Dashboard & menu Usulan, jadi tidak ditampilkan bagi Admin (tidak punya keduanya). */}
           {punya(...KERJA) && (
             <label className="flex shrink-0 items-center gap-2">
               <span className="whitespace-nowrap text-base font-bold uppercase text-slate-800">Tahun Anggaran</span>
-              <Pilih className="w-24" title="Tahun anggaran — menyaring menu Pengajuan" value={tahun} onChange={(e) => pilihTahun(e.target.value)}>
+              <Pilih className="w-24" title="Tahun anggaran — menyaring Dashboard & menu Pengajuan" value={tahun} onChange={(e) => pilihTahun(e.target.value)}>
                 {DAFTAR_TAHUN.map((t) => <option key={t} value={t}>{t}</option>)}
               </Pilih>
             </label>
