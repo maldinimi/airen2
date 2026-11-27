@@ -110,14 +110,23 @@ MASTER_RO_UJI = [(*_P, "", "", "", "", "", ""), (*_P, *_G, "", "", "", ""), (*_P
                  (*_P, *_G, *_EBA, "994", "Layanan Perkantoran"), (*_P, *_G, *_EBA, "962", "Layanan Umum")]
 
 
-def isi_master_ro() -> None:
-    """Isi menu Master RO dengan jalur uji (bila belum ada): Pengajuan Baru memilih hierarki dari Master RO."""
+def isi_master_ro(tahun: int | None = None) -> None:
+    """Isi menu Master RO Tahun Anggaran `tahun` (bawaan: tahun berjalan) dengan jalur uji bila tahun itu belum berisi:
+    Pengajuan Baru tahun X memilih hierarki dari Master RO tahun X. RO uji diberi Satker pelaksana = Satker akun Pengusul contoh (01.04 & 01.06, seed.py), karena Pengusul hanya dapat memilih RO
+    Satker-nya sendiri."""
     from sqlalchemy import select
-    from app.model import MasterRO
+    from app.api.master_ro import tahun_berjalan
+    from app.model import MasterRO, MasterROSatker, Satker
     kolom = ("kode_program", "program", "kode_kegiatan", "kegiatan", "kode_kro", "kro", "kode_ro", "ro")
+    tahun = tahun or tahun_berjalan()
     with SessionLokal() as db:
-        if db.scalar(select(MasterRO.id).limit(1)) is None:
-            db.add_all(MasterRO(**dict(zip(kolom, b))) for b in MASTER_RO_UJI)
+        if db.scalar(select(MasterRO.id).where(MasterRO.tahun_anggaran == tahun).limit(1)) is None:
+            baris = [MasterRO(**dict(zip(kolom, b)), tahun_anggaran=tahun) for b in MASTER_RO_UJI]
+            db.add_all(baris)
+            db.flush()
+            satker = list(db.scalars(select(Satker.id).where(Satker.kode_uke2.in_(("01.04", "01.06")))))
+            db.add_all(MasterROSatker(master_ro_id=m.id, satker_id=s, no_urut=n)
+                       for m in baris if m.kode_ro for n, s in enumerate(satker, start=1))
             db.commit()
 
 

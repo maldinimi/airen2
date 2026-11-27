@@ -43,14 +43,17 @@ class MasterRO(Base):
     - Induk sebuah baris = baris dengan kode jenjang di atasnya sama dan jenjang miliknya kosong; induk wajib ada &
       Aktif saat menambah (dijaga backend). Mengubah kode/nama/induk sebuah baris ikut memperbarui baris turunannya,
       agar satu Program/Kegiatan/KRO tidak tercatat dengan dua nama berbeda (seperti Unit Kerja di `satker`).
-    - Kode unik per induk: kombinasi (kode_program, kode_kegiatan, kode_kro, kode_ro) unik, sebab kode KRO/RO
-      berulang di induk yang berbeda (mis. RO 001 ada di banyak KRO).
+    - Per Tahun Anggaran (`tahun_anggaran`, permintaan pemilik produk 2026-11-25): Master RO tiap tahun terpisah, dikelola
+      & diimpor menurut tahun pilihan bilah atas; Pengajuan tahun X memakai Master RO tahun X. Induk & turunan selalu
+      setahun. Migrasi 0024 (data lama = 2026, data Renja TA 2026).
+    - Kode unik per induk dalam satu tahun: kombinasi (tahun_anggaran, kode_program, kode_kegiatan, kode_kro, kode_ro)
+      unik, sebab kode KRO/RO berulang di induk yang berbeda (mis. RO 001 ada di banyak KRO) dan di tahun berbeda.
     - Kolom = kolom tabel Master RO di layar (kode & nama tiap jenjang, Status). Unit Eselon I/II dan Prioritas dari
       Laporan Renja tidak disimpan (permintaan pemilik produk: database mengikuti tabel daftar).
     """
     __tablename__ = "master_ro"
     __table_args__ = (
-        UniqueConstraint("kode_program", "kode_kegiatan", "kode_kro", "kode_ro", name="uq_master_ro_kode"),
+        UniqueConstraint("tahun_anggaran", "kode_program", "kode_kegiatan", "kode_kro", "kode_ro", name="uq_master_ro_kode"),
         CheckConstraint("kode_program <> '' AND program <> ''", name="ck_master_ro_program"),
         # Kode & nama satu jenjang selalu terisi bersama atau kosong bersama.
         CheckConstraint("(kode_kegiatan = '') = (kegiatan = '') AND (kode_kro = '') = (kro = '') AND (kode_ro = '') = (ro = '')",
@@ -63,6 +66,7 @@ class MasterRO(Base):
         Index("ix_master_ro_created_date", text("created_date DESC"), "kode_program", "kode_kegiatan", "kode_kro", "kode_ro"),
     )
     id: Mapped[uuid.UUID] = _id()
+    tahun_anggaran: Mapped[int] = mapped_column(Integer, index=True)
     kode_program: Mapped[str] = mapped_column(String(50))
     program: Mapped[str] = mapped_column(String(255))
     kode_kegiatan: Mapped[str] = mapped_column(String(50), server_default="")
@@ -76,6 +80,18 @@ class MasterRO(Base):
     updated_date: Mapped[datetime] = _dibuat()
     created_by: Mapped[uuid.UUID | None] = _fk("pengguna", nullable=True, index=False)
     created_date: Mapped[datetime] = _dibuat()
+
+
+class MasterROSatker(Base):
+    """Satker pelaksana RO (Revisi 7, KHUSUS jenis RO): Unit Kerja (Eselon I) + Satuan Kerja (Eselon II) diambil lewat
+    JOIN ke `satker` (permintaan pemilik produk). Minimal satu saat Tambah/Ubah RO (dijaga backend). `no_urut` =
+    urutan isian form = urutan bullet di tabel. Hapus RO ikut menghapus barisnya (CASCADE); Satker yang masih dipakai
+    tidak dapat dihapus (FK). Migrasi 0023."""
+    __tablename__ = "master_ro_satker"
+    master_ro_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("master_ro.id", ondelete="CASCADE"),
+                                                    primary_key=True)
+    satker_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("satker.id"), primary_key=True, index=True)
+    no_urut: Mapped[int] = mapped_column(Integer, nullable=False)
 # ---------------------------------------------------------------- pengguna & akses
 
 class Satker(Base):

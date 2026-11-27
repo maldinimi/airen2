@@ -10,6 +10,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.akses import ADMIN, PENGUSUL, REVIEWER, wajib_role
+from app.api.master_ro import jumlah_ro_memakai_satker
 from app.audit import catat
 from app.data_satker import SATKER
 from app.db import jam_db, sesi_db
@@ -246,6 +247,9 @@ def ubah_satker(satker_id: uuid.UUID, data: SatkerMasuk, request: Request, db: S
         raise Galat(404, "Satuan Kerja tidak ditemukan.")
     _validasi_satker(db, data, s.id)
     sebelum = _satker(db, s)
+    # Mengosongkan nama Satuan Kerja = baris itu bukan Satuan Kerja lagi bagi RO yang memakainya: ditolak seperti hapus.
+    if s.nama and not data.nama and (jumlah := jumlah_ro_memakai_satker(db, s.id)):
+        raise Galat(409, f"Nama Satuan Kerja {s.nama} tidak dapat dikosongkan karena masih dipakai {jumlah} RO di menu Master RO.")
     sekarang = jam_db(db)
     # Mengganti nama Unit Kerja (baris Unit Kerja saja) → Satuan Kerja di bawahnya ikut, agar satu Unit Kerja tidak
     # tercatat dengan dua nama berbeda (query WHERE unit_kerja = ... tetap mendapatkan semuanya).
@@ -271,10 +275,15 @@ def ubah_satker(satker_id: uuid.UUID, data: SatkerMasuk, request: Request, db: S
 @router.delete("/satker/{satker_id}")
 def hapus_satker(satker_id: uuid.UUID, request: Request, db: Session = Depends(sesi_db),
                  _: Pengguna = Depends(wajib_role(REVIEWER))) -> dict:
-    """Hapus permanen Satker (Reviewer). Error 404 bila tidak ada, 409 bila masih dipakai pengguna atau usulan."""
+    """Hapus permanen Satker (Reviewer). Error 404 bila tidak ada, 409 bila masih dipakai pengguna, pengajuan, atau RO
+    di Master RO."""
     s = db.get(Satker, satker_id)
     if s is None:
         raise Galat(404, "Satuan Kerja tidak ditemukan.")
+    # FK master_ro_satker juga menolak, tetapi dicek dulu agar pesannya menyebut Master RO (bukan pengguna/pengajuan).
+    if jumlah := jumlah_ro_memakai_satker(db, s.id):
+        raise Galat(409, f"Satuan Kerja {s.nama} masih dipakai {jumlah} RO di menu Master RO sehingga tidak dapat dihapus. "
+                         "Hapus Satuan Kerja ini dari RO tersebut terlebih dahulu, atau jadikan Nonaktif.")
     sebelum = _satker(db, s)
     try:
         db.delete(s)

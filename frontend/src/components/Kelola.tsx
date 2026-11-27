@@ -62,6 +62,17 @@ export function daftarUke1(daftar: Pick<Satker, "kode_uke1" | "unit_kerja">[]): 
   return [...hasil.values()];
 }
 
+/** Pilihan Satker dua langkah (Unit Kerja → Satuan Kerja) di form Pengguna & Master RO. `TANPA_UK` = nilai pilihan untuk
+ *  Satker yang Unit Kerja-nya kosong. */
+export const TANPA_UK = "__tanpa";
+export const nilaiUnitKerja = (s: Pick<Satker, "unit_kerja">) => s.unit_kerja || TANPA_UK;
+/** Unit Kerja unik (urut daftar) dengan label "01 — SEKRETARIAT JENDERAL". */
+export const opsiUnitKerja = (daftar: Satker[]): Opsi[] => [...new Map(daftar.map((s) => [s.unit_kerja ?? "", s.kode_uke1 ?? ""]))]
+  .map(([uk, kode]) => ({ nilai: uk || TANPA_UK, label: uk ? [kode, uk].filter(Boolean).join(" — ") : "Tanpa Unit Kerja" }));
+/** Label Satuan Kerja "01.04 — BIRO PERENCANAAN", ditandai " (Nonaktif)" bila Nonaktif. */
+export const labelSatker = (s: Satker) =>
+  `${[s.kode_uke2, s.nama || "(tanpa nama)"].filter(Boolean).join(" — ")}${s.aktif === false ? " (Nonaktif)" : ""}`;
+
 export const LencanaAktif = ({ aktif }: { aktif: boolean }) => aktif
   ? <Lencana className="bg-emerald-50 text-emerald-700 ring-emerald-300">Aktif</Lencana>
   : <Lencana className="bg-slate-100 text-slate-600 ring-slate-300">Nonaktif</Lencana>;
